@@ -1869,7 +1869,20 @@ function formatDate(timestamp) {
 }
 
 // ===== AI DISPATCH (IN-APP AGENT) =====
-async function aiCreateTask({ projectName, taskText }) {
+function parseDeadlineIso(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) d.setHours(23, 59, 0, 0);
+  return d;
+}
+
+function deadlineLabel(d) {
+  if (!d) return '';
+  return ' para el ' + d.toLocaleDateString('es-ES', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
+}
+
+async function aiCreateTask({ projectName, taskText, deadlineIso }) {
   let project = projects.find(p => p.name.toLowerCase() === projectName.toLowerCase());
   if (!project) {
     const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7'];
@@ -1881,7 +1894,7 @@ async function aiCreateTask({ projectName, taskText }) {
     });
     project = { id: ref.id, name: projectName, color: '#4ECDC4' };
   }
-  await db.collection('tasks').add({
+  const data = {
     text: taskText,
     projectId: project.id,
     projectName: project.name,
@@ -1894,11 +1907,14 @@ async function aiCreateTask({ projectName, taskText }) {
     source: 'ai',
     notes: [],
     createdAt: firebase.firestore.FieldValue.serverTimestamp()
-  });
-  return `✓ Tarea creada en ${project.name}: ${taskText}`;
+  };
+  const dl = parseDeadlineIso(deadlineIso);
+  if (dl) data.deadline = firebase.firestore.Timestamp.fromDate(dl);
+  await db.collection('tasks').add(data);
+  return `✓ Tarea creada en ${project.name}: ${taskText}${deadlineLabel(dl)}`;
 }
 
-async function aiAssignTaskInternal({ projectName, taskText, assignToEmail, dependsOnTaskId, dependsOnTaskText, dependsOnAssigneeName }) {
+async function aiAssignTaskInternal({ projectName, taskText, assignToEmail, deadlineIso, dependsOnTaskId, dependsOnTaskText, dependsOnAssigneeName }) {
   const assignee = teamMembers.find(m => m.email === assignToEmail);
   if (!assignee) return { success: false, message: `Usuario ${assignToEmail} no esta en el equipo.` };
 
@@ -1918,6 +1934,8 @@ async function aiAssignTaskInternal({ projectName, taskText, assignToEmail, depe
     status: 'pending', source: 'ai', notes: [],
     createdAt: firebase.firestore.FieldValue.serverTimestamp()
   };
+  const dl = parseDeadlineIso(deadlineIso);
+  if (dl) taskData.deadline = firebase.firestore.Timestamp.fromDate(dl);
   if (dependsOnTaskId) {
     taskData.dependsOn = dependsOnTaskId;
     taskData.dependsOnText = dependsOnTaskText || '';
@@ -1927,16 +1945,17 @@ async function aiAssignTaskInternal({ projectName, taskText, assignToEmail, depe
 
   if (assignee.telegramChatId && assignee.id !== currentUser.uid) {
     const depMsg = dependsOnTaskId ? `\nEn espera de *${dependsOnAssigneeName || 'otro'}*: ${dependsOnTaskText || ''}` : '';
+    const dlMsg = dl ? `\nPlazo: *${dl.toLocaleDateString('es-ES', { day: 'numeric', month: 'long' })}*` : '';
     window.api.sendTelegramMessage(assignee.telegramChatId,
-      `*${currentUserData.name}* te asigno una tarea:\n${taskText}\nProyecto: *${project.name}*${depMsg}`);
+      `*${currentUserData.name}* te asigno una tarea:\n${taskText}\nProyecto: *${project.name}*${dlMsg}${depMsg}`);
   }
-  return { success: true, taskId: ref.id, assigneeName: assignee.name, projectName: project.name };
+  return { success: true, taskId: ref.id, assigneeName: assignee.name, projectName: project.name, deadline: dl };
 }
 
 async function aiAssignTask(input) {
   const r = await aiAssignTaskInternal(input);
   if (!r.success) return `✗ ${r.message}`;
-  return `✓ Tarea asignada a ${r.assigneeName} en ${r.projectName}: ${input.taskText}`;
+  return `✓ Tarea asignada a ${r.assigneeName} en ${r.projectName}: ${input.taskText}${deadlineLabel(r.deadline)}`;
 }
 
 async function aiAssignChain({ projectName, steps }) {
@@ -1946,25 +1965,29 @@ async function aiAssignChain({ projectName, steps }) {
   for (const s of steps) {
     const r = await aiAssignTaskInternal({
       projectName, taskText: s.task_text, assignToEmail: s.assign_to_email,
+      deadlineIso: s.deadline_iso,
       dependsOnTaskId: prev.id, dependsOnTaskText: prev.text, dependsOnAssigneeName: prev.name
     });
     if (!r.success) return `✗ ${r.message}`;
     prev = { id: r.taskId, text: s.task_text, name: r.assigneeName };
-    created.push(`${created.length + 1}. ${r.assigneeName}: ${s.task_text}`);
+    created.push(`${created.length + 1}. ${r.assigneeName}: ${s.task_text}${deadlineLabel(r.deadline)}`);
   }
   return `✓ Cadena creada en ${projectName}:\n${created.join('\n')}`;
 }
 
-async function aiCreatePersonalTask({ task_text }) {
-  await db.collection('personalTasks').add({
+async function aiCreatePersonalTask({ task_text, deadline_iso }) {
+  const data = {
     text: task_text,
     ownerId: currentUser.uid,
     ownerName: currentUserData.name,
     status: 'pending',
     source: 'ai',
     createdAt: firebase.firestore.FieldValue.serverTimestamp()
-  });
-  return `✓ Tarea personal creada: ${task_text}`;
+  };
+  const dl = parseDeadlineIso(deadline_iso);
+  if (dl) data.deadline = firebase.firestore.Timestamp.fromDate(dl);
+  await db.collection('personalTasks').add(data);
+  return `✓ Tarea personal creada: ${task_text}${deadlineLabel(dl)}`;
 }
 
 function showAIResult(text, type = 'info') {
@@ -1983,7 +2006,13 @@ async function aiDispatch(text) {
     ? myTasks.map((t, i) => `${i + 1}. [${t.projectName}] ${t.text}`).join('\n')
     : '(ninguna)';
 
+  const now = new Date();
+  const isoNow = now.toISOString();
+  const humanNow = now.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
   const systemPrompt = `Eres un asistente de gestion de tareas en una app de equipo. Interpreta el mensaje del usuario y ejecuta la accion correcta usando las tools.
+
+Fecha y hora actual: ${humanNow} (${isoNow})
 
 Usuario actual: ${currentUserData.name} (${currentUserData.email})
 
@@ -1999,7 +2028,13 @@ Reglas:
 - Tarea personal/privada/para mi sola => add_personal_task
 - Tarea para otro miembro => assign_task
 - 2 o mas tareas en secuencia ("primero A, despues B") => assign_chain_tasks
-- Saludos, preguntas, cosas que no son acciones => reply_message`;
+- Saludos, preguntas, cosas que no son acciones => reply_message
+
+Deadlines (plazos):
+- Si el usuario menciona una fecha/dia ("para el viernes", "en 3 dias", "el 30 de abril", "mañana", "hoy a las 5pm"), calcula la fecha correspondiente basandote en la fecha actual y pasala en deadline_iso (formato ISO 8601, ej: "2026-04-25T23:59:00").
+- Si no menciona fecha, NO pongas deadline_iso.
+- "Mañana" => el dia siguiente. "El viernes" => proximo viernes (si hoy ya paso el viernes, el siguiente).
+- Si dice "hoy" incluye la hora mencionada; si no especifica hora usa 23:59.`;
 
   const tools = [
     {
@@ -2007,7 +2042,11 @@ Reglas:
       description: 'Crear tarea del equipo asignada al usuario actual',
       input_schema: {
         type: 'object',
-        properties: { project_name: { type: 'string' }, task_text: { type: 'string' } },
+        properties: {
+          project_name: { type: 'string' },
+          task_text: { type: 'string' },
+          deadline_iso: { type: 'string', description: 'Fecha limite en ISO 8601 (opcional)' }
+        },
         required: ['project_name', 'task_text']
       }
     },
@@ -2016,7 +2055,12 @@ Reglas:
       description: 'Crear tarea y asignarla a otro miembro',
       input_schema: {
         type: 'object',
-        properties: { project_name: { type: 'string' }, task_text: { type: 'string' }, assign_to_email: { type: 'string' } },
+        properties: {
+          project_name: { type: 'string' },
+          task_text: { type: 'string' },
+          assign_to_email: { type: 'string' },
+          deadline_iso: { type: 'string', description: 'Fecha limite en ISO 8601 (opcional)' }
+        },
         required: ['project_name', 'task_text', 'assign_to_email']
       }
     },
@@ -2031,7 +2075,11 @@ Reglas:
             type: 'array',
             items: {
               type: 'object',
-              properties: { assign_to_email: { type: 'string' }, task_text: { type: 'string' } },
+              properties: {
+                assign_to_email: { type: 'string' },
+                task_text: { type: 'string' },
+                deadline_iso: { type: 'string', description: 'Fecha limite de ESTE paso (opcional)' }
+              },
               required: ['assign_to_email', 'task_text']
             }
           }
@@ -2044,7 +2092,10 @@ Reglas:
       description: 'Crear tarea personal privada (solo la ve el usuario actual)',
       input_schema: {
         type: 'object',
-        properties: { task_text: { type: 'string' } },
+        properties: {
+          task_text: { type: 'string' },
+          deadline_iso: { type: 'string', description: 'Fecha limite en ISO 8601 (opcional)' }
+        },
         required: ['task_text']
       }
     },
@@ -2073,16 +2124,16 @@ Reglas:
     let msg;
     switch (result.tool) {
       case 'add_task':
-        msg = await aiCreateTask({ projectName: input.project_name, taskText: input.task_text });
+        msg = await aiCreateTask({ projectName: input.project_name, taskText: input.task_text, deadlineIso: input.deadline_iso });
         break;
       case 'assign_task':
-        msg = await aiAssignTask({ projectName: input.project_name, taskText: input.task_text, assignToEmail: input.assign_to_email });
+        msg = await aiAssignTask({ projectName: input.project_name, taskText: input.task_text, assignToEmail: input.assign_to_email, deadlineIso: input.deadline_iso });
         break;
       case 'assign_chain_tasks':
         msg = await aiAssignChain({ projectName: input.project_name, steps: input.steps || [] });
         break;
       case 'add_personal_task':
-        msg = await aiCreatePersonalTask({ task_text: input.task_text });
+        msg = await aiCreatePersonalTask({ task_text: input.task_text, deadline_iso: input.deadline_iso });
         break;
       case 'reply_message':
         msg = input.text || 'Listo.';
