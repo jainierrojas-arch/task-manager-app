@@ -357,6 +357,39 @@
       font-weight: 500;
     }
 
+    .task-deadline {
+      font-size: 10px;
+      padding: 1px 8px;
+      border-radius: 10px;
+      font-weight: 600;
+    }
+
+    .deadline-ok {
+      background: rgba(78, 205, 196, 0.2);
+      color: var(--success);
+    }
+
+    .deadline-soon {
+      background: rgba(255, 217, 61, 0.2);
+      color: var(--warning);
+    }
+
+    .deadline-overdue {
+      background: rgba(255, 107, 107, 0.2);
+      color: var(--danger);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+
+    .task-item.overdue {
+      border-left-width: 5px !important;
+      box-shadow: 0 0 0 1px rgba(255, 107, 107, 0.3);
+    }
+
     .task-delete {
       opacity: 0;
       cursor: pointer;
@@ -734,7 +767,8 @@
         <button class="btn btn-ghost btn-small" id="quickProjectBtn" title="Nuevo proyecto">+</button>
       </div>
       <div class="input-row">
-        <input type="text" id="taskInput" placeholder="Escribe una nueva tarea...">
+        <input type="text" id="taskInput" placeholder="Escribe una nueva tarea..." style="flex:2">
+        <input type="number" id="daysInput" placeholder="Dias" min="1" max="365" style="flex:1;max-width:90px">
         <button class="btn btn-primary" id="addTaskBtn">Agregar</button>
       </div>
     </div>

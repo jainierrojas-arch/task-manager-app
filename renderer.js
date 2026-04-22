@@ -34,6 +34,7 @@ const el = {
   projectSelect: document.getElementById('projectSelect'),
   assignSelect: document.getElementById('assignSelect'),
   taskInput: document.getElementById('taskInput'),
+  daysInput: document.getElementById('daysInput'),
   addTaskBtn: document.getElementById('addTaskBtn'),
   mainBadge: document.getElementById('mainBadge'),
   myBadge: document.getElementById('myBadge'),
@@ -257,6 +258,28 @@ function renderTaskList(container, taskList, mode) {
         statusBadge = '<span class="status-pending-approval">Esperando aprobacion</span>';
       }
 
+      // Deadline badge
+      let deadlineBadge = '';
+      let overdueClass = '';
+      if (task.deadline) {
+        const deadlineDate = task.deadline.toDate ? task.deadline.toDate() : new Date(task.deadline);
+        const now = new Date();
+        const diffMs = deadlineDate - now;
+        const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+        if (diffDays < 0) {
+          deadlineBadge = `<span class="task-deadline deadline-overdue">Vencida hace ${Math.abs(diffDays)}d</span>`;
+          overdueClass = 'overdue';
+        } else if (diffDays === 0) {
+          deadlineBadge = `<span class="task-deadline deadline-overdue">Vence hoy</span>`;
+          overdueClass = 'overdue';
+        } else if (diffDays <= 2) {
+          deadlineBadge = `<span class="task-deadline deadline-soon">${diffDays}d restante${diffDays !== 1 ? 's' : ''}</span>`;
+        } else {
+          deadlineBadge = `<span class="task-deadline deadline-ok">${diffDays}d restantes</span>`;
+        }
+      }
+
       // Approval buttons (only admin in approval tab, or creator)
       let actionButtons = '';
       if (isPendingApproval && mode === 'approval') {
@@ -304,13 +327,14 @@ function renderTaskList(container, taskList, mode) {
       }
 
       html += `
-        <div class="task-item" data-id="${task.id}" style="border-left-color:${group.color}">
+        <div class="task-item ${overdueClass}" data-id="${task.id}" style="border-left-color:${group.color}">
           ${checkBtn}
           <div style="flex:1">
             <div class="task-text">${esc(task.text)}</div>
             <div class="task-meta">
               <span class="task-assignee">${esc(assignee)}</span>
               ${statusBadge}
+              ${deadlineBadge}
               <span class="task-tag">${source}</span>
               <span class="task-tag">${time}</span>
               ${addNoteBtn}
@@ -470,6 +494,7 @@ async function addTask() {
   const text = el.taskInput.value.trim();
   const projectId = el.projectSelect.value;
   const assignTo = el.assignSelect.value;
+  const days = parseInt(el.daysInput.value);
 
   if (!text) { el.taskInput.focus(); return; }
   if (!projectId) {
@@ -481,7 +506,7 @@ async function addTask() {
   const project = projects.find(p => p.id === projectId);
   const assignee = teamMembers.find(m => m.id === assignTo);
 
-  await db.collection('tasks').add({
+  const taskData = {
     text: text,
     projectId: projectId,
     projectName: project ? project.name : 'Sin Proyecto',
@@ -494,13 +519,25 @@ async function addTask() {
     source: 'app',
     notes: [],
     createdAt: firebase.firestore.FieldValue.serverTimestamp()
-  });
+  };
+
+  // Add deadline if days specified
+  if (days && days > 0) {
+    const deadline = new Date();
+    deadline.setDate(deadline.getDate() + days);
+    taskData.deadline = firebase.firestore.Timestamp.fromDate(deadline);
+    taskData.deadlineDays = days;
+  }
+
+  await db.collection('tasks').add(taskData);
 
   el.taskInput.value = '';
+  el.daysInput.value = '';
 
   if (assignee && assignee.telegramChatId && assignTo !== currentUser.uid) {
+    const deadlineMsg = days && days > 0 ? `\nPlazo: *${days} dia(s)*` : '';
     window.api.sendTelegramMessage(assignee.telegramChatId,
-      `Nueva tarea asignada por *${currentUserData.name}*:\n${text}\nProyecto: *${project.name}*`
+      `Nueva tarea asignada por *${currentUserData.name}*:\n${text}\nProyecto: *${project.name}*${deadlineMsg}`
     );
   }
 }
