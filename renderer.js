@@ -10,6 +10,9 @@ let unsubscribeTasks = null;
 let unsubscribeProjects = null;
 let unsubscribeUsers = null;
 
+// User colors for completed tab
+const userColors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#DDA0DD', '#BB8FCE', '#F0B27A', '#82E0AA', '#F1948A', '#AED6F1'];
+
 // ===== DOM ELEMENTS =====
 const el = {
   loginScreen: document.getElementById('loginScreen'),
@@ -124,7 +127,6 @@ auth.onAuthStateChanged(async (user) => {
     const userDoc = await db.collection('users').doc(user.uid).get();
     if (userDoc.exists) {
       currentUserData = { id: user.uid, ...userDoc.data() };
-      // Auto-set first admin
       if (user.email === 'jainierrojas@gmail.com' && currentUserData.role !== 'admin') {
         await db.collection('users').doc(user.uid).update({ role: 'admin' });
         currentUserData.role = 'admin';
@@ -165,20 +167,17 @@ el.logoutBtn.addEventListener('click', () => auth.signOut());
 
 // ===== FIRESTORE REAL-TIME =====
 function subscribeToData() {
-  // Listen to tasks
   unsubscribeTasks = db.collection('tasks').orderBy('createdAt', 'desc').onSnapshot((snapshot) => {
     tasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     renderAll();
   });
 
-  // Listen to projects
   unsubscribeProjects = db.collection('projects').orderBy('name').onSnapshot((snapshot) => {
     projects = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     renderProjectSelect();
     renderProjectList();
   });
 
-  // Listen to team members
   unsubscribeUsers = db.collection('users').onSnapshot((snapshot) => {
     teamMembers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     renderAssignSelect();
@@ -201,7 +200,12 @@ function renderAll() {
   renderTaskList(el.taskList, pending, 'pending');
   renderTaskList(el.myTaskList, [...myTasks, ...myPendingApproval], 'my-tasks');
   renderTaskList(el.approvalList, pendingApproval, 'approval');
-  renderTaskList(el.completedList, completed.slice(0, 50), 'completed');
+  renderCompletedList(completed.slice(0, 100));
+}
+
+function getUserColor(userId) {
+  const idx = teamMembers.findIndex(m => m.id === userId);
+  return userColors[idx >= 0 ? idx % userColors.length : 0];
 }
 
 function renderTaskList(container, taskList, mode) {
@@ -209,8 +213,7 @@ function renderTaskList(container, taskList, mode) {
     const emptyMessages = {
       'pending': { icon: '&#128221;', text: 'No hay tareas pendientes', sub: 'Agrega una tarea o esperala desde Telegram' },
       'my-tasks': { icon: '&#128100;', text: 'No tienes tareas asignadas', sub: '' },
-      'approval': { icon: '&#128270;', text: 'No hay tareas por aprobar', sub: 'Cuando alguien complete una tarea aparecera aqui' },
-      'completed': { icon: '&#127881;', text: 'No hay tareas completadas aun', sub: '' }
+      'approval': { icon: '&#128270;', text: 'No hay tareas por aprobar', sub: 'Cuando alguien complete una tarea aparecera aqui' }
     };
     const msg = emptyMessages[mode] || emptyMessages['pending'];
     container.innerHTML = `
@@ -227,11 +230,7 @@ function renderTaskList(container, taskList, mode) {
   taskList.forEach(task => {
     const key = task.projectId || 'sin-proyecto';
     if (!grouped[key]) {
-      grouped[key] = {
-        name: task.projectName || 'Sin Proyecto',
-        color: task.projectColor || '#666',
-        tasks: []
-      };
+      grouped[key] = { name: task.projectName || 'Sin Proyecto', color: task.projectColor || '#666', tasks: [] };
     }
     grouped[key].tasks.push(task);
   });
@@ -250,44 +249,62 @@ function renderTaskList(container, taskList, mode) {
     group.tasks.forEach(task => {
       const assignee = task.assignedToName || 'Sin asignar';
       const source = task.source === 'telegram' ? 'Telegram' : 'App';
-      const time = task.completedAt ? formatDate(task.completedAt) : timeAgo(task.createdAt);
-      const isCompleted = task.status === 'completed';
+      const time = timeAgo(task.createdAt);
       const isPendingApproval = task.status === 'pending_approval';
 
-      // Status badge
       let statusBadge = '';
       if (isPendingApproval) {
         statusBadge = '<span class="status-pending-approval">Esperando aprobacion</span>';
       }
 
-      // Action buttons
+      // Approval buttons (only admin in approval tab, or creator)
       let actionButtons = '';
-      if (isPendingApproval && isAdmin && mode === 'approval') {
-        actionButtons = `
-          <div class="approval-buttons">
-            <button class="btn-approve" onclick="approveTask('${task.id}')">Aprobar</button>
-            <button class="btn-reject" onclick="rejectTask('${task.id}')">Rechazar</button>
-          </div>`;
+      if (isPendingApproval && mode === 'approval') {
+        if (isAdmin || task.createdBy === currentUser.uid) {
+          actionButtons = `
+            <div class="approval-buttons">
+              <button class="btn-approve" onclick="approveTask('${task.id}')">Aprobar</button>
+              <button class="btn-reject" onclick="rejectTask('${task.id}')">Rechazar</button>
+            </div>`;
+        }
       }
 
       // Check button
       let checkBtn = '';
-      if (isCompleted) {
-        checkBtn = '<div class="task-check"></div>';
-      } else if (isPendingApproval) {
+      if (isPendingApproval) {
         checkBtn = '<div class="task-check" style="border-color:var(--warning);background:rgba(255,217,61,0.15)"></div>';
       } else {
         checkBtn = `<div class="task-check" onclick="completeTask('${task.id}')" title="Marcar como terminada"></div>`;
       }
 
-      // Delete button
-      let deleteBtn = '';
-      if (!isCompleted && !isPendingApproval && canDelete(task)) {
-        deleteBtn = `<button class="task-delete" onclick="deleteTask('${task.id}')" title="Eliminar">&#10005;</button>`;
+      // Edit and delete buttons (only creator and admin)
+      let taskActions = '';
+      if (!isPendingApproval && canEdit(task)) {
+        taskActions += `<button class="task-delete" onclick="editTask('${task.id}')" title="Editar" style="color:var(--accent)">&#9998;</button>`;
+      }
+      if (!isPendingApproval && canDelete(task)) {
+        taskActions += `<button class="task-delete" onclick="deleteTask('${task.id}')" title="Eliminar">&#10005;</button>`;
+      }
+
+      // Subnotes
+      const notes = task.notes || [];
+      let notesHtml = '';
+      if (notes.length > 0) {
+        notesHtml = '<div class="task-notes">';
+        notes.forEach(n => {
+          notesHtml += `<div class="task-note"><span class="note-author">${esc(n.authorName)}:</span> ${esc(n.text)}</div>`;
+        });
+        notesHtml += '</div>';
+      }
+
+      // Add note button (assignee, creator, or admin)
+      let addNoteBtn = '';
+      if (task.assignedTo === currentUser.uid || task.createdBy === currentUser.uid || isAdmin) {
+        addNoteBtn = `<button class="btn-add-note" onclick="addNote('${task.id}')">+ Nota</button>`;
       }
 
       html += `
-        <div class="task-item ${isCompleted ? 'completed' : ''}" data-id="${task.id}" style="border-left-color:${group.color}">
+        <div class="task-item" data-id="${task.id}" style="border-left-color:${group.color}">
           ${checkBtn}
           <div style="flex:1">
             <div class="task-text">${esc(task.text)}</div>
@@ -296,10 +313,12 @@ function renderTaskList(container, taskList, mode) {
               ${statusBadge}
               <span class="task-tag">${source}</span>
               <span class="task-tag">${time}</span>
+              ${addNoteBtn}
             </div>
+            ${notesHtml}
             ${actionButtons}
           </div>
-          ${deleteBtn}
+          ${taskActions}
         </div>`;
     });
 
@@ -307,6 +326,64 @@ function renderTaskList(container, taskList, mode) {
   }
 
   container.innerHTML = html;
+}
+
+// Completed list grouped by user with colors
+function renderCompletedList(completedTasks) {
+  if (completedTasks.length === 0) {
+    el.completedList.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">&#127881;</div>
+        <div class="empty-state-text">No hay tareas completadas aun</div>
+      </div>`;
+    return;
+  }
+
+  // Group by user
+  const groupedByUser = {};
+  completedTasks.forEach(task => {
+    const key = task.assignedTo || 'unknown';
+    if (!groupedByUser[key]) {
+      groupedByUser[key] = {
+        name: task.assignedToName || 'Desconocido',
+        color: getUserColor(key),
+        tasks: []
+      };
+    }
+    groupedByUser[key].tasks.push(task);
+  });
+
+  let html = '';
+  for (const [userId, group] of Object.entries(groupedByUser)) {
+    html += `<div class="project-section">
+      <div class="project-header" style="border-left:3px solid ${group.color}">
+        <div class="team-avatar" style="background:${group.color};width:24px;height:24px;font-size:11px;display:flex;align-items:center;justify-content:center;border-radius:50%;color:white;font-weight:700">${group.name.charAt(0).toUpperCase()}</div>
+        <span class="project-name">${esc(group.name)}</span>
+        <span class="project-count">${group.tasks.length} completadas</span>
+      </div>`;
+
+    group.tasks.forEach(task => {
+      const time = task.completedAt ? formatDate(task.completedAt) : '';
+      const approver = task.approvedByName ? `Aprobada por ${task.approvedByName}` : '';
+
+      html += `
+        <div class="task-item completed" style="border-left-color:${group.color}">
+          <div class="task-check"></div>
+          <div style="flex:1">
+            <div class="task-text">${esc(task.text)}</div>
+            <div class="task-meta">
+              <span class="task-tag">${esc(task.projectName || '')}</span>
+              <span class="task-tag">${time}</span>
+              ${approver ? `<span class="task-tag">${esc(approver)}</span>` : ''}
+            </div>
+          </div>
+        </div>`;
+    });
+
+    html += '</div>';
+  }
+
+  el.completedList.innerHTML = html;
 }
 
 function renderProjectSelect() {
@@ -339,12 +416,12 @@ function renderTeam() {
     return;
   }
 
-  const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#DDA0DD', '#BB8FCE', '#F0B27A'];
   let html = '';
   teamMembers.forEach((m, i) => {
-    const pending = tasks.filter(t => t.assignedTo === m.id && t.status !== 'completed').length;
+    const pending = tasks.filter(t => t.assignedTo === m.id && t.status === 'pending').length;
+    const waiting = tasks.filter(t => t.assignedTo === m.id && t.status === 'pending_approval').length;
     const done = tasks.filter(t => t.assignedTo === m.id && t.status === 'completed').length;
-    const color = colors[i % colors.length];
+    const color = userColors[i % userColors.length];
     const linked = m.telegramChatId ? 'Telegram vinculado' : 'Sin Telegram';
 
     const roleLabel = m.role === 'admin' ? 'Admin' : 'Miembro';
@@ -359,7 +436,7 @@ function renderTeam() {
         <div class="team-info">
           <div class="team-name">${esc(m.name)} ${m.id === currentUser.uid ? '(tu)' : ''} <span style="font-size:10px;color:${m.role === 'admin' ? 'var(--success)' : 'var(--text-secondary)'}">[${roleLabel}]</span></div>
           <div class="team-email">${esc(m.email)} - ${linked}</div>
-          <div class="team-tasks">${pending} pendientes - ${done} completadas ${roleBtn}</div>
+          <div class="team-tasks">${pending} pendientes - ${waiting} por aprobar - ${done} completadas ${roleBtn}</div>
         </div>
       </div>`;
   });
@@ -415,12 +492,12 @@ async function addTask() {
     createdByName: currentUserData.name,
     status: 'pending',
     source: 'app',
+    notes: [],
     createdAt: firebase.firestore.FieldValue.serverTimestamp()
   });
 
   el.taskInput.value = '';
 
-  // Notify via Telegram
   if (assignee && assignee.telegramChatId && assignTo !== currentUser.uid) {
     window.api.sendTelegramMessage(assignee.telegramChatId,
       `Nueva tarea asignada por *${currentUserData.name}*:\n${text}\nProyecto: *${project.name}*`
@@ -437,7 +514,6 @@ async function completeTask(taskId) {
 
   const task = tasks.find(t => t.id === taskId);
 
-  // Send to pending approval instead of completing directly
   await db.collection('tasks').doc(taskId).update({
     status: 'pending_approval',
     submittedAt: firebase.firestore.FieldValue.serverTimestamp(),
@@ -445,14 +521,14 @@ async function completeTask(taskId) {
     submittedByName: currentUserData.name
   });
 
-  // Notify admins via Telegram
   if (task) {
-    const adminChatIds = teamMembers
-      .filter(m => m.role === 'admin' && m.telegramChatId && m.id !== currentUser.uid)
+    // Notify creator and admins
+    const notifyIds = teamMembers
+      .filter(m => (m.role === 'admin' || m.id === task.createdBy) && m.telegramChatId && m.id !== currentUser.uid)
       .map(m => m.telegramChatId);
 
-    if (adminChatIds.length > 0) {
-      window.api.notifyAllTelegram(adminChatIds,
+    if (notifyIds.length > 0) {
+      window.api.notifyAllTelegram(notifyIds,
         `*${currentUserData.name}* termino una tarea y espera aprobacion:\n${task.text}\nProyecto: *${task.projectName}*`
       );
     }
@@ -475,7 +551,6 @@ async function approveTask(taskId) {
     approvedByName: currentUserData.name
   });
 
-  // Notify the user who did the task
   if (task) {
     const assignee = teamMembers.find(m => m.id === task.assignedTo);
     if (assignee && assignee.telegramChatId) {
@@ -496,7 +571,6 @@ async function rejectTask(taskId) {
     rejectedByName: currentUserData.name
   });
 
-  // Notify the user who did the task
   if (task) {
     const assignee = teamMembers.find(m => m.id === task.assignedTo);
     if (assignee && assignee.telegramChatId) {
@@ -507,16 +581,49 @@ async function rejectTask(taskId) {
   }
 }
 
+async function editTask(taskId) {
+  const task = tasks.find(t => t.id === taskId);
+  if (!task || !canEdit(task)) return;
+
+  const newText = prompt('Editar tarea:', task.text);
+  if (newText !== null && newText.trim() !== '' && newText.trim() !== task.text) {
+    await db.collection('tasks').doc(taskId).update({ text: newText.trim() });
+  }
+}
+
+async function addNote(taskId) {
+  const noteText = prompt('Agregar nota:');
+  if (!noteText || !noteText.trim()) return;
+
+  const task = tasks.find(t => t.id === taskId);
+  if (!task) return;
+
+  const notes = task.notes || [];
+  notes.push({
+    text: noteText.trim(),
+    authorId: currentUser.uid,
+    authorName: currentUserData.name,
+    createdAt: new Date().toISOString()
+  });
+
+  await db.collection('tasks').doc(taskId).update({ notes: notes });
+}
+
 async function toggleRole(userId, currentRole) {
   const newRole = currentRole === 'admin' ? 'miembro' : 'admin';
   await db.collection('users').doc(userId).update({ role: newRole });
 }
 
+function canEdit(task) {
+  if (!currentUserData) return false;
+  if (currentUserData.role === 'admin') return true;
+  if (task.createdBy === currentUser.uid) return true;
+  return false;
+}
+
 function canDelete(task) {
   if (!currentUserData) return false;
-  // Admin puede eliminar cualquier tarea
   if (currentUserData.role === 'admin') return true;
-  // El creador de la tarea puede eliminarla
   if (task.createdBy === currentUser.uid) return true;
   return false;
 }
@@ -533,7 +640,6 @@ async function deleteProject(projectId) {
 
   if (taskCount > 0 && !confirm(`"${project.name}" tiene ${taskCount} tarea(s). Eliminar todo?`)) return;
 
-  // Delete project and its tasks
   const batch = db.batch();
   batch.delete(db.collection('projects').doc(projectId));
   tasks.filter(t => t.projectId === projectId).forEach(t => {
@@ -599,6 +705,7 @@ function initTelegramHandlers() {
       createdByName: user.name,
       status: 'pending',
       source: 'telegram',
+      notes: [],
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
 
@@ -615,25 +722,17 @@ function initTelegramHandlers() {
     let project = projects.find(p => p.name.toLowerCase() === projectName.toLowerCase());
     if (!project) {
       const ref = await db.collection('projects').add({
-        name: projectName,
-        color: '#45B7D1',
-        createdBy: sender.id,
+        name: projectName, color: '#45B7D1', createdBy: sender.id,
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
       });
       project = { id: ref.id, name: projectName, color: '#45B7D1' };
     }
 
     await db.collection('tasks').add({
-      text: taskText,
-      projectId: project.id,
-      projectName: project.name,
-      projectColor: project.color || '#45B7D1',
-      assignedTo: assignee.id,
-      assignedToName: assignee.name,
-      createdBy: sender.id,
-      createdByName: sender.name,
-      status: 'pending',
-      source: 'telegram',
+      text: taskText, projectId: project.id, projectName: project.name,
+      projectColor: project.color || '#45B7D1', assignedTo: assignee.id,
+      assignedToName: assignee.name, createdBy: sender.id, createdByName: sender.name,
+      status: 'pending', source: 'telegram', notes: [],
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
 
@@ -646,25 +745,16 @@ function initTelegramHandlers() {
   window.api.onTelegramGetMyTasks(async ({ chatId }) => {
     const user = teamMembers.find(m => m.telegramChatId === chatId);
     if (!user) { window.api.sendTelegramMessage(chatId, 'Vincula tu cuenta primero.'); return; }
-
     const myTasks = tasks.filter(t => t.assignedTo === user.id && t.status !== 'completed');
-    if (myTasks.length === 0) {
-      window.api.sendTelegramMessage(chatId, 'No tienes tareas pendientes.');
-      return;
-    }
-
+    if (myTasks.length === 0) { window.api.sendTelegramMessage(chatId, 'No tienes tareas pendientes.'); return; }
     let msg = `*Tus tareas (${myTasks.length}):*\n\n`;
-    myTasks.forEach((t, i) => { msg += `${i + 1}. ${t.text} (${t.projectName})\n`; });
+    myTasks.forEach((t, i) => { msg += `${i + 1}. ${t.text} (${t.projectName}) ${t.status === 'pending_approval' ? '[Esperando aprobacion]' : ''}\n`; });
     window.api.sendTelegramMessage(chatId, msg);
   });
 
   window.api.onTelegramGetAllTasks(async ({ chatId }) => {
     const pending = tasks.filter(t => t.status !== 'completed');
-    if (pending.length === 0) {
-      window.api.sendTelegramMessage(chatId, 'No hay tareas pendientes en el equipo.');
-      return;
-    }
-
+    if (pending.length === 0) { window.api.sendTelegramMessage(chatId, 'No hay tareas pendientes en el equipo.'); return; }
     let msg = `*Todas las tareas (${pending.length}):*\n\n`;
     pending.forEach((t, i) => { msg += `${i + 1}. ${t.text} -> ${t.assignedToName} (${t.projectName})\n`; });
     window.api.sendTelegramMessage(chatId, msg);
@@ -673,32 +763,20 @@ function initTelegramHandlers() {
   window.api.onTelegramCompleteTask(async ({ chatId, taskIndex }) => {
     const user = teamMembers.find(m => m.telegramChatId === chatId);
     if (!user) { window.api.sendTelegramMessage(chatId, 'Vincula tu cuenta primero.'); return; }
-
-    const myTasks = tasks.filter(t => t.assignedTo === user.id && t.status !== 'completed');
+    const myTasks = tasks.filter(t => t.assignedTo === user.id && t.status === 'pending');
     const idx = taskIndex - 1;
-
-    if (idx < 0 || idx >= myTasks.length) {
-      window.api.sendTelegramMessage(chatId, 'Numero de tarea no valido. Usa /tareas para ver la lista.');
-      return;
-    }
-
+    if (idx < 0 || idx >= myTasks.length) { window.api.sendTelegramMessage(chatId, 'Numero de tarea no valido.'); return; }
     const task = myTasks[idx];
     await db.collection('tasks').doc(task.id).update({
-      status: 'completed',
-      completedAt: firebase.firestore.FieldValue.serverTimestamp(),
-      completedBy: user.id,
-      completedByName: user.name
+      status: 'pending_approval',
+      submittedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      submittedBy: user.id, submittedByName: user.name
     });
-
-    window.api.sendTelegramMessage(chatId, `Tarea completada: *${task.text}*`);
+    window.api.sendTelegramMessage(chatId, `Tarea enviada para aprobacion: *${task.text}*`);
   });
 
   window.api.onTelegramGetProjects(async ({ chatId }) => {
-    if (projects.length === 0) {
-      window.api.sendTelegramMessage(chatId, 'No hay proyectos.');
-      return;
-    }
-
+    if (projects.length === 0) { window.api.sendTelegramMessage(chatId, 'No hay proyectos.'); return; }
     let msg = '*Proyectos:*\n\n';
     projects.forEach(p => {
       const count = tasks.filter(t => t.projectId === p.id && t.status !== 'completed').length;
@@ -708,16 +786,11 @@ function initTelegramHandlers() {
   });
 
   window.api.onTelegramGetTeam(async ({ chatId }) => {
-    if (teamMembers.length === 0) {
-      window.api.sendTelegramMessage(chatId, 'No hay miembros.');
-      return;
-    }
-
+    if (teamMembers.length === 0) { window.api.sendTelegramMessage(chatId, 'No hay miembros.'); return; }
     let msg = '*Equipo:*\n\n';
     teamMembers.forEach(m => {
-      const pending = tasks.filter(t => t.assignedTo === m.id && t.status !== 'completed').length;
-      const tg = m.telegramChatId ? 'vinculado' : 'sin vincular';
-      msg += `*${m.name}* (${m.email}) - ${pending} tareas - TG: ${tg}\n`;
+      const p = tasks.filter(t => t.assignedTo === m.id && t.status !== 'completed').length;
+      msg += `*${m.name}* (${m.email}) - ${p} tareas\n`;
     });
     window.api.sendTelegramMessage(chatId, msg);
   });
@@ -726,10 +799,7 @@ function initTelegramHandlers() {
 // ===== TELEGRAM SETTINGS =====
 async function loadTelegramToken() {
   const token = await window.api.getTelegramToken();
-  if (token) {
-    el.telegramToken.value = token;
-    updateTelegramStatus(true);
-  }
+  if (token) { el.telegramToken.value = token; updateTelegramStatus(true); }
 }
 
 el.saveTelegram.addEventListener('click', async () => {
@@ -750,17 +820,14 @@ function updateTelegramStatus(connected) {
 el.addTaskBtn.addEventListener('click', addTask);
 el.taskInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') addTask(); });
 
-// Tab navigation
 document.querySelectorAll('.nav-tab').forEach(tab => {
   tab.addEventListener('click', () => {
     document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
     tab.classList.add('active');
     currentTab = tab.dataset.tab;
-
     document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
     const tabContent = document.getElementById('tab' + capitalize(currentTab));
     if (tabContent) tabContent.classList.add('active');
-
     const showInput = (currentTab === 'main' || currentTab === 'my-tasks');
     el.inputArea.style.display = showInput ? 'block' : 'none';
   });
@@ -770,16 +837,13 @@ function capitalize(str) {
   return str.split('-').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join('');
 }
 
-// Project modal
 function showProjectModal() {
   el.projectModal.classList.add('active');
   el.projectNameInput.value = '';
   setTimeout(() => el.projectNameInput.focus(), 100);
 }
 
-function hideProjectModal() {
-  el.projectModal.classList.remove('active');
-}
+function hideProjectModal() { el.projectModal.classList.remove('active'); }
 
 el.newProjectBtn.addEventListener('click', showProjectModal);
 el.quickProjectBtn.addEventListener('click', showProjectModal);
@@ -788,17 +852,14 @@ el.cancelProject.addEventListener('click', hideProjectModal);
 el.projectNameInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') createProject(); });
 el.projectModal.addEventListener('click', (e) => { if (e.target === el.projectModal) hideProjectModal(); });
 
-// Clear completed
 el.clearAllCompleted.addEventListener('click', async () => {
   const completed = tasks.filter(t => t.status === 'completed');
   if (completed.length === 0) return;
-
   const batch = db.batch();
   completed.forEach(t => batch.delete(db.collection('tasks').doc(t.id)));
   await batch.commit();
 });
 
-// Window controls
 el.btnPin.addEventListener('click', async () => {
   alwaysOnTop = await window.api.toggleAlwaysOnTop();
   el.btnPin.classList.toggle('unpinned', !alwaysOnTop);
@@ -808,13 +869,11 @@ el.btnPin.addEventListener('click', async () => {
 el.btnMinimize.addEventListener('click', () => window.api.minimizeWindow());
 el.btnClose.addEventListener('click', () => window.api.closeWindow());
 
-// Init pin state
 window.api.getAlwaysOnTop().then(v => {
   alwaysOnTop = v;
   el.btnPin.classList.toggle('unpinned', !v);
 });
 
-// Escape closes modal
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideProjectModal(); });
 
 // ===== AUTO UPDATE =====
@@ -823,7 +882,6 @@ const updateText = document.getElementById('updateText');
 
 window.api.onUpdateStatus(({ status, version, percent }) => {
   updateBanner.style.display = 'block';
-
   if (status === 'downloading') {
     updateText.textContent = `Descargando v${version}...`;
     updateBanner.style.background = '#ffd93d';
@@ -839,7 +897,6 @@ window.api.onUpdateStatus(({ status, version, percent }) => {
   }
 });
 
-// Show version in settings
 window.api.getAppVersion().then(v => {
   const versionEl = document.querySelector('.settings-panel');
   if (versionEl) {
