@@ -768,6 +768,9 @@
       <div class="nav-tab" data-tab="calendar">
         &#128197; Calendario
       </div>
+      <div class="nav-tab" data-tab="new">
+        &#10133; Nueva
+      </div>
       <div class="nav-tab" data-tab="approval">
         &#128270; Por Aprobar
         <span class="tab-badge" id="approvalBadge">0</span>
@@ -847,6 +850,39 @@
         </div>
       </div>
 
+      <!-- Nueva (formulario) -->
+      <div class="tab-content" id="tabNew">
+        <div style="padding:12px">
+          <div style="display:flex;gap:6px;margin-bottom:14px">
+            <button class="btn btn-ghost btn-small new-mode-btn active" data-mode="team" style="flex:1">&#128101; Tarea de equipo</button>
+            <button class="btn btn-ghost btn-small new-mode-btn" data-mode="personal" style="flex:1">&#128246; Tarea personal</button>
+          </div>
+          <div class="input-area" id="inputArea" style="border-top:none;border-radius:8px">
+            <div class="input-row">
+              <select id="projectSelect">
+                <option value="">Proyecto...</option>
+              </select>
+              <select id="assignSelect">
+                <option value="">Asignar a...</option>
+              </select>
+              <button class="btn btn-ghost btn-small" id="quickProjectBtn" title="Nuevo proyecto">+</button>
+            </div>
+            <div class="input-row" style="justify-content:flex-end">
+              <button class="btn btn-ghost btn-small" id="chainBtn" title="Crear cadena de tareas para varios miembros en secuencia" style="white-space:nowrap">🔗 Crear cadena de tareas</button>
+            </div>
+            <div class="input-row">
+              <input type="text" id="taskInput" placeholder="Escribe la tarea..." style="flex:2">
+              <input type="number" id="durationInput" placeholder="Tiempo" min="1" style="flex:1;max-width:70px">
+              <select id="durationUnit" style="flex:0;min-width:85px;max-width:95px">
+                <option value="days" selected>Dias</option>
+                <option value="hours">Horas</option>
+              </select>
+              <button class="btn btn-primary" id="addTaskBtn">Agregar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Settings -->
       <div class="tab-content" id="tabSettings">
         <div class="settings-panel">
@@ -917,28 +953,12 @@
       </div>
     </div>
 
-    <!-- Input Area -->
-    <div class="input-area" id="inputArea">
-      <div class="input-row">
-        <select id="projectSelect">
-          <option value="">Proyecto...</option>
-        </select>
-        <select id="assignSelect">
-          <option value="">Asignar a...</option>
-        </select>
-        <button class="btn btn-ghost btn-small" id="quickProjectBtn" title="Nuevo proyecto">+</button>
-      </div>
-      <div class="input-row" style="justify-content:flex-end">
-        <button class="btn btn-ghost btn-small" id="chainBtn" title="Crear cadena de tareas para varios miembros en secuencia" style="white-space:nowrap">🔗 Crear cadena de tareas</button>
-      </div>
-      <div class="input-row">
-        <input type="text" id="taskInput" placeholder="Escribe una nueva tarea..." style="flex:2">
-        <input type="number" id="durationInput" placeholder="Tiempo" min="1" style="flex:1;max-width:70px">
-        <select id="durationUnit" style="flex:0;min-width:85px;max-width:95px">
-          <option value="days" selected>Dias</option>
-          <option value="hours">Horas</option>
-        </select>
-        <button class="btn btn-primary" id="addTaskBtn">Agregar</button>
+    <!-- AI footer -->
+    <div class="ai-footer">
+      <div id="aiResult" style="display:none;padding:8px 12px;margin:6px 12px 0;background:var(--bg-card);border-radius:6px;font-size:12px;line-height:1.5;white-space:pre-wrap"></div>
+      <div style="display:flex;gap:6px;padding:10px 12px">
+        <input type="text" id="aiInput" placeholder="Pidele a Claude: 'asigna a juan...', 'crea cadena...', 'nueva tarea personal...'" style="flex:1">
+        <button class="btn btn-primary btn-small" id="aiSendBtn">Enviar</button>
       </div>
     </div>
   </div>

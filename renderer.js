@@ -1595,7 +1595,7 @@ function updateClaudeStatus(label) {
 
 // ===== UI EVENTS =====
 function handleAddClick() {
-  if (currentTab === 'personal') addPersonalTask();
+  if (currentNewMode === 'personal') addPersonalTask();
   else addTask();
 }
 el.addTaskBtn.addEventListener('click', handleAddClick);
@@ -1735,19 +1735,31 @@ document.querySelectorAll('.nav-tab').forEach(tab => {
     document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
     const tabContent = document.getElementById('tab' + capitalize(currentTab));
     if (tabContent) tabContent.classList.add('active');
-    const showInput = (currentTab === 'main' || currentTab === 'my-tasks' || currentTab === 'personal');
-    el.inputArea.style.display = showInput ? 'block' : 'none';
     if (currentTab === 'calendar') renderCalendar();
-
-    const isPersonal = currentTab === 'personal';
-    const projectRow = el.projectSelect.closest('.input-row');
-    const chainBtn = document.getElementById('chainBtn');
-    const chainRow = chainBtn ? chainBtn.closest('.input-row') : null;
-    if (projectRow) projectRow.style.display = isPersonal ? 'none' : 'flex';
-    if (chainRow) chainRow.style.display = isPersonal ? 'none' : 'flex';
-    el.taskInput.placeholder = isPersonal ? 'Nueva tarea personal (solo tu la veras)...' : 'Escribe una nueva tarea...';
   });
 });
+
+// Nueva tab: toggle Equipo/Personal
+let currentNewMode = 'team';
+function applyNewMode(mode) {
+  currentNewMode = mode;
+  const projectRow = el.projectSelect.closest('.input-row');
+  const chainBtn = document.getElementById('chainBtn');
+  const chainRow = chainBtn ? chainBtn.closest('.input-row') : null;
+  const isPersonal = mode === 'personal';
+  if (projectRow) projectRow.style.display = isPersonal ? 'none' : 'flex';
+  if (chainRow) chainRow.style.display = isPersonal ? 'none' : 'flex';
+  el.taskInput.placeholder = isPersonal ? 'Nueva tarea personal (solo tu la veras)...' : 'Escribe la tarea...';
+  document.querySelectorAll('.new-mode-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.mode === mode);
+    b.style.background = b.dataset.mode === mode ? 'var(--accent)' : '';
+    b.style.color = b.dataset.mode === mode ? 'white' : '';
+  });
+}
+document.querySelectorAll('.new-mode-btn').forEach(btn => {
+  btn.addEventListener('click', () => applyNewMode(btn.dataset.mode));
+});
+applyNewMode('team');
 
 function capitalize(str) {
   return str.split('-').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join('');
@@ -1851,3 +1863,242 @@ function formatDate(timestamp) {
   const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
   return date.toLocaleDateString('es', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
+
+// ===== AI DISPATCH (IN-APP AGENT) =====
+async function aiCreateTask({ projectName, taskText }) {
+  let project = projects.find(p => p.name.toLowerCase() === projectName.toLowerCase());
+  if (!project) {
+    const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7'];
+    const ref = await db.collection('projects').add({
+      name: projectName,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      createdBy: currentUser.uid,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    project = { id: ref.id, name: projectName, color: '#4ECDC4' };
+  }
+  await db.collection('tasks').add({
+    text: taskText,
+    projectId: project.id,
+    projectName: project.name,
+    projectColor: project.color || '#4ECDC4',
+    assignedTo: currentUser.uid,
+    assignedToName: currentUserData.name,
+    createdBy: currentUser.uid,
+    createdByName: currentUserData.name,
+    status: 'pending',
+    source: 'ai',
+    notes: [],
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  return `✓ Tarea creada en ${project.name}: ${taskText}`;
+}
+
+async function aiAssignTaskInternal({ projectName, taskText, assignToEmail, dependsOnTaskId, dependsOnTaskText, dependsOnAssigneeName }) {
+  const assignee = teamMembers.find(m => m.email === assignToEmail);
+  if (!assignee) return { success: false, message: `Usuario ${assignToEmail} no esta en el equipo.` };
+
+  let project = projects.find(p => p.name.toLowerCase() === projectName.toLowerCase());
+  if (!project) {
+    const ref = await db.collection('projects').add({
+      name: projectName, color: '#45B7D1', createdBy: currentUser.uid,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    project = { id: ref.id, name: projectName, color: '#45B7D1' };
+  }
+
+  const taskData = {
+    text: taskText, projectId: project.id, projectName: project.name,
+    projectColor: project.color || '#45B7D1', assignedTo: assignee.id,
+    assignedToName: assignee.name, createdBy: currentUser.uid, createdByName: currentUserData.name,
+    status: 'pending', source: 'ai', notes: [],
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  };
+  if (dependsOnTaskId) {
+    taskData.dependsOn = dependsOnTaskId;
+    taskData.dependsOnText = dependsOnTaskText || '';
+    taskData.dependsOnAssigneeName = dependsOnAssigneeName || '';
+  }
+  const ref = await db.collection('tasks').add(taskData);
+
+  if (assignee.telegramChatId && assignee.id !== currentUser.uid) {
+    const depMsg = dependsOnTaskId ? `\nEn espera de *${dependsOnAssigneeName || 'otro'}*: ${dependsOnTaskText || ''}` : '';
+    window.api.sendTelegramMessage(assignee.telegramChatId,
+      `*${currentUserData.name}* te asigno una tarea:\n${taskText}\nProyecto: *${project.name}*${depMsg}`);
+  }
+  return { success: true, taskId: ref.id, assigneeName: assignee.name, projectName: project.name };
+}
+
+async function aiAssignTask(input) {
+  const r = await aiAssignTaskInternal(input);
+  if (!r.success) return `✗ ${r.message}`;
+  return `✓ Tarea asignada a ${r.assigneeName} en ${r.projectName}: ${input.taskText}`;
+}
+
+async function aiAssignChain({ projectName, steps }) {
+  if (!Array.isArray(steps) || steps.length < 2) return '✗ Una cadena necesita al menos 2 pasos.';
+  let prev = { id: null, text: null, name: null };
+  const created = [];
+  for (const s of steps) {
+    const r = await aiAssignTaskInternal({
+      projectName, taskText: s.task_text, assignToEmail: s.assign_to_email,
+      dependsOnTaskId: prev.id, dependsOnTaskText: prev.text, dependsOnAssigneeName: prev.name
+    });
+    if (!r.success) return `✗ ${r.message}`;
+    prev = { id: r.taskId, text: s.task_text, name: r.assigneeName };
+    created.push(`${created.length + 1}. ${r.assigneeName}: ${s.task_text}`);
+  }
+  return `✓ Cadena creada en ${projectName}:\n${created.join('\n')}`;
+}
+
+async function aiCreatePersonalTask({ task_text }) {
+  await db.collection('personalTasks').add({
+    text: task_text,
+    ownerId: currentUser.uid,
+    ownerName: currentUserData.name,
+    status: 'pending',
+    source: 'ai',
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  return `✓ Tarea personal creada: ${task_text}`;
+}
+
+function showAIResult(text, type = 'info') {
+  const out = document.getElementById('aiResult');
+  if (!out) return;
+  out.style.display = 'block';
+  out.textContent = text;
+  out.style.color = type === 'error' ? '#ff6b6b' : type === 'success' ? '#4ecdc4' : 'var(--text-secondary)';
+}
+
+async function aiDispatch(text) {
+  showAIResult('Pensando...', 'info');
+
+  const myTasks = tasks.filter(t => t.assignedTo === currentUser.uid && t.status === 'pending');
+  const myTasksContext = myTasks.length
+    ? myTasks.map((t, i) => `${i + 1}. [${t.projectName}] ${t.text}`).join('\n')
+    : '(ninguna)';
+
+  const systemPrompt = `Eres un asistente de gestion de tareas en una app de equipo. Interpreta el mensaje del usuario y ejecuta la accion correcta usando las tools.
+
+Usuario actual: ${currentUserData.name} (${currentUserData.email})
+
+Proyectos existentes: ${projects.map(p => p.name).join(', ') || '(ninguno)'}
+
+Miembros del equipo:
+${teamMembers.map(m => `- ${m.name} (${m.email})`).join('\n')}
+
+Reglas:
+- Menciona alguien por nombre => busca su email exacto de la lista
+- Proyecto => nombre exacto de la lista. Si no existe pero quiere crearlo, inventa uno coherente.
+- Tarea para yo/mi/mi cuenta => add_task (asignada al usuario actual)
+- Tarea personal/privada/para mi sola => add_personal_task
+- Tarea para otro miembro => assign_task
+- 2 o mas tareas en secuencia ("primero A, despues B") => assign_chain_tasks
+- Saludos, preguntas, cosas que no son acciones => reply_message`;
+
+  const tools = [
+    {
+      name: 'add_task',
+      description: 'Crear tarea del equipo asignada al usuario actual',
+      input_schema: {
+        type: 'object',
+        properties: { project_name: { type: 'string' }, task_text: { type: 'string' } },
+        required: ['project_name', 'task_text']
+      }
+    },
+    {
+      name: 'assign_task',
+      description: 'Crear tarea y asignarla a otro miembro',
+      input_schema: {
+        type: 'object',
+        properties: { project_name: { type: 'string' }, task_text: { type: 'string' }, assign_to_email: { type: 'string' } },
+        required: ['project_name', 'task_text', 'assign_to_email']
+      }
+    },
+    {
+      name: 'assign_chain_tasks',
+      description: 'Crear cadena de tareas en secuencia (una empieza cuando la anterior termina)',
+      input_schema: {
+        type: 'object',
+        properties: {
+          project_name: { type: 'string' },
+          steps: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: { assign_to_email: { type: 'string' }, task_text: { type: 'string' } },
+              required: ['assign_to_email', 'task_text']
+            }
+          }
+        },
+        required: ['project_name', 'steps']
+      }
+    },
+    {
+      name: 'add_personal_task',
+      description: 'Crear tarea personal privada (solo la ve el usuario actual)',
+      input_schema: {
+        type: 'object',
+        properties: { task_text: { type: 'string' } },
+        required: ['task_text']
+      }
+    },
+    {
+      name: 'reply_message',
+      description: 'Responder con un mensaje de texto cuando no aplica ninguna otra accion',
+      input_schema: {
+        type: 'object',
+        properties: { text: { type: 'string' } },
+        required: ['text']
+      }
+    }
+  ];
+
+  const result = await window.api.callClaude({ systemPrompt, userMessage: text, tools });
+  if (result.error) {
+    const msg = result.error === 'no-api-key'
+      ? 'La IA no esta configurada. Ve a Config → Claude AI y pega tu API key.'
+      : `Error: ${result.error}`;
+    showAIResult(msg, 'error');
+    return;
+  }
+
+  const input = result.input || {};
+  try {
+    let msg;
+    switch (result.tool) {
+      case 'add_task':
+        msg = await aiCreateTask({ projectName: input.project_name, taskText: input.task_text });
+        break;
+      case 'assign_task':
+        msg = await aiAssignTask({ projectName: input.project_name, taskText: input.task_text, assignToEmail: input.assign_to_email });
+        break;
+      case 'assign_chain_tasks':
+        msg = await aiAssignChain({ projectName: input.project_name, steps: input.steps || [] });
+        break;
+      case 'add_personal_task':
+        msg = await aiCreatePersonalTask({ task_text: input.task_text });
+        break;
+      case 'reply_message':
+        msg = input.text || 'Listo.';
+        break;
+      default:
+        msg = 'No entendi la accion.';
+    }
+    showAIResult(msg, msg.startsWith('✗') ? 'error' : 'success');
+  } catch (e) {
+    showAIResult('Error: ' + e.message, 'error');
+  }
+}
+
+const aiInputEl = document.getElementById('aiInput');
+const aiSendEl = document.getElementById('aiSendBtn');
+async function handleAISend() {
+  const txt = aiInputEl.value.trim();
+  if (!txt) return;
+  aiInputEl.value = '';
+  await aiDispatch(txt);
+}
+if (aiSendEl) aiSendEl.addEventListener('click', handleAISend);
+if (aiInputEl) aiInputEl.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleAISend(); });
