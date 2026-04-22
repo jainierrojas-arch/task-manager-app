@@ -790,6 +790,7 @@
         <select id="dependsOnSelect" style="flex:1">
           <option value="">Depende de... (opcional)</option>
         </select>
+        <button class="btn btn-ghost btn-small" id="chainBtn" title="Crear cadena de tareas para varios miembros en secuencia" style="white-space:nowrap">🔗 Cadena</button>
       </div>
       <div class="input-row">
         <input type="text" id="taskInput" placeholder="Escribe una nueva tarea..." style="flex:2">
@@ -831,6 +832,25 @@
       <div class="modal-buttons">
         <button class="btn btn-ghost" id="cancelNote">Cancelar</button>
         <button class="btn btn-primary" id="confirmNote">Agregar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Chain (multi-step) Modal -->
+  <div class="modal-overlay" id="chainModal">
+    <div class="modal" style="min-width:480px;max-width:620px">
+      <div class="modal-title">Crear cadena de tareas</div>
+      <div style="font-size:12px;color:var(--text-dim);margin-bottom:12px;line-height:1.5">
+        Agrega los pasos en el orden en que deben completarse. Cada miembro recibe aviso automatico cuando llega su turno.
+      </div>
+      <select id="chainProjectSelect" style="margin-bottom:12px">
+        <option value="">Elige proyecto...</option>
+      </select>
+      <div id="chainSteps"></div>
+      <button class="btn btn-ghost btn-small" id="addChainStep" style="width:100%;margin-bottom:12px">+ Agregar paso</button>
+      <div class="modal-buttons">
+        <button class="btn btn-ghost" id="cancelChain">Cancelar</button>
+        <button class="btn btn-primary" id="confirmChain">Crear cadena</button>
       </div>
     </div>
   </div>

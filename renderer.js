@@ -1209,6 +1209,132 @@ el.addTaskBtn.addEventListener('click', addTask);
 el.taskInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') addTask(); });
 el.projectSelect.addEventListener('change', renderDependsOnSelect);
 
+// ===== CHAIN (multi-step) MODAL =====
+const chainModal = document.getElementById('chainModal');
+const chainStepsContainer = document.getElementById('chainSteps');
+const chainProjectSelect = document.getElementById('chainProjectSelect');
+
+document.getElementById('chainBtn').addEventListener('click', openChainModal);
+document.getElementById('addChainStep').addEventListener('click', () => addChainStepRow());
+document.getElementById('cancelChain').addEventListener('click', closeChainModal);
+document.getElementById('confirmChain').addEventListener('click', confirmChain);
+chainModal.addEventListener('click', (e) => { if (e.target === chainModal) closeChainModal(); });
+
+function openChainModal() {
+  chainProjectSelect.innerHTML = '<option value="">Elige proyecto...</option>';
+  projects.forEach(p => {
+    const o = document.createElement('option');
+    o.value = p.id; o.textContent = p.name;
+    chainProjectSelect.appendChild(o);
+  });
+  if (el.projectSelect.value) chainProjectSelect.value = el.projectSelect.value;
+  chainStepsContainer.innerHTML = '';
+  addChainStepRow();
+  addChainStepRow();
+  chainModal.classList.add('active');
+}
+
+function closeChainModal() {
+  chainModal.classList.remove('active');
+  chainStepsContainer.innerHTML = '';
+}
+
+function addChainStepRow() {
+  const row = document.createElement('div');
+  row.className = 'chain-step-row';
+  row.style.cssText = 'display:flex;gap:8px;margin-bottom:8px;align-items:center';
+  const optionsHtml = teamMembers.map(m => `<option value="${m.id}">${esc(m.name)}${m.id === currentUser.uid ? ' (yo)' : ''}</option>`).join('');
+  row.innerHTML = `
+    <span class="chain-step-num" style="min-width:22px;color:var(--text-dim);font-size:12px;font-weight:600">1.</span>
+    <input type="text" class="chain-step-text" placeholder="Descripcion del paso" style="flex:2;margin:0">
+    <select class="chain-step-user" style="flex:1;margin:0">
+      <option value="">Asignar a...</option>
+      ${optionsHtml}
+    </select>
+    <button class="btn btn-ghost btn-small chain-step-remove" title="Quitar paso" style="color:var(--danger);padding:4px 8px">&times;</button>
+  `;
+  row.querySelector('.chain-step-remove').addEventListener('click', () => {
+    row.remove();
+    renumberChainSteps();
+  });
+  chainStepsContainer.appendChild(row);
+  renumberChainSteps();
+}
+
+function renumberChainSteps() {
+  Array.from(chainStepsContainer.children).forEach((row, i) => {
+    const span = row.querySelector('.chain-step-num');
+    if (span) span.textContent = (i + 1) + '.';
+  });
+}
+
+async function confirmChain() {
+  const projectId = chainProjectSelect.value;
+  if (!projectId) {
+    chainProjectSelect.style.borderColor = 'var(--danger)';
+    setTimeout(() => chainProjectSelect.style.borderColor = '', 1500);
+    return;
+  }
+  const project = projects.find(p => p.id === projectId);
+
+  const rows = Array.from(chainStepsContainer.children);
+  const steps = [];
+  for (const row of rows) {
+    const text = row.querySelector('.chain-step-text').value.trim();
+    const userId = row.querySelector('.chain-step-user').value;
+    if (!text || !userId) continue;
+    steps.push({ text, userId });
+  }
+  if (steps.length < 2) {
+    alert('Agrega al menos 2 pasos con texto y miembro asignado.');
+    return;
+  }
+
+  let previousTaskId = null;
+  let previousText = null;
+  let previousAssigneeName = null;
+
+  for (const step of steps) {
+    const assignee = teamMembers.find(m => m.id === step.userId);
+    if (!assignee) continue;
+
+    const taskData = {
+      text: step.text,
+      projectId: project.id,
+      projectName: project.name,
+      projectColor: project.color || '#666',
+      assignedTo: assignee.id,
+      assignedToName: assignee.name,
+      createdBy: currentUser.uid,
+      createdByName: currentUserData.name,
+      status: 'pending',
+      source: 'app',
+      notes: [],
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
+    if (previousTaskId) {
+      taskData.dependsOn = previousTaskId;
+      taskData.dependsOnText = previousText;
+      taskData.dependsOnAssigneeName = previousAssigneeName;
+    }
+
+    const ref = await db.collection('tasks').add(taskData);
+
+    if (assignee.telegramChatId && assignee.id !== currentUser.uid) {
+      const depMsg = previousText ? `\nEn espera de *${previousAssigneeName}*: ${previousText}` : '';
+      window.api.sendTelegramMessage(assignee.telegramChatId,
+        `Nueva tarea en cadena (*${currentUserData.name}*):\n${step.text}\nProyecto: *${project.name}*${depMsg}`
+      );
+    }
+
+    previousTaskId = ref.id;
+    previousText = step.text;
+    previousAssigneeName = assignee.name;
+  }
+
+  closeChainModal();
+}
+
 document.querySelectorAll('.nav-tab').forEach(tab => {
   tab.addEventListener('click', () => {
     document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
