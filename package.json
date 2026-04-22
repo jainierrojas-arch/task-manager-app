@@ -1,6 +1,6 @@
 {
   "name": "task-manager-app",
-  "version": "2.3.0",
+  "version": "2.3.1",
   "description": "App colaborativa de gestion de tareas con Firebase y Telegram",
   "main": "main.js",
   "scripts": {
@@ -28,7 +28,7 @@
       "repo": "task-manager-app"
     },
     "mac": {
-      "target": "dmg",
+      "target": ["dmg", "zip"],
       "icon": "icon.icns",
       "category": "public.app-category.productivity"
     },
