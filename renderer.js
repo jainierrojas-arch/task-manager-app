@@ -276,11 +276,15 @@ function renderCalendarDayList() {
   if (!calSelectedDate) { container.innerHTML = ''; return; }
   const date = new Date(calSelectedDate);
   const { all } = tasksOnDate(date);
+  const header = `<div style="padding:8px 12px;font-weight:600;font-size:13px;text-transform:capitalize;display:flex;justify-content:space-between;align-items:center;gap:8px">
+    <span>${date.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}</span>
+    <button class="btn btn-primary btn-small" onclick="openCalTaskModal('${calSelectedDate}')" style="white-space:nowrap">+ Nueva</button>
+  </div>`;
   if (all.length === 0) {
-    container.innerHTML = `<div class="empty-state"><div class="empty-state-text" style="font-size:12px">Sin tareas para este dia</div></div>`;
+    container.innerHTML = header + `<div class="empty-state"><div class="empty-state-text" style="font-size:12px">Sin tareas para este dia</div></div>`;
     return;
   }
-  let html = `<div style="padding:8px 12px;font-weight:600;font-size:13px;text-transform:capitalize">${date.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}</div>`;
+  let html = header;
   all.forEach(t => {
     const isPersonal = !t.projectName;
     const color = isPersonal ? '#BB8FCE' : (t.projectColor || '#666');
@@ -2102,3 +2106,112 @@ async function handleAISend() {
 }
 if (aiSendEl) aiSendEl.addEventListener('click', handleAISend);
 if (aiInputEl) aiInputEl.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleAISend(); });
+
+// ===== CALENDAR TASK MODAL =====
+let calTaskSelectedDate = null;
+let calTaskCurrentMode = 'team';
+
+function openCalTaskModal(dateStr) {
+  calTaskSelectedDate = dateStr;
+  const modal = document.getElementById('calendarTaskModal');
+  const d = new Date(dateStr);
+  document.getElementById('calendarTaskDate').textContent = d.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
+
+  const projSel = document.getElementById('calTaskProject');
+  projSel.innerHTML = '<option value="">Proyecto...</option>';
+  projects.forEach(p => {
+    const o = document.createElement('option');
+    o.value = p.id; o.textContent = p.name;
+    projSel.appendChild(o);
+  });
+  const assnSel = document.getElementById('calTaskAssign');
+  assnSel.innerHTML = '<option value="">Asignar a...</option>';
+  teamMembers.forEach(m => {
+    const o = document.createElement('option');
+    o.value = m.id;
+    o.textContent = m.name + (m.id === currentUser.uid ? ' (yo)' : '');
+    assnSel.appendChild(o);
+  });
+  document.getElementById('calTaskInput').value = '';
+  applyCalTaskMode('team');
+  modal.classList.add('active');
+  setTimeout(() => document.getElementById('calTaskInput').focus(), 100);
+}
+window.openCalTaskModal = openCalTaskModal;
+
+function applyCalTaskMode(mode) {
+  calTaskCurrentMode = mode;
+  document.querySelectorAll('.cal-task-mode-btn').forEach(b => {
+    const active = b.dataset.mode === mode;
+    b.classList.toggle('active', active);
+    b.style.background = active ? 'var(--accent)' : '';
+    b.style.color = active ? 'white' : '';
+  });
+  document.getElementById('calTaskTeamFields').style.display = mode === 'personal' ? 'none' : 'block';
+}
+
+document.querySelectorAll('.cal-task-mode-btn').forEach(b => {
+  b.addEventListener('click', () => applyCalTaskMode(b.dataset.mode));
+});
+
+document.getElementById('calTaskCancel').addEventListener('click', () => {
+  document.getElementById('calendarTaskModal').classList.remove('active');
+});
+document.getElementById('calendarTaskModal').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('calendarTaskModal')) {
+    document.getElementById('calendarTaskModal').classList.remove('active');
+  }
+});
+document.getElementById('calTaskInput').addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') document.getElementById('calTaskConfirm').click();
+});
+
+document.getElementById('calTaskConfirm').addEventListener('click', async () => {
+  const text = document.getElementById('calTaskInput').value.trim();
+  if (!text || !calTaskSelectedDate) return;
+
+  const deadline = new Date(calTaskSelectedDate);
+  deadline.setHours(23, 59, 0, 0);
+
+  if (calTaskCurrentMode === 'personal') {
+    await db.collection('personalTasks').add({
+      text,
+      ownerId: currentUser.uid,
+      ownerName: currentUserData.name,
+      status: 'pending',
+      source: 'calendar',
+      deadline: firebase.firestore.Timestamp.fromDate(deadline),
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  } else {
+    const projectId = document.getElementById('calTaskProject').value;
+    if (!projectId) {
+      document.getElementById('calTaskProject').style.borderColor = 'var(--danger)';
+      setTimeout(() => document.getElementById('calTaskProject').style.borderColor = '', 1500);
+      return;
+    }
+    const assignTo = document.getElementById('calTaskAssign').value;
+    const project = projects.find(p => p.id === projectId);
+    const assignee = teamMembers.find(m => m.id === assignTo);
+    await db.collection('tasks').add({
+      text,
+      projectId: project.id,
+      projectName: project.name,
+      projectColor: project.color || '#666',
+      assignedTo: assignTo || currentUser.uid,
+      assignedToName: assignee ? assignee.name : currentUserData.name,
+      createdBy: currentUser.uid,
+      createdByName: currentUserData.name,
+      status: 'pending',
+      source: 'calendar',
+      notes: [],
+      deadline: firebase.firestore.Timestamp.fromDate(deadline),
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    if (assignee && assignee.telegramChatId && assignTo !== currentUser.uid) {
+      window.api.sendTelegramMessage(assignee.telegramChatId,
+        `Nueva tarea asignada por *${currentUserData.name}* para *${deadline.toLocaleDateString('es-ES', { day: 'numeric', month: 'long' })}*:\n${text}\nProyecto: *${project.name}*`);
+    }
+  }
+  document.getElementById('calendarTaskModal').classList.remove('active');
+});

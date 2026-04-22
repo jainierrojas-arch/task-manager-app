@@ -999,6 +999,30 @@
     </div>
   </div>
 
+  <!-- Calendar Task Modal -->
+  <div class="modal-overlay" id="calendarTaskModal">
+    <div class="modal" style="max-width:520px">
+      <div class="modal-title">Nueva tarea para <span id="calendarTaskDate" style="color:var(--accent)"></span></div>
+      <div style="display:flex;gap:6px;margin-bottom:12px">
+        <button class="btn btn-ghost btn-small cal-task-mode-btn active" data-mode="team" style="flex:1">&#128101; Equipo</button>
+        <button class="btn btn-ghost btn-small cal-task-mode-btn" data-mode="personal" style="flex:1">&#128246; Personal</button>
+      </div>
+      <div id="calTaskTeamFields">
+        <select id="calTaskProject" style="margin-bottom:8px">
+          <option value="">Proyecto...</option>
+        </select>
+        <select id="calTaskAssign" style="margin-bottom:8px">
+          <option value="">Asignar a...</option>
+        </select>
+      </div>
+      <input type="text" id="calTaskInput" placeholder="Descripcion de la tarea" style="margin-bottom:12px">
+      <div class="modal-buttons">
+        <button class="btn btn-ghost" id="calTaskCancel">Cancelar</button>
+        <button class="btn btn-primary" id="calTaskConfirm">Crear</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Link Modal -->
   <div class="modal-overlay" id="linkModal">
     <div class="modal">
