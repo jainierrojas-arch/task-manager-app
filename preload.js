@@ -35,6 +35,9 @@ contextBridge.exposeInMainWorld('api', {
   getReminderInterval: () => ipcRenderer.invoke('get-reminder-interval'),
   setReminderInterval: (minutes) => ipcRenderer.invoke('set-reminder-interval', minutes),
 
+  // External links
+  openExternal: (url) => ipcRenderer.invoke('open-external', url),
+
   // Auto-update
   onUpdateStatus: (callback) => ipcRenderer.on('update-status', (_, data) => callback(data)),
   installUpdate: () => ipcRenderer.invoke('install-update'),

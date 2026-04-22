@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { autoUpdater } = require('electron-updater');
@@ -282,6 +282,13 @@ function registerIpcHandlers() {
   ipcMain.handle('get-reminder-interval', () => store.get('reminderIntervalMinutes') || 0);
   ipcMain.handle('set-reminder-interval', (_, minutes) => {
     store.set('reminderIntervalMinutes', Number(minutes) || 0);
+    return true;
+  });
+
+  ipcMain.handle('open-external', (_, url) => {
+    if (typeof url !== 'string') return false;
+    if (!/^https?:\/\//i.test(url)) return false;
+    shell.openExternal(url);
     return true;
   });
 

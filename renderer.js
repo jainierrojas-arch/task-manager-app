@@ -310,6 +310,13 @@ function renderPersonalList() {
 
     const checkClass = completed ? 'task-check checked' : 'task-check';
     const onClick = completed ? '' : `onclick="completePersonalTask('${task.id}')"`;
+    let linkBadge = '';
+    if (task.link) {
+      linkBadge = `<span class="task-tag" style="background:rgba(153,102,255,0.2);color:#b794ff;cursor:pointer" onclick="openTaskLink('personalTasks','${task.id}')" title="${esc(task.link)}">🔗 Abrir material</span>`;
+    }
+    const linkBtn = task.link
+      ? `<button class="btn-add-note" onclick="showLinkModal('personalTasks','${task.id}')" title="Editar link">✏️ Link</button>`
+      : `<button class="btn-add-note" onclick="showLinkModal('personalTasks','${task.id}')">🔗 + Link</button>`;
     html += `
       <div class="task-item ${completed ? 'completed' : ''}" style="border-left-color:${color}">
         <div class="${checkClass}" ${onClick} title="${completed ? 'Completada' : 'Marcar como terminada'}"></div>
@@ -317,7 +324,9 @@ function renderPersonalList() {
           <div class="task-text">${esc(task.text)}</div>
           <div class="task-meta">
             ${deadlineBadge}
+            ${linkBadge}
             <span class="task-tag">${time}</span>
+            ${linkBtn}
           </div>
         </div>
         <button class="task-delete" onclick="deletePersonalTask('${task.id}')" title="Eliminar">&#10005;</button>
@@ -366,6 +375,55 @@ async function deletePersonalTask(taskId) {
 
 window.completePersonalTask = completePersonalTask;
 window.deletePersonalTask = deletePersonalTask;
+
+// ===== TASK LINK =====
+const linkModal = document.getElementById('linkModal');
+const linkInput = document.getElementById('linkInput');
+let linkEditing = null; // { collection, taskId }
+
+function openTaskLink(collection, taskId) {
+  const t = (collection === 'personalTasks' ? personalTasks : tasks).find(x => x.id === taskId);
+  if (t && t.link) window.api.openExternal(t.link);
+}
+window.openTaskLink = openTaskLink;
+
+function showLinkModal(collection, taskId) {
+  const doc = (collection === 'personalTasks' ? personalTasks : tasks).find(t => t.id === taskId);
+  linkEditing = { collection, taskId };
+  linkInput.value = doc?.link || '';
+  document.getElementById('removeLink').style.display = doc?.link ? 'inline-block' : 'none';
+  linkModal.classList.add('active');
+  setTimeout(() => linkInput.focus(), 100);
+}
+window.showLinkModal = showLinkModal;
+
+document.getElementById('cancelLink').addEventListener('click', () => {
+  linkModal.classList.remove('active');
+  linkEditing = null;
+});
+linkModal.addEventListener('click', (e) => {
+  if (e.target === linkModal) { linkModal.classList.remove('active'); linkEditing = null; }
+});
+linkInput.addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') document.getElementById('confirmLink').click();
+});
+document.getElementById('confirmLink').addEventListener('click', async () => {
+  if (!linkEditing) return;
+  let url = linkInput.value.trim();
+  if (url && !/^https?:\/\//i.test(url)) url = 'https://' + url;
+  if (!url) return;
+  await db.collection(linkEditing.collection).doc(linkEditing.taskId).update({ link: url });
+  linkModal.classList.remove('active');
+  linkEditing = null;
+});
+document.getElementById('removeLink').addEventListener('click', async () => {
+  if (!linkEditing) return;
+  await db.collection(linkEditing.collection).doc(linkEditing.taskId).update({
+    link: firebase.firestore.FieldValue.delete()
+  });
+  linkModal.classList.remove('active');
+  linkEditing = null;
+});
 
 function getUserColor(userId) {
   const idx = teamMembers.findIndex(m => m.id === userId);
@@ -472,8 +530,21 @@ function renderTaskList(container, taskList, mode) {
 
       // Add note button (assignee, creator, or admin)
       let addNoteBtn = '';
-      if (task.assignedTo === currentUser.uid || task.createdBy === currentUser.uid || isAdmin) {
+      const canAddMeta = task.assignedTo === currentUser.uid || task.createdBy === currentUser.uid || isAdmin;
+      if (canAddMeta) {
         addNoteBtn = `<button class="btn-add-note" onclick="addNote('${task.id}')">+ Nota</button>`;
+      }
+
+      // Link badge + edit
+      let linkBadge = '';
+      if (task.link) {
+        linkBadge = `<span class="task-tag" style="background:rgba(153,102,255,0.2);color:#b794ff;cursor:pointer" onclick="openTaskLink('tasks','${task.id}')" title="${esc(task.link)}">🔗 Abrir material</span>`;
+      }
+      let linkBtn = '';
+      if (canAddMeta) {
+        linkBtn = task.link
+          ? `<button class="btn-add-note" onclick="showLinkModal('tasks','${task.id}')" title="Editar link">✏️ Link</button>`
+          : `<button class="btn-add-note" onclick="showLinkModal('tasks','${task.id}')">🔗 + Link</button>`;
       }
 
       let blockedBadge = '';
@@ -496,9 +567,11 @@ function renderTaskList(container, taskList, mode) {
               ${statusBadge}
               ${deadlineBadge}
               ${blockedBadge}
+              ${linkBadge}
               <span class="task-tag">${source}</span>
               <span class="task-tag">${time}</span>
               ${addNoteBtn}
+              ${linkBtn}
             </div>
             ${notesHtml}
             ${actionButtons}
@@ -791,8 +864,9 @@ async function approveTask(taskId) {
     dependents.forEach(dep => {
       const depAssignee = teamMembers.find(m => m.id === dep.assignedTo);
       if (depAssignee && depAssignee.telegramChatId) {
+        const linkMsg = task.link ? `\n\nMaterial: ${task.link}` : '';
         window.api.sendTelegramMessage(depAssignee.telegramChatId,
-          `*${task.assignedToName || 'Un miembro'}* termino: ${task.text}\n\nYa puedes empezar tu tarea:\n*${dep.text}*\nProyecto: *${dep.projectName}*`
+          `*${task.assignedToName || 'Un miembro'}* termino: ${task.text}\n\nYa puedes empezar tu tarea:\n*${dep.text}*\nProyecto: *${dep.projectName}*${linkMsg}`
         );
       }
     });
