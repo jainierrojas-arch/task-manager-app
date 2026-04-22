@@ -1,6 +1,6 @@
 {
   "name": "task-manager-app",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "App colaborativa de gestion de tareas con Firebase y Telegram",
   "main": "main.js",
   "scripts": {
@@ -46,13 +46,21 @@
     "dmg": {
       "title": "Task Manager",
       "contents": [
-        { "x": 130, "y": 220 },
-        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
       ]
     }
   },
   "dependencies": {
-    "electron-updater": "^6.1.7",
+    "electron-updater": "^6.8.3",
     "node-telegram-bot-api": "^0.66.0"
   },
   "devDependencies": {
