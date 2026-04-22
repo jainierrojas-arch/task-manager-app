@@ -492,6 +492,47 @@
     }
     .project-action-btn:hover { background: var(--bg-primary); color: var(--danger); }
 
+    .approval-buttons {
+      display: flex;
+      gap: 6px;
+      margin-top: 6px;
+    }
+
+    .btn-approve {
+      padding: 3px 10px;
+      font-size: 11px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      background: var(--success);
+      color: #1a1b2e;
+      transition: opacity 0.2s;
+    }
+    .btn-approve:hover { opacity: 0.8; }
+
+    .btn-reject {
+      padding: 3px 10px;
+      font-size: 11px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      background: var(--danger);
+      color: white;
+      transition: opacity 0.2s;
+    }
+    .btn-reject:hover { opacity: 0.8; }
+
+    .status-pending-approval {
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: rgba(255, 217, 61, 0.2);
+      color: var(--warning);
+      font-weight: 600;
+    }
+
     .loading-spinner {
       display: inline-block;
       width: 16px;
@@ -558,6 +599,10 @@
         &#128100; Mis Tareas
         <span class="tab-badge" id="myBadge">0</span>
       </div>
+      <div class="nav-tab" data-tab="approval">
+        &#128270; Por Aprobar
+        <span class="tab-badge" id="approvalBadge">0</span>
+      </div>
       <div class="nav-tab" data-tab="completed">
         &#9989; Hechas
       </div>
@@ -579,6 +624,14 @@
       <!-- My tasks -->
       <div class="tab-content" id="tabMyTasks">
         <div id="myTaskList"></div>
+      </div>
+
+      <!-- Approval -->
+      <div class="tab-content" id="tabApproval">
+        <div class="section-header">
+          <span class="section-title">Tareas por Aprobar</span>
+        </div>
+        <div id="approvalList"></div>
       </div>
 
       <!-- Completed -->

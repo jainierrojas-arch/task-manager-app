@@ -1,6 +1,6 @@
 {
   "name": "task-manager-app",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "App colaborativa de gestion de tareas con Firebase y Telegram",
   "main": "main.js",
   "scripts": {
@@ -34,13 +34,10 @@
     },
     "win": {
       "target": "nsis",
-      "icon": "icon256.png"
+      "icon": "icon.ico"
     },
     "nsis": {
       "oneClick": true,
-      "installerIcon": "icon256.png",
-      "uninstallerIcon": "icon256.png",
-      "installerHeaderIcon": "icon256.png",
       "shortcutName": "Task Manager"
     },
     "dmg": {

@@ -34,6 +34,8 @@ const el = {
   addTaskBtn: document.getElementById('addTaskBtn'),
   mainBadge: document.getElementById('mainBadge'),
   myBadge: document.getElementById('myBadge'),
+  approvalBadge: document.getElementById('approvalBadge'),
+  approvalList: document.getElementById('approvalList'),
   inputArea: document.getElementById('inputArea'),
   telegramToken: document.getElementById('telegramToken'),
   saveTelegram: document.getElementById('saveTelegram'),
@@ -186,28 +188,36 @@ function subscribeToData() {
 
 // ===== RENDER =====
 function renderAll() {
-  const pending = tasks.filter(t => t.status !== 'completed');
+  const pending = tasks.filter(t => t.status === 'pending');
+  const pendingApproval = tasks.filter(t => t.status === 'pending_approval');
   const completed = tasks.filter(t => t.status === 'completed');
   const myTasks = pending.filter(t => t.assignedTo === currentUser.uid);
+  const myPendingApproval = pendingApproval.filter(t => t.assignedTo === currentUser.uid);
 
   el.mainBadge.textContent = pending.length;
-  el.myBadge.textContent = myTasks.length;
+  el.myBadge.textContent = myTasks.length + myPendingApproval.length;
+  el.approvalBadge.textContent = pendingApproval.length;
 
-  renderTaskList(el.taskList, pending, false);
-  renderTaskList(el.myTaskList, myTasks, false);
-  renderTaskList(el.completedList, completed.slice(0, 50), true);
+  renderTaskList(el.taskList, pending, 'pending');
+  renderTaskList(el.myTaskList, [...myTasks, ...myPendingApproval], 'my-tasks');
+  renderTaskList(el.approvalList, pendingApproval, 'approval');
+  renderTaskList(el.completedList, completed.slice(0, 50), 'completed');
 }
 
-function renderTaskList(container, taskList, isCompleted) {
+function renderTaskList(container, taskList, mode) {
   if (taskList.length === 0) {
-    const icon = isCompleted ? '&#127881;' : '&#128221;';
-    const text = isCompleted ? 'No hay tareas completadas aun' : 'No hay tareas pendientes';
-    const sub = isCompleted ? '' : 'Agrega una tarea o esperala desde Telegram';
+    const emptyMessages = {
+      'pending': { icon: '&#128221;', text: 'No hay tareas pendientes', sub: 'Agrega una tarea o esperala desde Telegram' },
+      'my-tasks': { icon: '&#128100;', text: 'No tienes tareas asignadas', sub: '' },
+      'approval': { icon: '&#128270;', text: 'No hay tareas por aprobar', sub: 'Cuando alguien complete una tarea aparecera aqui' },
+      'completed': { icon: '&#127881;', text: 'No hay tareas completadas aun', sub: '' }
+    };
+    const msg = emptyMessages[mode] || emptyMessages['pending'];
     container.innerHTML = `
       <div class="empty-state">
-        <div class="empty-state-icon">${icon}</div>
-        <div class="empty-state-text">${text}</div>
-        <div class="empty-state-sub">${sub}</div>
+        <div class="empty-state-icon">${msg.icon}</div>
+        <div class="empty-state-text">${msg.text}</div>
+        <div class="empty-state-sub">${msg.sub}</div>
       </div>`;
     return;
   }
@@ -226,7 +236,9 @@ function renderTaskList(container, taskList, isCompleted) {
     grouped[key].tasks.push(task);
   });
 
+  const isAdmin = currentUserData && currentUserData.role === 'admin';
   let html = '';
+
   for (const [, group] of Object.entries(grouped)) {
     html += `<div class="project-section">
       <div class="project-header">
@@ -238,22 +250,56 @@ function renderTaskList(container, taskList, isCompleted) {
     group.tasks.forEach(task => {
       const assignee = task.assignedToName || 'Sin asignar';
       const source = task.source === 'telegram' ? 'Telegram' : 'App';
-      const time = task.status === 'completed' && task.completedAt
-        ? formatDate(task.completedAt)
-        : timeAgo(task.createdAt);
+      const time = task.completedAt ? formatDate(task.completedAt) : timeAgo(task.createdAt);
+      const isCompleted = task.status === 'completed';
+      const isPendingApproval = task.status === 'pending_approval';
+
+      // Status badge
+      let statusBadge = '';
+      if (isPendingApproval) {
+        statusBadge = '<span class="status-pending-approval">Esperando aprobacion</span>';
+      }
+
+      // Action buttons
+      let actionButtons = '';
+      if (isPendingApproval && isAdmin && mode === 'approval') {
+        actionButtons = `
+          <div class="approval-buttons">
+            <button class="btn-approve" onclick="approveTask('${task.id}')">Aprobar</button>
+            <button class="btn-reject" onclick="rejectTask('${task.id}')">Rechazar</button>
+          </div>`;
+      }
+
+      // Check button
+      let checkBtn = '';
+      if (isCompleted) {
+        checkBtn = '<div class="task-check"></div>';
+      } else if (isPendingApproval) {
+        checkBtn = '<div class="task-check" style="border-color:var(--warning);background:rgba(255,217,61,0.15)"></div>';
+      } else {
+        checkBtn = `<div class="task-check" onclick="completeTask('${task.id}')" title="Marcar como terminada"></div>`;
+      }
+
+      // Delete button
+      let deleteBtn = '';
+      if (!isCompleted && !isPendingApproval && canDelete(task)) {
+        deleteBtn = `<button class="task-delete" onclick="deleteTask('${task.id}')" title="Eliminar">&#10005;</button>`;
+      }
 
       html += `
         <div class="task-item ${isCompleted ? 'completed' : ''}" data-id="${task.id}" style="border-left-color:${group.color}">
-          ${isCompleted ? '<div class="task-check"></div>' : `<div class="task-check" onclick="completeTask('${task.id}')" title="Completar"></div>`}
+          ${checkBtn}
           <div style="flex:1">
             <div class="task-text">${esc(task.text)}</div>
             <div class="task-meta">
               <span class="task-assignee">${esc(assignee)}</span>
+              ${statusBadge}
               <span class="task-tag">${source}</span>
               <span class="task-tag">${time}</span>
             </div>
+            ${actionButtons}
           </div>
-          ${!isCompleted && canDelete(task) ? `<button class="task-delete" onclick="deleteTask('${task.id}')" title="Eliminar">&#10005;</button>` : ''}
+          ${deleteBtn}
         </div>`;
     });
 
@@ -391,22 +437,71 @@ async function completeTask(taskId) {
 
   const task = tasks.find(t => t.id === taskId);
 
+  // Send to pending approval instead of completing directly
+  await db.collection('tasks').doc(taskId).update({
+    status: 'pending_approval',
+    submittedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    submittedBy: currentUser.uid,
+    submittedByName: currentUserData.name
+  });
+
+  // Notify admins via Telegram
+  if (task) {
+    const adminChatIds = teamMembers
+      .filter(m => m.role === 'admin' && m.telegramChatId && m.id !== currentUser.uid)
+      .map(m => m.telegramChatId);
+
+    if (adminChatIds.length > 0) {
+      window.api.notifyAllTelegram(adminChatIds,
+        `*${currentUserData.name}* termino una tarea y espera aprobacion:\n${task.text}\nProyecto: *${task.projectName}*`
+      );
+    }
+  }
+}
+
+async function approveTask(taskId) {
+  const taskEl = document.querySelector(`.task-item[data-id="${taskId}"]`);
+  if (taskEl) {
+    taskEl.classList.add('completing');
+    await new Promise(r => setTimeout(r, 300));
+  }
+
+  const task = tasks.find(t => t.id === taskId);
+
   await db.collection('tasks').doc(taskId).update({
     status: 'completed',
     completedAt: firebase.firestore.FieldValue.serverTimestamp(),
-    completedBy: currentUser.uid,
-    completedByName: currentUserData.name
+    approvedBy: currentUser.uid,
+    approvedByName: currentUserData.name
   });
 
-  // Notify team via Telegram
+  // Notify the user who did the task
   if (task) {
-    const chatIds = teamMembers
-      .filter(m => m.telegramChatId && m.id !== currentUser.uid)
-      .map(m => m.telegramChatId);
+    const assignee = teamMembers.find(m => m.id === task.assignedTo);
+    if (assignee && assignee.telegramChatId) {
+      window.api.sendTelegramMessage(assignee.telegramChatId,
+        `Tu tarea fue *aprobada* por *${currentUserData.name}*:\n${task.text}`
+      );
+    }
+  }
+}
 
-    if (chatIds.length > 0) {
-      window.api.notifyAllTelegram(chatIds,
-        `Tarea completada por *${currentUserData.name}*:\n${task.text}`
+async function rejectTask(taskId) {
+  const task = tasks.find(t => t.id === taskId);
+
+  await db.collection('tasks').doc(taskId).update({
+    status: 'pending',
+    rejectedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    rejectedBy: currentUser.uid,
+    rejectedByName: currentUserData.name
+  });
+
+  // Notify the user who did the task
+  if (task) {
+    const assignee = teamMembers.find(m => m.id === task.assignedTo);
+    if (assignee && assignee.telegramChatId) {
+      window.api.sendTelegramMessage(assignee.telegramChatId,
+        `Tu tarea fue *rechazada* por *${currentUserData.name}* y volvio a pendientes:\n${task.text}`
       );
     }
   }
