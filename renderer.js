@@ -122,6 +122,11 @@ auth.onAuthStateChanged(async (user) => {
     const userDoc = await db.collection('users').doc(user.uid).get();
     if (userDoc.exists) {
       currentUserData = { id: user.uid, ...userDoc.data() };
+      // Auto-set first admin
+      if (user.email === 'jainierrojas@gmail.com' && currentUserData.role !== 'admin') {
+        await db.collection('users').doc(user.uid).update({ role: 'admin' });
+        currentUserData.role = 'admin';
+      }
     } else {
       currentUserData = { id: user.uid, name: user.email.split('@')[0], email: user.email, role: 'miembro' };
     }
@@ -248,7 +253,7 @@ function renderTaskList(container, taskList, isCompleted) {
               <span class="task-tag">${time}</span>
             </div>
           </div>
-          ${!isCompleted ? `<button class="task-delete" onclick="deleteTask('${task.id}')" title="Eliminar">&#10005;</button>` : ''}
+          ${!isCompleted && canDelete(task) ? `<button class="task-delete" onclick="deleteTask('${task.id}')" title="Eliminar">&#10005;</button>` : ''}
         </div>`;
     });
 
@@ -296,13 +301,19 @@ function renderTeam() {
     const color = colors[i % colors.length];
     const linked = m.telegramChatId ? 'Telegram vinculado' : 'Sin Telegram';
 
+    const roleLabel = m.role === 'admin' ? 'Admin' : 'Miembro';
+    const canChangeRole = currentUserData && currentUserData.role === 'admin' && m.id !== currentUser.uid;
+    const roleBtn = canChangeRole
+      ? `<button class="btn btn-small btn-ghost" onclick="toggleRole('${m.id}', '${m.role}')" style="font-size:10px">${m.role === 'admin' ? 'Quitar admin' : 'Hacer admin'}</button>`
+      : '';
+
     html += `
       <div class="team-member">
         <div class="team-avatar" style="background:${color}">${m.name.charAt(0).toUpperCase()}</div>
         <div class="team-info">
-          <div class="team-name">${esc(m.name)} ${m.id === currentUser.uid ? '(tu)' : ''}</div>
+          <div class="team-name">${esc(m.name)} ${m.id === currentUser.uid ? '(tu)' : ''} <span style="font-size:10px;color:${m.role === 'admin' ? 'var(--success)' : 'var(--text-secondary)'}">[${roleLabel}]</span></div>
           <div class="team-email">${esc(m.email)} - ${linked}</div>
-          <div class="team-tasks">${pending} pendientes - ${done} completadas</div>
+          <div class="team-tasks">${pending} pendientes - ${done} completadas ${roleBtn}</div>
         </div>
       </div>`;
   });
@@ -401,7 +412,23 @@ async function completeTask(taskId) {
   }
 }
 
+async function toggleRole(userId, currentRole) {
+  const newRole = currentRole === 'admin' ? 'miembro' : 'admin';
+  await db.collection('users').doc(userId).update({ role: newRole });
+}
+
+function canDelete(task) {
+  if (!currentUserData) return false;
+  // Admin puede eliminar cualquier tarea
+  if (currentUserData.role === 'admin') return true;
+  // El creador de la tarea puede eliminarla
+  if (task.createdBy === currentUser.uid) return true;
+  return false;
+}
+
 async function deleteTask(taskId) {
+  const task = tasks.find(t => t.id === taskId);
+  if (task && !canDelete(task)) return;
   await db.collection('tasks').doc(taskId).delete();
 }
 
