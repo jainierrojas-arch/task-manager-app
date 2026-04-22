@@ -747,6 +747,26 @@
           </div>
 
           <div class="settings-group">
+            <div class="settings-label">Claude AI (lenguaje natural en Telegram)</div>
+            <div class="settings-input-group">
+              <input type="password" id="claudeApiKey" placeholder="API key de Anthropic (sk-ant-...)">
+              <button class="btn btn-primary btn-small" id="saveClaudeKey">Guardar</button>
+            </div>
+            <div class="status-indicator" id="claudeStatus">
+              <span class="status-dot disconnected"></span>
+              <span>No configurada</span>
+            </div>
+            <div class="telegram-instructions">
+              <h4>Para que el bot entienda mensajes en lenguaje natural:</h4>
+              <ol>
+                <li>Obten una API key en <code>console.anthropic.com</code></li>
+                <li>Pegala arriba y guarda</li>
+                <li>Escribe al bot sin comandos: "asignale a juan revisar el reporte en Ventas"</li>
+              </ol>
+            </div>
+          </div>
+
+          <div class="settings-group">
             <div class="settings-label">Proyectos</div>
             <button class="btn btn-primary" id="newProjectBtn" style="width:100%">+ Nuevo Proyecto</button>
             <div id="projectListSettings" style="margin-top:12px"></div>

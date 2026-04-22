@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { autoUpdater } = require('electron-updater');
+const Anthropic = require('@anthropic-ai/sdk').default;
 
 // Simple local store for window settings and telegram token
 class JsonStore {
@@ -45,12 +46,19 @@ const store = new JsonStore({
   windowBounds: { width: 500, height: 750 },
   alwaysOnTop: true,
   opacity: 0.95,
-  telegramToken: ''
+  telegramToken: '',
+  claudeApiKey: ''
 });
 
 let mainWindow;
 let telegramBot;
 let TelegramBotLib;
+let anthropic;
+
+function initAnthropic() {
+  const key = store.get('claudeApiKey');
+  anthropic = key ? new Anthropic({ apiKey: key }) : null;
+}
 
 function createWindow() {
   const bounds = store.get('windowBounds');
@@ -221,6 +229,18 @@ function initTelegram() {
       }
     });
 
+    // Natural-language messages (anything that does NOT start with /)
+    telegramBot.on('message', (msg) => {
+      const text = (msg.text || '').trim();
+      if (!text || text.startsWith('/')) return;
+      if (mainWindow) {
+        mainWindow.webContents.send('telegram-natural-message', {
+          chatId: msg.chat.id.toString(),
+          text
+        });
+      }
+    });
+
     console.log('Telegram bot initialized successfully');
   } catch (error) {
     console.error('Error initializing Telegram bot:', error);
@@ -251,6 +271,38 @@ function registerIpcHandlers() {
     store.set('telegramToken', token);
     initTelegram();
     return true;
+  });
+
+  ipcMain.handle('get-claude-api-key-status', () => {
+    const k = store.get('claudeApiKey');
+    return k ? `Configurada (...${k.slice(-6)})` : '';
+  });
+
+  ipcMain.handle('set-claude-api-key', (_, key) => {
+    store.set('claudeApiKey', key);
+    initAnthropic();
+    return true;
+  });
+
+  ipcMain.handle('call-claude', async (_, { systemPrompt, userMessage, tools }) => {
+    if (!anthropic) return { error: 'no-api-key' };
+    try {
+      const response = await anthropic.messages.create({
+        model: 'claude-haiku-4-5',
+        max_tokens: 1024,
+        system: systemPrompt,
+        tools,
+        tool_choice: { type: 'any' },
+        messages: [{ role: 'user', content: userMessage }]
+      });
+      const toolUse = response.content.find(b => b.type === 'tool_use');
+      if (toolUse) return { tool: toolUse.name, input: toolUse.input };
+      const textBlock = response.content.find(b => b.type === 'text');
+      return { tool: 'reply_message', input: { text: textBlock?.text || 'No entendi tu mensaje.' } };
+    } catch (error) {
+      console.error('Claude API error:', error.message);
+      return { error: error.message };
+    }
   });
 
   ipcMain.handle('toggle-always-on-top', () => {
@@ -329,6 +381,7 @@ app.whenReady().then(() => {
   registerIpcHandlers();
   createWindow();
   initTelegram();
+  initAnthropic();
   initAutoUpdater();
 
   ipcMain.handle('install-update', () => {

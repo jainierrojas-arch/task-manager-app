@@ -44,6 +44,9 @@ const el = {
   telegramToken: document.getElementById('telegramToken'),
   saveTelegram: document.getElementById('saveTelegram'),
   telegramStatus: document.getElementById('telegramStatus'),
+  claudeApiKey: document.getElementById('claudeApiKey'),
+  saveClaudeKey: document.getElementById('saveClaudeKey'),
+  claudeStatus: document.getElementById('claudeStatus'),
   projectModal: document.getElementById('projectModal'),
   projectNameInput: document.getElementById('projectNameInput'),
   newProjectBtn: document.getElementById('newProjectBtn'),
@@ -154,6 +157,7 @@ function showApp() {
   subscribeToData();
   initTelegramHandlers();
   loadTelegramToken();
+  loadClaudeStatus();
 }
 
 function showLogin() {
@@ -756,134 +760,283 @@ async function createProject() {
 }
 
 // ===== TELEGRAM HANDLERS =====
-function initTelegramHandlers() {
-  window.api.onTelegramLinkUser(async ({ chatId, email }) => {
-    const snapshot = await db.collection('users').where('email', '==', email).get();
-    if (!snapshot.empty) {
-      const userDoc = snapshot.docs[0];
-      await db.collection('users').doc(userDoc.id).update({ telegramChatId: chatId });
-      window.api.sendTelegramMessage(chatId, `Cuenta vinculada a *${userDoc.data().name}*`);
-    } else {
-      window.api.sendTelegramMessage(chatId, 'Email no encontrado. Registrate primero en la app.');
-    }
-  });
+async function tgLinkUser({ chatId, email }) {
+  const snapshot = await db.collection('users').where('email', '==', email).get();
+  if (!snapshot.empty) {
+    const userDoc = snapshot.docs[0];
+    await db.collection('users').doc(userDoc.id).update({ telegramChatId: chatId });
+    window.api.sendTelegramMessage(chatId, `Cuenta vinculada a *${userDoc.data().name}*`);
+  } else {
+    window.api.sendTelegramMessage(chatId, 'Email no encontrado. Registrate primero en la app.');
+  }
+}
 
-  window.api.onTelegramAddTask(async ({ chatId, projectName, taskText }) => {
-    const user = teamMembers.find(m => m.telegramChatId === chatId);
-    if (!user) { window.api.sendTelegramMessage(chatId, 'Vincula tu cuenta primero con /vincular tu@email.com'); return; }
+async function tgAddTask({ chatId, projectName, taskText }) {
+  const user = teamMembers.find(m => m.telegramChatId === chatId);
+  if (!user) { window.api.sendTelegramMessage(chatId, 'Vincula tu cuenta primero con /vincular tu@email.com'); return; }
 
-    let project = projects.find(p => p.name.toLowerCase() === projectName.toLowerCase());
-    if (!project) {
-      const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7'];
-      const ref = await db.collection('projects').add({
-        name: projectName,
-        color: colors[Math.floor(Math.random() * colors.length)],
-        createdBy: user.id,
-        createdAt: firebase.firestore.FieldValue.serverTimestamp()
-      });
-      project = { id: ref.id, name: projectName, color: '#4ECDC4' };
-    }
-
-    await db.collection('tasks').add({
-      text: taskText,
-      projectId: project.id,
-      projectName: project.name,
-      projectColor: project.color || '#4ECDC4',
-      assignedTo: user.id,
-      assignedToName: user.name,
+  let project = projects.find(p => p.name.toLowerCase() === projectName.toLowerCase());
+  if (!project) {
+    const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7'];
+    const ref = await db.collection('projects').add({
+      name: projectName,
+      color: colors[Math.floor(Math.random() * colors.length)],
       createdBy: user.id,
-      createdByName: user.name,
-      status: 'pending',
-      source: 'telegram',
-      notes: [],
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
+    project = { id: ref.id, name: projectName, color: '#4ECDC4' };
+  }
 
-    window.api.sendTelegramMessage(chatId, `Tarea agregada a *${project.name}*:\n${taskText}`);
+  await db.collection('tasks').add({
+    text: taskText,
+    projectId: project.id,
+    projectName: project.name,
+    projectColor: project.color || '#4ECDC4',
+    assignedTo: user.id,
+    assignedToName: user.name,
+    createdBy: user.id,
+    createdByName: user.name,
+    status: 'pending',
+    source: 'telegram',
+    notes: [],
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
   });
 
-  window.api.onTelegramAssignTask(async ({ chatId, projectName, taskText, assignToEmail }) => {
-    const sender = teamMembers.find(m => m.telegramChatId === chatId);
-    if (!sender) { window.api.sendTelegramMessage(chatId, 'Vincula tu cuenta primero.'); return; }
+  window.api.sendTelegramMessage(chatId, `Tarea agregada a *${project.name}*:\n${taskText}`);
+}
 
-    const assignee = teamMembers.find(m => m.email === assignToEmail);
-    if (!assignee) { window.api.sendTelegramMessage(chatId, `Usuario *${assignToEmail}* no encontrado.`); return; }
+async function tgAssignTask({ chatId, projectName, taskText, assignToEmail }) {
+  const sender = teamMembers.find(m => m.telegramChatId === chatId);
+  if (!sender) { window.api.sendTelegramMessage(chatId, 'Vincula tu cuenta primero.'); return; }
 
-    let project = projects.find(p => p.name.toLowerCase() === projectName.toLowerCase());
-    if (!project) {
-      const ref = await db.collection('projects').add({
-        name: projectName, color: '#45B7D1', createdBy: sender.id,
-        createdAt: firebase.firestore.FieldValue.serverTimestamp()
-      });
-      project = { id: ref.id, name: projectName, color: '#45B7D1' };
-    }
+  const assignee = teamMembers.find(m => m.email === assignToEmail);
+  if (!assignee) { window.api.sendTelegramMessage(chatId, `Usuario *${assignToEmail}* no encontrado.`); return; }
 
-    await db.collection('tasks').add({
-      text: taskText, projectId: project.id, projectName: project.name,
-      projectColor: project.color || '#45B7D1', assignedTo: assignee.id,
-      assignedToName: assignee.name, createdBy: sender.id, createdByName: sender.name,
-      status: 'pending', source: 'telegram', notes: [],
+  let project = projects.find(p => p.name.toLowerCase() === projectName.toLowerCase());
+  if (!project) {
+    const ref = await db.collection('projects').add({
+      name: projectName, color: '#45B7D1', createdBy: sender.id,
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
+    project = { id: ref.id, name: projectName, color: '#45B7D1' };
+  }
 
-    window.api.sendTelegramMessage(chatId, `Tarea asignada a *${assignee.name}*:\n${taskText}`);
-    if (assignee.telegramChatId) {
-      window.api.sendTelegramMessage(assignee.telegramChatId, `*${sender.name}* te asigno una tarea:\n${taskText}\nProyecto: *${project.name}*`);
+  await db.collection('tasks').add({
+    text: taskText, projectId: project.id, projectName: project.name,
+    projectColor: project.color || '#45B7D1', assignedTo: assignee.id,
+    assignedToName: assignee.name, createdBy: sender.id, createdByName: sender.name,
+    status: 'pending', source: 'telegram', notes: [],
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+
+  window.api.sendTelegramMessage(chatId, `Tarea asignada a *${assignee.name}*:\n${taskText}`);
+  if (assignee.telegramChatId) {
+    window.api.sendTelegramMessage(assignee.telegramChatId, `*${sender.name}* te asigno una tarea:\n${taskText}\nProyecto: *${project.name}*`);
+  }
+}
+
+async function tgGetMyTasks({ chatId }) {
+  const user = teamMembers.find(m => m.telegramChatId === chatId);
+  if (!user) { window.api.sendTelegramMessage(chatId, 'Vincula tu cuenta primero.'); return; }
+  const myTasks = tasks.filter(t => t.assignedTo === user.id && t.status !== 'completed');
+  if (myTasks.length === 0) { window.api.sendTelegramMessage(chatId, 'No tienes tareas pendientes.'); return; }
+  let msg = `*Tus tareas (${myTasks.length}):*\n\n`;
+  myTasks.forEach((t, i) => { msg += `${i + 1}. ${t.text} (${t.projectName}) ${t.status === 'pending_approval' ? '[Esperando aprobacion]' : ''}\n`; });
+  window.api.sendTelegramMessage(chatId, msg);
+}
+
+async function tgGetAllTasks({ chatId }) {
+  const pending = tasks.filter(t => t.status !== 'completed');
+  if (pending.length === 0) { window.api.sendTelegramMessage(chatId, 'No hay tareas pendientes en el equipo.'); return; }
+  let msg = `*Todas las tareas (${pending.length}):*\n\n`;
+  pending.forEach((t, i) => { msg += `${i + 1}. ${t.text} -> ${t.assignedToName} (${t.projectName})\n`; });
+  window.api.sendTelegramMessage(chatId, msg);
+}
+
+async function tgCompleteTask({ chatId, taskIndex }) {
+  const user = teamMembers.find(m => m.telegramChatId === chatId);
+  if (!user) { window.api.sendTelegramMessage(chatId, 'Vincula tu cuenta primero.'); return; }
+  const myTasks = tasks.filter(t => t.assignedTo === user.id && t.status === 'pending');
+  const idx = taskIndex - 1;
+  if (idx < 0 || idx >= myTasks.length) { window.api.sendTelegramMessage(chatId, 'Numero de tarea no valido.'); return; }
+  const task = myTasks[idx];
+  await db.collection('tasks').doc(task.id).update({
+    status: 'pending_approval',
+    submittedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    submittedBy: user.id, submittedByName: user.name
+  });
+  window.api.sendTelegramMessage(chatId, `Tarea enviada para aprobacion: *${task.text}*`);
+}
+
+async function tgGetProjects({ chatId }) {
+  if (projects.length === 0) { window.api.sendTelegramMessage(chatId, 'No hay proyectos.'); return; }
+  let msg = '*Proyectos:*\n\n';
+  projects.forEach(p => {
+    const count = tasks.filter(t => t.projectId === p.id && t.status !== 'completed').length;
+    msg += `*${p.name}* - ${count} tarea(s)\n`;
+  });
+  window.api.sendTelegramMessage(chatId, msg);
+}
+
+async function tgGetTeam({ chatId }) {
+  if (teamMembers.length === 0) { window.api.sendTelegramMessage(chatId, 'No hay miembros.'); return; }
+  let msg = '*Equipo:*\n\n';
+  teamMembers.forEach(m => {
+    const p = tasks.filter(t => t.assignedTo === m.id && t.status !== 'completed').length;
+    msg += `*${m.name}* (${m.email}) - ${p} tareas\n`;
+  });
+  window.api.sendTelegramMessage(chatId, msg);
+}
+
+async function tgNaturalMessage({ chatId, text }) {
+  const sender = teamMembers.find(m => m.telegramChatId === chatId);
+  if (!sender) {
+    window.api.sendTelegramMessage(chatId, 'Vincula tu cuenta primero con `/vincular tu@email.com`');
+    return;
+  }
+
+  const myTasks = tasks.filter(t => t.assignedTo === sender.id && t.status === 'pending');
+  const myTasksContext = myTasks.length
+    ? myTasks.map((t, i) => `${i + 1}. [${t.projectName}] ${t.text}`).join('\n')
+    : '(ninguna)';
+
+  const systemPrompt = `Eres el cerebro de un bot de Telegram de gestion de tareas en equipo. Interpreta mensajes en espanol y ejecuta la accion correcta.
+
+Usuario actual: ${sender.name} (${sender.email})
+
+Proyectos existentes: ${projects.map(p => p.name).join(', ') || '(ninguno)'}
+
+Miembros del equipo:
+${teamMembers.map(m => `- ${m.name} (${m.email})`).join('\n')}
+
+Tareas pendientes del usuario (numeradas para completar):
+${myTasksContext}
+
+Reglas:
+- Si menciona a alguien por nombre, busca su email en la lista de miembros y usalo exacto
+- Si menciona un proyecto, usa el nombre exacto de la lista; si no existe pero pide crearlo, puedes inventar un nombre
+- Una tarea para "mi"/"yo" o sin destinatario claro => add_task
+- Una tarea para otra persona => assign_task
+- Completar "la 1"/"la primera" => complete_task con index 1
+- Saludos, preguntas, cosas que no son acciones => reply_message con una respuesta util y amable`;
+
+  const tools = [
+    {
+      name: 'add_task',
+      description: 'Crear una tarea para el usuario actual',
+      input_schema: {
+        type: 'object',
+        properties: {
+          project_name: { type: 'string' },
+          task_text: { type: 'string' }
+        },
+        required: ['project_name', 'task_text']
+      }
+    },
+    {
+      name: 'assign_task',
+      description: 'Crear una tarea y asignarla a otro miembro del equipo',
+      input_schema: {
+        type: 'object',
+        properties: {
+          project_name: { type: 'string' },
+          task_text: { type: 'string' },
+          assign_to_email: { type: 'string' }
+        },
+        required: ['project_name', 'task_text', 'assign_to_email']
+      }
+    },
+    {
+      name: 'complete_task',
+      description: 'Marcar una de las tareas pendientes del usuario como completada (envia a aprobacion)',
+      input_schema: {
+        type: 'object',
+        properties: { task_index: { type: 'integer' } },
+        required: ['task_index']
+      }
+    },
+    {
+      name: 'list_my_tasks',
+      description: 'Listar las tareas del usuario actual',
+      input_schema: { type: 'object', properties: {} }
+    },
+    {
+      name: 'list_all_tasks',
+      description: 'Listar todas las tareas pendientes del equipo',
+      input_schema: { type: 'object', properties: {} }
+    },
+    {
+      name: 'list_projects',
+      description: 'Listar los proyectos y cuantas tareas tiene cada uno',
+      input_schema: { type: 'object', properties: {} }
+    },
+    {
+      name: 'list_team',
+      description: 'Listar los miembros del equipo',
+      input_schema: { type: 'object', properties: {} }
+    },
+    {
+      name: 'reply_message',
+      description: 'Responder al usuario con un mensaje de texto (saludos, preguntas, cuando no aplica otra accion)',
+      input_schema: {
+        type: 'object',
+        properties: { text: { type: 'string' } },
+        required: ['text']
+      }
     }
-  });
+  ];
 
-  window.api.onTelegramGetMyTasks(async ({ chatId }) => {
-    const user = teamMembers.find(m => m.telegramChatId === chatId);
-    if (!user) { window.api.sendTelegramMessage(chatId, 'Vincula tu cuenta primero.'); return; }
-    const myTasks = tasks.filter(t => t.assignedTo === user.id && t.status !== 'completed');
-    if (myTasks.length === 0) { window.api.sendTelegramMessage(chatId, 'No tienes tareas pendientes.'); return; }
-    let msg = `*Tus tareas (${myTasks.length}):*\n\n`;
-    myTasks.forEach((t, i) => { msg += `${i + 1}. ${t.text} (${t.projectName}) ${t.status === 'pending_approval' ? '[Esperando aprobacion]' : ''}\n`; });
-    window.api.sendTelegramMessage(chatId, msg);
-  });
+  const result = await window.api.callClaude({ systemPrompt, userMessage: text, tools });
 
-  window.api.onTelegramGetAllTasks(async ({ chatId }) => {
-    const pending = tasks.filter(t => t.status !== 'completed');
-    if (pending.length === 0) { window.api.sendTelegramMessage(chatId, 'No hay tareas pendientes en el equipo.'); return; }
-    let msg = `*Todas las tareas (${pending.length}):*\n\n`;
-    pending.forEach((t, i) => { msg += `${i + 1}. ${t.text} -> ${t.assignedToName} (${t.projectName})\n`; });
-    window.api.sendTelegramMessage(chatId, msg);
-  });
+  if (result.error) {
+    const errMsg = result.error === 'no-api-key'
+      ? 'La IA no esta configurada. Usa los comandos /nueva, /asignar, /tareas, etc.'
+      : `Error llamando a Claude: ${result.error}`;
+    window.api.sendTelegramMessage(chatId, errMsg);
+    return;
+  }
 
-  window.api.onTelegramCompleteTask(async ({ chatId, taskIndex }) => {
-    const user = teamMembers.find(m => m.telegramChatId === chatId);
-    if (!user) { window.api.sendTelegramMessage(chatId, 'Vincula tu cuenta primero.'); return; }
-    const myTasks = tasks.filter(t => t.assignedTo === user.id && t.status === 'pending');
-    const idx = taskIndex - 1;
-    if (idx < 0 || idx >= myTasks.length) { window.api.sendTelegramMessage(chatId, 'Numero de tarea no valido.'); return; }
-    const task = myTasks[idx];
-    await db.collection('tasks').doc(task.id).update({
-      status: 'pending_approval',
-      submittedAt: firebase.firestore.FieldValue.serverTimestamp(),
-      submittedBy: user.id, submittedByName: user.name
-    });
-    window.api.sendTelegramMessage(chatId, `Tarea enviada para aprobacion: *${task.text}*`);
-  });
+  const input = result.input || {};
+  switch (result.tool) {
+    case 'add_task':
+      await tgAddTask({ chatId, projectName: input.project_name, taskText: input.task_text });
+      break;
+    case 'assign_task':
+      await tgAssignTask({ chatId, projectName: input.project_name, taskText: input.task_text, assignToEmail: input.assign_to_email });
+      break;
+    case 'complete_task':
+      await tgCompleteTask({ chatId, taskIndex: input.task_index });
+      break;
+    case 'list_my_tasks':
+      await tgGetMyTasks({ chatId });
+      break;
+    case 'list_all_tasks':
+      await tgGetAllTasks({ chatId });
+      break;
+    case 'list_projects':
+      await tgGetProjects({ chatId });
+      break;
+    case 'list_team':
+      await tgGetTeam({ chatId });
+      break;
+    case 'reply_message':
+      window.api.sendTelegramMessage(chatId, input.text || 'No entendi.');
+      break;
+    default:
+      window.api.sendTelegramMessage(chatId, 'No supe que hacer con eso.');
+  }
+}
 
-  window.api.onTelegramGetProjects(async ({ chatId }) => {
-    if (projects.length === 0) { window.api.sendTelegramMessage(chatId, 'No hay proyectos.'); return; }
-    let msg = '*Proyectos:*\n\n';
-    projects.forEach(p => {
-      const count = tasks.filter(t => t.projectId === p.id && t.status !== 'completed').length;
-      msg += `*${p.name}* - ${count} tarea(s)\n`;
-    });
-    window.api.sendTelegramMessage(chatId, msg);
-  });
-
-  window.api.onTelegramGetTeam(async ({ chatId }) => {
-    if (teamMembers.length === 0) { window.api.sendTelegramMessage(chatId, 'No hay miembros.'); return; }
-    let msg = '*Equipo:*\n\n';
-    teamMembers.forEach(m => {
-      const p = tasks.filter(t => t.assignedTo === m.id && t.status !== 'completed').length;
-      msg += `*${m.name}* (${m.email}) - ${p} tareas\n`;
-    });
-    window.api.sendTelegramMessage(chatId, msg);
-  });
+function initTelegramHandlers() {
+  window.api.onTelegramLinkUser(tgLinkUser);
+  window.api.onTelegramAddTask(tgAddTask);
+  window.api.onTelegramAssignTask(tgAssignTask);
+  window.api.onTelegramGetMyTasks(tgGetMyTasks);
+  window.api.onTelegramGetAllTasks(tgGetAllTasks);
+  window.api.onTelegramCompleteTask(tgCompleteTask);
+  window.api.onTelegramGetProjects(tgGetProjects);
+  window.api.onTelegramGetTeam(tgGetTeam);
+  window.api.onTelegramNaturalMessage(tgNaturalMessage);
 }
 
 // ===== TELEGRAM SETTINGS =====
@@ -904,6 +1057,28 @@ function updateTelegramStatus(connected) {
   const text = el.telegramStatus.querySelector('span:last-child');
   dot.className = `status-dot ${connected ? 'connected' : 'disconnected'}`;
   text.textContent = connected ? 'Bot activo' : 'No conectado';
+}
+
+// ===== CLAUDE AI SETTINGS =====
+async function loadClaudeStatus() {
+  const status = await window.api.getClaudeApiKeyStatus();
+  updateClaudeStatus(status);
+}
+
+el.saveClaudeKey.addEventListener('click', async () => {
+  const key = el.claudeApiKey.value.trim();
+  if (!key) return;
+  await window.api.setClaudeApiKey(key);
+  el.claudeApiKey.value = '';
+  await loadClaudeStatus();
+});
+
+function updateClaudeStatus(label) {
+  const dot = el.claudeStatus.querySelector('.status-dot');
+  const text = el.claudeStatus.querySelector('span:last-child');
+  const connected = !!label;
+  dot.className = `status-dot ${connected ? 'connected' : 'disconnected'}`;
+  text.textContent = connected ? label : 'No configurada';
 }
 
 // ===== UI EVENTS =====
