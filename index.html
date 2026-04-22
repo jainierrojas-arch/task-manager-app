@@ -752,6 +752,30 @@
     </div>
   </div>
 
+  <!-- Edit Task Modal -->
+  <div class="modal-overlay" id="editModal">
+    <div class="modal">
+      <div class="modal-title">Editar Tarea</div>
+      <input type="text" id="editTaskInput" placeholder="Texto de la tarea">
+      <div class="modal-buttons">
+        <button class="btn btn-ghost" id="cancelEdit">Cancelar</button>
+        <button class="btn btn-primary" id="confirmEdit">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Note Modal -->
+  <div class="modal-overlay" id="noteModal">
+    <div class="modal">
+      <div class="modal-title">Agregar Nota</div>
+      <input type="text" id="noteInput" placeholder="Escribe tu nota aqui...">
+      <div class="modal-buttons">
+        <button class="btn btn-ghost" id="cancelNote">Cancelar</button>
+        <button class="btn btn-primary" id="confirmNote">Agregar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Firebase SDK -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>

@@ -581,32 +581,85 @@ async function rejectTask(taskId) {
   }
 }
 
+// Edit task modal
+let editingTaskId = null;
+const editModal = document.getElementById('editModal');
+const editTaskInput = document.getElementById('editTaskInput');
+
+document.getElementById('cancelEdit').addEventListener('click', () => {
+  editModal.classList.remove('active');
+  editingTaskId = null;
+});
+
+document.getElementById('confirmEdit').addEventListener('click', async () => {
+  const newText = editTaskInput.value.trim();
+  if (editingTaskId && newText) {
+    await db.collection('tasks').doc(editingTaskId).update({ text: newText });
+  }
+  editModal.classList.remove('active');
+  editingTaskId = null;
+});
+
+editTaskInput.addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') document.getElementById('confirmEdit').click();
+});
+
+editModal.addEventListener('click', (e) => {
+  if (e.target === editModal) { editModal.classList.remove('active'); editingTaskId = null; }
+});
+
 async function editTask(taskId) {
   const task = tasks.find(t => t.id === taskId);
   if (!task || !canEdit(task)) return;
-
-  const newText = prompt('Editar tarea:', task.text);
-  if (newText !== null && newText.trim() !== '' && newText.trim() !== task.text) {
-    await db.collection('tasks').doc(taskId).update({ text: newText.trim() });
-  }
+  editingTaskId = taskId;
+  editTaskInput.value = task.text;
+  editModal.classList.add('active');
+  setTimeout(() => editTaskInput.focus(), 100);
 }
 
+// Add note modal
+let notingTaskId = null;
+const noteModal = document.getElementById('noteModal');
+const noteInput = document.getElementById('noteInput');
+
+document.getElementById('cancelNote').addEventListener('click', () => {
+  noteModal.classList.remove('active');
+  notingTaskId = null;
+});
+
+document.getElementById('confirmNote').addEventListener('click', async () => {
+  const noteText = noteInput.value.trim();
+  if (notingTaskId && noteText) {
+    const task = tasks.find(t => t.id === notingTaskId);
+    if (task) {
+      const notes = task.notes || [];
+      notes.push({
+        text: noteText,
+        authorId: currentUser.uid,
+        authorName: currentUserData.name,
+        createdAt: new Date().toISOString()
+      });
+      await db.collection('tasks').doc(notingTaskId).update({ notes: notes });
+    }
+  }
+  noteModal.classList.remove('active');
+  noteInput.value = '';
+  notingTaskId = null;
+});
+
+noteInput.addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') document.getElementById('confirmNote').click();
+});
+
+noteModal.addEventListener('click', (e) => {
+  if (e.target === noteModal) { noteModal.classList.remove('active'); notingTaskId = null; }
+});
+
 async function addNote(taskId) {
-  const noteText = prompt('Agregar nota:');
-  if (!noteText || !noteText.trim()) return;
-
-  const task = tasks.find(t => t.id === taskId);
-  if (!task) return;
-
-  const notes = task.notes || [];
-  notes.push({
-    text: noteText.trim(),
-    authorId: currentUser.uid,
-    authorName: currentUserData.name,
-    createdAt: new Date().toISOString()
-  });
-
-  await db.collection('tasks').doc(taskId).update({ notes: notes });
+  notingTaskId = taskId;
+  noteInput.value = '';
+  noteModal.classList.add('active');
+  setTimeout(() => noteInput.focus(), 100);
 }
 
 async function toggleRole(userId, currentRole) {
@@ -874,7 +927,13 @@ window.api.getAlwaysOnTop().then(v => {
   el.btnPin.classList.toggle('unpinned', !v);
 });
 
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideProjectModal(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    hideProjectModal();
+    editModal.classList.remove('active');
+    noteModal.classList.remove('active');
+  }
+});
 
 // ===== AUTO UPDATE =====
 const updateBanner = document.getElementById('updateBanner');
