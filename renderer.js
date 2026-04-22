@@ -4,11 +4,14 @@ let currentUserData = null;
 let tasks = [];
 let projects = [];
 let teamMembers = [];
+let personalTasks = [];
 let alwaysOnTop = true;
 let currentTab = 'main';
 let unsubscribeTasks = null;
 let unsubscribeProjects = null;
 let unsubscribeUsers = null;
+let unsubscribePersonal = null;
+let reminderTimer = null;
 
 // User colors for completed tab
 const userColors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#DDA0DD', '#BB8FCE', '#F0B27A', '#82E0AA', '#F1948A', '#AED6F1'];
@@ -41,6 +44,11 @@ const el = {
   myBadge: document.getElementById('myBadge'),
   approvalBadge: document.getElementById('approvalBadge'),
   approvalList: document.getElementById('approvalList'),
+  personalBadge: document.getElementById('personalBadge'),
+  personalList: document.getElementById('personalList'),
+  personalCount: document.getElementById('personalCount'),
+  reminderInterval: document.getElementById('reminderInterval'),
+  saveReminder: document.getElementById('saveReminder'),
   inputArea: document.getElementById('inputArea'),
   telegramToken: document.getElementById('telegramToken'),
   saveTelegram: document.getElementById('saveTelegram'),
@@ -159,6 +167,7 @@ function showApp() {
   initTelegramHandlers();
   loadTelegramToken();
   loadClaudeStatus();
+  loadReminderInterval();
 }
 
 function showLogin() {
@@ -190,6 +199,13 @@ function subscribeToData() {
     renderAssignSelect();
     renderTeam();
   });
+
+  unsubscribePersonal = db.collection('personalTasks')
+    .where('ownerId', '==', currentUser.uid)
+    .onSnapshot((snapshot) => {
+      personalTasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      renderPersonalList();
+    });
 }
 
 // ===== RENDER =====
@@ -209,6 +225,104 @@ function renderAll() {
   renderTaskList(el.approvalList, pendingApproval, 'approval');
   renderCompletedList(completed.slice(0, 100));
 }
+
+function renderPersonalList() {
+  const pending = personalTasks.filter(t => t.status !== 'completed');
+  const count = pending.length;
+  if (el.personalBadge) el.personalBadge.textContent = count;
+  if (el.personalCount) el.personalCount.textContent = count;
+
+  if (!el.personalList) return;
+  if (personalTasks.length === 0) {
+    el.personalList.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">&#128246;</div>
+        <div class="empty-state-text">No tienes tareas personales</div>
+        <div class="empty-state-sub">Escribe abajo para agregar una. Solo tu las veras.</div>
+      </div>`;
+    return;
+  }
+
+  const sorted = [...personalTasks].sort((a, b) => {
+    if (a.status === 'completed' && b.status !== 'completed') return 1;
+    if (b.status === 'completed' && a.status !== 'completed') return -1;
+    const at = a.createdAt?.seconds || 0;
+    const bt = b.createdAt?.seconds || 0;
+    return bt - at;
+  });
+
+  let html = '';
+  sorted.forEach(task => {
+    const completed = task.status === 'completed';
+    const color = '#BB8FCE';
+    const time = task.createdAt ? formatDate(task.createdAt) : '';
+    let deadlineBadge = '';
+    if (task.deadline && !completed) {
+      const deadlineDate = task.deadline.toDate ? task.deadline.toDate() : new Date(task.deadline);
+      const now = new Date();
+      const diffMs = deadlineDate - now;
+      const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+      if (diffDays < 0) deadlineBadge = `<span class="task-deadline deadline-overdue">Vencida</span>`;
+      else if (diffDays === 0) deadlineBadge = `<span class="task-deadline deadline-soon">Hoy</span>`;
+      else if (diffDays <= 2) deadlineBadge = `<span class="task-deadline deadline-soon">${diffDays}d</span>`;
+      else deadlineBadge = `<span class="task-deadline deadline-ok">${diffDays}d</span>`;
+    }
+
+    const checkClass = completed ? 'task-check checked' : 'task-check';
+    const onClick = completed ? '' : `onclick="completePersonalTask('${task.id}')"`;
+    html += `
+      <div class="task-item ${completed ? 'completed' : ''}" style="border-left-color:${color}">
+        <div class="${checkClass}" ${onClick} title="${completed ? 'Completada' : 'Marcar como terminada'}"></div>
+        <div style="flex:1">
+          <div class="task-text">${esc(task.text)}</div>
+          <div class="task-meta">
+            ${deadlineBadge}
+            <span class="task-tag">${time}</span>
+          </div>
+        </div>
+        <button class="task-delete" onclick="deletePersonalTask('${task.id}')" title="Eliminar">&#10005;</button>
+      </div>`;
+  });
+  el.personalList.innerHTML = html;
+}
+
+async function addPersonalTask() {
+  const text = el.taskInput.value.trim();
+  if (!text) { el.taskInput.focus(); return; }
+  const days = parseInt(el.daysInput.value);
+
+  const data = {
+    text,
+    ownerId: currentUser.uid,
+    ownerName: currentUserData.name,
+    status: 'pending',
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  };
+  if (days && days > 0) {
+    const deadline = new Date();
+    deadline.setDate(deadline.getDate() + days);
+    data.deadline = firebase.firestore.Timestamp.fromDate(deadline);
+    data.deadlineDays = days;
+  }
+  await db.collection('personalTasks').add(data);
+  el.taskInput.value = '';
+  el.daysInput.value = '';
+}
+
+async function completePersonalTask(taskId) {
+  await db.collection('personalTasks').doc(taskId).update({
+    status: 'completed',
+    completedAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+}
+
+async function deletePersonalTask(taskId) {
+  if (!confirm('Eliminar esta tarea personal?')) return;
+  await db.collection('personalTasks').doc(taskId).delete();
+}
+
+window.completePersonalTask = completePersonalTask;
+window.deletePersonalTask = deletePersonalTask;
 
 function getUserColor(userId) {
   const idx = teamMembers.findIndex(m => m.id === userId);
@@ -1182,6 +1296,67 @@ function updateTelegramStatus(connected) {
   text.textContent = connected ? 'Bot activo' : 'No conectado';
 }
 
+// ===== REMINDERS =====
+async function loadReminderInterval() {
+  const mins = await window.api.getReminderInterval();
+  if (el.reminderInterval) el.reminderInterval.value = String(mins || 0);
+  startRemindersTimer(mins);
+}
+
+function startRemindersTimer(minutes) {
+  if (reminderTimer) { clearInterval(reminderTimer); reminderTimer = null; }
+  if (!minutes || minutes <= 0) return;
+  reminderTimer = setInterval(sendReminders, minutes * 60 * 1000);
+}
+
+async function sendReminders() {
+  for (const m of teamMembers) {
+    if (!m.telegramChatId) continue;
+
+    const teamPending = tasks.filter(t => {
+      if (t.assignedTo !== m.id || t.status !== 'pending') return false;
+      if (t.dependsOn) {
+        const dep = tasks.find(x => x.id === t.dependsOn);
+        if (dep && dep.status !== 'completed') return false;
+      }
+      return true;
+    });
+
+    let personalCount = 0;
+    try {
+      const snap = await db.collection('personalTasks')
+        .where('ownerId', '==', m.id)
+        .where('status', '==', 'pending').get();
+      personalCount = snap.size;
+    } catch (e) { /* ignore rule errors */ }
+
+    if (teamPending.length === 0 && personalCount === 0) continue;
+
+    const lines = [];
+    if (teamPending.length > 0) {
+      lines.push(`*Tareas del equipo (${teamPending.length})*:`);
+      teamPending.slice(0, 10).forEach((t, i) => {
+        lines.push(`${i + 1}. ${t.text} (${t.projectName})`);
+      });
+      if (teamPending.length > 10) lines.push(`...y ${teamPending.length - 10} mas`);
+    }
+    if (personalCount > 0) {
+      lines.push(`${lines.length > 0 ? '\n' : ''}Tienes *${personalCount} personal(es)* pendientes en tu app.`);
+    }
+
+    window.api.sendTelegramMessage(m.telegramChatId, `⏰ *Recordatorio*\n\n${lines.join('\n')}`);
+  }
+}
+
+if (el.saveReminder) {
+  el.saveReminder.addEventListener('click', async () => {
+    const mins = parseInt(el.reminderInterval.value) || 0;
+    await window.api.setReminderInterval(mins);
+    startRemindersTimer(mins);
+    alert(mins ? `Recordatorios activados cada ${mins} minuto(s)` : 'Recordatorios desactivados');
+  });
+}
+
 // ===== CLAUDE AI SETTINGS =====
 async function loadClaudeStatus() {
   const status = await window.api.getClaudeApiKeyStatus();
@@ -1205,8 +1380,12 @@ function updateClaudeStatus(label) {
 }
 
 // ===== UI EVENTS =====
-el.addTaskBtn.addEventListener('click', addTask);
-el.taskInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') addTask(); });
+function handleAddClick() {
+  if (currentTab === 'personal') addPersonalTask();
+  else addTask();
+}
+el.addTaskBtn.addEventListener('click', handleAddClick);
+el.taskInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleAddClick(); });
 el.projectSelect.addEventListener('change', renderDependsOnSelect);
 
 // ===== CHAIN (multi-step) MODAL =====
@@ -1343,8 +1522,15 @@ document.querySelectorAll('.nav-tab').forEach(tab => {
     document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
     const tabContent = document.getElementById('tab' + capitalize(currentTab));
     if (tabContent) tabContent.classList.add('active');
-    const showInput = (currentTab === 'main' || currentTab === 'my-tasks');
+    const showInput = (currentTab === 'main' || currentTab === 'my-tasks' || currentTab === 'personal');
     el.inputArea.style.display = showInput ? 'block' : 'none';
+
+    const isPersonal = currentTab === 'personal';
+    const projectRow = el.projectSelect.closest('.input-row');
+    const dependsRow = el.dependsOnSelect.closest('.input-row');
+    if (projectRow) projectRow.style.display = isPersonal ? 'none' : 'flex';
+    if (dependsRow) dependsRow.style.display = isPersonal ? 'none' : 'flex';
+    el.taskInput.placeholder = isPersonal ? 'Nueva tarea personal (solo tu la veras)...' : 'Escribe una nueva tarea...';
   });
 });
 

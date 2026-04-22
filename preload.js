@@ -31,6 +31,10 @@ contextBridge.exposeInMainWorld('api', {
   setClaudeApiKey: (key) => ipcRenderer.invoke('set-claude-api-key', key),
   callClaude: (payload) => ipcRenderer.invoke('call-claude', payload),
 
+  // Reminders
+  getReminderInterval: () => ipcRenderer.invoke('get-reminder-interval'),
+  setReminderInterval: (minutes) => ipcRenderer.invoke('set-reminder-interval', minutes),
+
   // Auto-update
   onUpdateStatus: (callback) => ipcRenderer.on('update-status', (_, data) => callback(data)),
   installUpdate: () => ipcRenderer.invoke('install-update'),

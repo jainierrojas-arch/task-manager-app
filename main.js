@@ -47,7 +47,8 @@ const store = new JsonStore({
   alwaysOnTop: true,
   opacity: 0.95,
   telegramToken: '',
-  claudeApiKey: ''
+  claudeApiKey: '',
+  reminderIntervalMinutes: 0
 });
 
 let mainWindow;
@@ -276,6 +277,12 @@ function registerIpcHandlers() {
   ipcMain.handle('get-claude-api-key-status', () => {
     const k = store.get('claudeApiKey');
     return k ? `Configurada (...${k.slice(-6)})` : '';
+  });
+
+  ipcMain.handle('get-reminder-interval', () => store.get('reminderIntervalMinutes') || 0);
+  ipcMain.handle('set-reminder-interval', (_, minutes) => {
+    store.set('reminderIntervalMinutes', Number(minutes) || 0);
+    return true;
   });
 
   ipcMain.handle('set-claude-api-key', (_, key) => {

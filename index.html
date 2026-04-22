@@ -670,6 +670,10 @@
         &#128100; Mis Tareas
         <span class="tab-badge" id="myBadge">0</span>
       </div>
+      <div class="nav-tab" data-tab="personal">
+        &#128246; Personal
+        <span class="tab-badge" id="personalBadge">0</span>
+      </div>
       <div class="nav-tab" data-tab="approval">
         &#128270; Por Aprobar
         <span class="tab-badge" id="approvalBadge">0</span>
@@ -722,6 +726,17 @@
         <div id="teamList"></div>
       </div>
 
+      <!-- Personal Tasks -->
+      <div class="tab-content" id="tabPersonal">
+        <div class="project-section">
+          <div class="project-header" style="border-left:3px solid #BB8FCE">
+            <span class="project-name">Tareas personales (solo las ves tu)</span>
+            <span class="project-count" id="personalCount">0</span>
+          </div>
+          <div id="personalList"></div>
+        </div>
+      </div>
+
       <!-- Settings -->
       <div class="tab-content" id="tabSettings">
         <div class="settings-panel">
@@ -743,6 +758,23 @@
                 <li>Copia el token y pegalo arriba</li>
                 <li>Cada miembro abre el bot y envia <code>/vincular su@email.com</code></li>
               </ol>
+            </div>
+          </div>
+
+          <div class="settings-group">
+            <div class="settings-label">Recordatorios automaticos por Telegram</div>
+            <div class="settings-input-group">
+              <select id="reminderInterval" style="flex:1">
+                <option value="0">Desactivados</option>
+                <option value="60">Cada 1 hora</option>
+                <option value="120">Cada 2 horas</option>
+                <option value="240">Cada 4 horas</option>
+                <option value="480">Cada 8 horas</option>
+              </select>
+              <button class="btn btn-primary btn-small" id="saveReminder">Guardar</button>
+            </div>
+            <div style="font-size:11px;color:var(--text-dim);margin-top:6px">
+              Cada miembro con Telegram vinculado recibe un resumen de sus tareas pendientes. Incluye tanto tareas del equipo como personales.
             </div>
           </div>
 
