@@ -787,6 +787,11 @@
         <button class="btn btn-ghost btn-small" id="quickProjectBtn" title="Nuevo proyecto">+</button>
       </div>
       <div class="input-row">
+        <select id="dependsOnSelect" style="flex:1">
+          <option value="">Depende de... (opcional)</option>
+        </select>
+      </div>
+      <div class="input-row">
         <input type="text" id="taskInput" placeholder="Escribe una nueva tarea..." style="flex:2">
         <input type="number" id="daysInput" placeholder="Dias" min="1" max="365" style="flex:1;max-width:90px">
         <button class="btn btn-primary" id="addTaskBtn">Agregar</button>

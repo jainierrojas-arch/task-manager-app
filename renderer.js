@@ -33,6 +33,7 @@ const el = {
   teamList: document.getElementById('teamList'),
   projectSelect: document.getElementById('projectSelect'),
   assignSelect: document.getElementById('assignSelect'),
+  dependsOnSelect: document.getElementById('dependsOnSelect'),
   taskInput: document.getElementById('taskInput'),
   daysInput: document.getElementById('daysInput'),
   addTaskBtn: document.getElementById('addTaskBtn'),
@@ -175,6 +176,7 @@ function subscribeToData() {
   unsubscribeTasks = db.collection('tasks').orderBy('createdAt', 'desc').onSnapshot((snapshot) => {
     tasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     renderAll();
+    renderDependsOnSelect();
   });
 
   unsubscribeProjects = db.collection('projects').orderBy('name').onSnapshot((snapshot) => {
@@ -330,6 +332,16 @@ function renderTaskList(container, taskList, mode) {
         addNoteBtn = `<button class="btn-add-note" onclick="addNote('${task.id}')">+ Nota</button>`;
       }
 
+      let blockedBadge = '';
+      if (task.dependsOn) {
+        const dep = tasks.find(t => t.id === task.dependsOn);
+        if (dep && dep.status !== 'completed') {
+          const waitName = dep.assignedToName || 'otro';
+          const waitText = dep.text.length > 25 ? dep.text.slice(0, 25) + '...' : dep.text;
+          blockedBadge = `<span class="task-deadline deadline-soon" title="Esperando que ${esc(waitName)} termine">🔒 Esperando: ${esc(waitText)}</span>`;
+        }
+      }
+
       html += `
         <div class="task-item ${overdueClass}" data-id="${task.id}" style="border-left-color:${group.color}">
           ${checkBtn}
@@ -339,6 +351,7 @@ function renderTaskList(container, taskList, mode) {
               <span class="task-assignee">${esc(assignee)}</span>
               ${statusBadge}
               ${deadlineBadge}
+              ${blockedBadge}
               <span class="task-tag">${source}</span>
               <span class="task-tag">${time}</span>
               ${addNoteBtn}
@@ -438,6 +451,21 @@ function renderAssignSelect() {
   if (current) el.assignSelect.value = current;
 }
 
+function renderDependsOnSelect() {
+  const current = el.dependsOnSelect.value;
+  const projectId = el.projectSelect.value;
+  el.dependsOnSelect.innerHTML = '<option value="">Depende de... (opcional)</option>';
+  const candidates = tasks.filter(t => t.status !== 'completed' && (!projectId || t.projectId === projectId));
+  candidates.forEach(t => {
+    const opt = document.createElement('option');
+    opt.value = t.id;
+    const short = t.text.length > 40 ? t.text.slice(0, 40) + '...' : t.text;
+    opt.textContent = `${short} - ${t.assignedToName || ''}`;
+    el.dependsOnSelect.appendChild(opt);
+  });
+  if (current && candidates.some(t => t.id === current)) el.dependsOnSelect.value = current;
+}
+
 function renderTeam() {
   if (teamMembers.length === 0) {
     el.teamList.innerHTML = '<div class="empty-state"><div class="empty-state-text">No hay miembros</div></div>';
@@ -498,6 +526,7 @@ async function addTask() {
   const text = el.taskInput.value.trim();
   const projectId = el.projectSelect.value;
   const assignTo = el.assignSelect.value;
+  const dependsOnId = el.dependsOnSelect.value;
   const days = parseInt(el.daysInput.value);
 
   if (!text) { el.taskInput.focus(); return; }
@@ -509,6 +538,7 @@ async function addTask() {
 
   const project = projects.find(p => p.id === projectId);
   const assignee = teamMembers.find(m => m.id === assignTo);
+  const dependsOnTask = dependsOnId ? tasks.find(t => t.id === dependsOnId) : null;
 
   const taskData = {
     text: text,
@@ -525,7 +555,12 @@ async function addTask() {
     createdAt: firebase.firestore.FieldValue.serverTimestamp()
   };
 
-  // Add deadline if days specified
+  if (dependsOnTask) {
+    taskData.dependsOn = dependsOnTask.id;
+    taskData.dependsOnText = dependsOnTask.text;
+    taskData.dependsOnAssigneeName = dependsOnTask.assignedToName || '';
+  }
+
   if (days && days > 0) {
     const deadline = new Date();
     deadline.setDate(deadline.getDate() + days);
@@ -537,11 +572,15 @@ async function addTask() {
 
   el.taskInput.value = '';
   el.daysInput.value = '';
+  el.dependsOnSelect.value = '';
 
   if (assignee && assignee.telegramChatId && assignTo !== currentUser.uid) {
     const deadlineMsg = days && days > 0 ? `\nPlazo: *${days} dia(s)*` : '';
+    const dependsMsg = dependsOnTask
+      ? `\nEn espera de *${dependsOnTask.assignedToName || 'otro miembro'}*: ${dependsOnTask.text}`
+      : '';
     window.api.sendTelegramMessage(assignee.telegramChatId,
-      `Nueva tarea asignada por *${currentUserData.name}*:\n${text}\nProyecto: *${project.name}*${deadlineMsg}`
+      `Nueva tarea asignada por *${currentUserData.name}*:\n${text}\nProyecto: *${project.name}*${deadlineMsg}${dependsMsg}`
     );
   }
 }
@@ -599,6 +638,17 @@ async function approveTask(taskId) {
         `Tu tarea fue *aprobada* por *${currentUserData.name}*:\n${task.text}`
       );
     }
+
+    // Notify dependents: tasks that were waiting on this one
+    const dependents = tasks.filter(t => t.dependsOn === taskId && t.status !== 'completed');
+    dependents.forEach(dep => {
+      const depAssignee = teamMembers.find(m => m.id === dep.assignedTo);
+      if (depAssignee && depAssignee.telegramChatId) {
+        window.api.sendTelegramMessage(depAssignee.telegramChatId,
+          `*${task.assignedToName || 'Un miembro'}* termino: ${task.text}\n\nYa puedes empezar tu tarea:\n*${dep.text}*\nProyecto: *${dep.projectName}*`
+        );
+      }
+    });
   }
 }
 
@@ -805,7 +855,7 @@ async function tgAddTask({ chatId, projectName, taskText }) {
   window.api.sendTelegramMessage(chatId, `Tarea agregada a *${project.name}*:\n${taskText}`);
 }
 
-async function tgAssignTask({ chatId, projectName, taskText, assignToEmail }) {
+async function tgAssignTask({ chatId, projectName, taskText, assignToEmail, dependsOnTaskId, dependsOnTaskText, dependsOnAssigneeName }) {
   const sender = teamMembers.find(m => m.telegramChatId === chatId);
   if (!sender) { window.api.sendTelegramMessage(chatId, 'Vincula tu cuenta primero.'); return; }
 
@@ -821,18 +871,64 @@ async function tgAssignTask({ chatId, projectName, taskText, assignToEmail }) {
     project = { id: ref.id, name: projectName, color: '#45B7D1' };
   }
 
-  await db.collection('tasks').add({
+  const taskData = {
     text: taskText, projectId: project.id, projectName: project.name,
     projectColor: project.color || '#45B7D1', assignedTo: assignee.id,
     assignedToName: assignee.name, createdBy: sender.id, createdByName: sender.name,
     status: 'pending', source: 'telegram', notes: [],
     createdAt: firebase.firestore.FieldValue.serverTimestamp()
-  });
+  };
+  if (dependsOnTaskId) {
+    taskData.dependsOn = dependsOnTaskId;
+    taskData.dependsOnText = dependsOnTaskText || '';
+    taskData.dependsOnAssigneeName = dependsOnAssigneeName || '';
+  }
+
+  const ref = await db.collection('tasks').add(taskData);
 
   window.api.sendTelegramMessage(chatId, `Tarea asignada a *${assignee.name}*:\n${taskText}`);
   if (assignee.telegramChatId) {
-    window.api.sendTelegramMessage(assignee.telegramChatId, `*${sender.name}* te asigno una tarea:\n${taskText}\nProyecto: *${project.name}*`);
+    const depMsg = dependsOnTaskId ? `\nEn espera de *${dependsOnAssigneeName || 'otro miembro'}*: ${dependsOnTaskText || ''}` : '';
+    window.api.sendTelegramMessage(assignee.telegramChatId, `*${sender.name}* te asigno una tarea:\n${taskText}\nProyecto: *${project.name}*${depMsg}`);
   }
+  return ref.id;
+}
+
+async function tgAssignChain({ chatId, projectName, steps }) {
+  const sender = teamMembers.find(m => m.telegramChatId === chatId);
+  if (!sender) { window.api.sendTelegramMessage(chatId, 'Vincula tu cuenta primero.'); return; }
+  if (!Array.isArray(steps) || steps.length === 0) {
+    window.api.sendTelegramMessage(chatId, 'No se indicaron pasos de la cadena.');
+    return;
+  }
+
+  let previousTaskId = null;
+  let previousText = null;
+  let previousAssigneeName = null;
+  const created = [];
+
+  for (const step of steps) {
+    const email = step.assign_to_email || step.assignToEmail;
+    const text = step.task_text || step.taskText;
+    if (!email || !text) continue;
+    const id = await tgAssignTask({
+      chatId,
+      projectName,
+      taskText: text,
+      assignToEmail: email,
+      dependsOnTaskId: previousTaskId,
+      dependsOnTaskText: previousText,
+      dependsOnAssigneeName: previousAssigneeName
+    });
+    if (!id) return;
+    previousTaskId = id;
+    previousText = text;
+    const assignee = teamMembers.find(m => m.email === email);
+    previousAssigneeName = assignee ? assignee.name : email;
+    created.push(`${created.length + 1}. ${previousAssigneeName}: ${text}`);
+  }
+
+  window.api.sendTelegramMessage(chatId, `Cadena creada en *${projectName}*:\n${created.join('\n')}`);
 }
 
 async function tgGetMyTasks({ chatId }) {
@@ -917,6 +1013,7 @@ Reglas:
 - Si menciona un proyecto, usa el nombre exacto de la lista; si no existe pero pide crearlo, puedes inventar un nombre
 - Una tarea para "mi"/"yo" o sin destinatario claro => add_task
 - Una tarea para otra persona => assign_task
+- Dos o mas tareas encadenadas ("primero A, despues B", "X tiene que terminar antes de Y") => assign_chain_tasks con los pasos en orden
 - Completar "la 1"/"la primera" => complete_task con index 1
 - Saludos, preguntas, cosas que no son acciones => reply_message con una respuesta util y amable`;
 
@@ -944,6 +1041,29 @@ Reglas:
           assign_to_email: { type: 'string' }
         },
         required: ['project_name', 'task_text', 'assign_to_email']
+      }
+    },
+    {
+      name: 'assign_chain_tasks',
+      description: 'Crear una cadena de tareas dependientes. Cada paso debe terminar antes que el siguiente. Usar cuando haya dos o mas personas que deben trabajar en secuencia.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          project_name: { type: 'string' },
+          steps: {
+            type: 'array',
+            description: 'Pasos en orden. Cada paso se ejecuta cuando termina el anterior.',
+            items: {
+              type: 'object',
+              properties: {
+                assign_to_email: { type: 'string' },
+                task_text: { type: 'string' }
+              },
+              required: ['assign_to_email', 'task_text']
+            }
+          }
+        },
+        required: ['project_name', 'steps']
       }
     },
     {
@@ -1003,6 +1123,9 @@ Reglas:
       break;
     case 'assign_task':
       await tgAssignTask({ chatId, projectName: input.project_name, taskText: input.task_text, assignToEmail: input.assign_to_email });
+      break;
+    case 'assign_chain_tasks':
+      await tgAssignChain({ chatId, projectName: input.project_name, steps: input.steps || [] });
       break;
     case 'complete_task':
       await tgCompleteTask({ chatId, taskIndex: input.task_index });
@@ -1084,6 +1207,7 @@ function updateClaudeStatus(label) {
 // ===== UI EVENTS =====
 el.addTaskBtn.addEventListener('click', addTask);
 el.taskInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') addTask(); });
+el.projectSelect.addEventListener('change', renderDependsOnSelect);
 
 document.querySelectorAll('.nav-tab').forEach(tab => {
   tab.addEventListener('click', () => {
