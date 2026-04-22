@@ -48,7 +48,8 @@ const store = new JsonStore({
   opacity: 0.95,
   telegramToken: '',
   claudeApiKey: '',
-  reminderIntervalMinutes: 0
+  reminderIntervalMinutes: 0,
+  tabsMultirow: false
 });
 
 let mainWindow;
@@ -283,6 +284,12 @@ function registerIpcHandlers() {
   ipcMain.handle('set-reminder-interval', (_, minutes) => {
     store.set('reminderIntervalMinutes', Number(minutes) || 0);
     return true;
+  });
+
+  ipcMain.handle('get-tabs-multirow', () => !!store.get('tabsMultirow'));
+  ipcMain.handle('set-tabs-multirow', (_, v) => {
+    store.set('tabsMultirow', !!v);
+    return !!v;
   });
 
   ipcMain.handle('open-external', (_, url) => {

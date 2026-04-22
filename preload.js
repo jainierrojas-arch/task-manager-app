@@ -38,6 +38,10 @@ contextBridge.exposeInMainWorld('api', {
   // External links
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
 
+  // Tabs view mode
+  getTabsMultirow: () => ipcRenderer.invoke('get-tabs-multirow'),
+  setTabsMultirow: (v) => ipcRenderer.invoke('set-tabs-multirow', v),
+
   // Auto-update
   onUpdateStatus: (callback) => ipcRenderer.on('update-status', (_, data) => callback(data)),
   installUpdate: () => ipcRenderer.invoke('install-update'),

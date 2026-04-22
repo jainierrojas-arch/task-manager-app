@@ -177,8 +177,37 @@
       border-bottom: 1px solid var(--border);
       overflow-x: auto;
       scrollbar-width: none;
+      position: relative;
     }
     .nav-tabs::-webkit-scrollbar { display: none; }
+    .nav-tabs.multirow {
+      flex-wrap: wrap;
+      overflow-x: visible;
+    }
+    .nav-tabs.multirow .nav-tab {
+      flex: 1 1 auto;
+      justify-content: center;
+      min-width: 0;
+      padding: 8px 10px;
+      font-size: 11px;
+    }
+    .tab-mode-btn {
+      position: absolute;
+      right: 4px;
+      top: 4px;
+      background: var(--bg-hover);
+      border: none;
+      color: var(--text-dim);
+      width: 24px;
+      height: 24px;
+      border-radius: 4px;
+      font-size: 13px;
+      cursor: pointer;
+      z-index: 2;
+      padding: 0;
+      line-height: 1;
+    }
+    .tab-mode-btn:hover { color: var(--text-primary); }
 
     .nav-tab {
       padding: 10px 14px;
@@ -481,6 +510,68 @@
     .telegram-instructions ol { padding-left: 20px; }
     .telegram-instructions code { background: var(--bg-primary); padding: 2px 6px; border-radius: 4px; font-size: 11px; }
 
+    /* Calendar */
+    .calendar-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      font-weight: 600;
+      font-size: 13px;
+    }
+    .calendar-month-label {
+      flex: 1;
+      text-align: center;
+      text-transform: capitalize;
+      color: var(--text-primary);
+    }
+    .calendar-weekdays {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 3px;
+      padding: 0 12px 6px;
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--text-dim);
+      text-align: center;
+    }
+    .calendar-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 3px;
+      padding: 0 12px;
+    }
+    .calendar-day {
+      min-height: 62px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 4px;
+      cursor: pointer;
+      font-size: 11px;
+      overflow: hidden;
+      transition: background 0.15s;
+    }
+    .calendar-day:hover { background: var(--bg-hover); }
+    .calendar-day.other-month { opacity: 0.25; background: transparent; border-color: transparent; cursor: default; }
+    .calendar-day.today { border: 1px solid var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+    .calendar-day.has-tasks { background: rgba(102, 126, 234, 0.12); }
+    .calendar-day.selected { border-color: #4ecdc4; background: rgba(78,205,196,0.15); }
+    .calendar-day-num { font-weight: 600; margin-bottom: 3px; color: var(--text-primary); }
+    .calendar-task-dot {
+      font-size: 9px;
+      background: rgba(78, 205, 196, 0.25);
+      color: var(--text-primary);
+      padding: 1px 4px;
+      border-radius: 2px;
+      margin-bottom: 2px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .calendar-task-dot.overdue { background: rgba(255, 107, 107, 0.3); }
+    .calendar-task-dot.personal { background: rgba(187, 143, 206, 0.3); }
+
     /* Modal */
     .modal-overlay {
       display: none;
@@ -674,6 +765,9 @@
         &#128246; Personal
         <span class="tab-badge" id="personalBadge">0</span>
       </div>
+      <div class="nav-tab" data-tab="calendar">
+        &#128197; Calendario
+      </div>
       <div class="nav-tab" data-tab="approval">
         &#128270; Por Aprobar
         <span class="tab-badge" id="approvalBadge">0</span>
@@ -687,6 +781,7 @@
       <div class="nav-tab" data-tab="settings">
         &#9881; Config
       </div>
+      <button class="tab-mode-btn" id="tabModeBtn" title="Cambiar vista de pestañas">&#9783;</button>
     </div>
 
     <!-- Content -->
@@ -724,6 +819,21 @@
           <span class="section-title">Miembros del Equipo</span>
         </div>
         <div id="teamList"></div>
+      </div>
+
+      <!-- Calendar -->
+      <div class="tab-content" id="tabCalendar">
+        <div class="calendar-header">
+          <button class="btn btn-ghost btn-small" id="calPrev">&larr;</button>
+          <div class="calendar-month-label" id="calMonthLabel">-</div>
+          <button class="btn btn-ghost btn-small" id="calNext">&rarr;</button>
+          <button class="btn btn-ghost btn-small" id="calToday" title="Ir a hoy">Hoy</button>
+        </div>
+        <div class="calendar-weekdays">
+          <div>L</div><div>M</div><div>M</div><div>J</div><div>V</div><div>S</div><div>D</div>
+        </div>
+        <div class="calendar-grid" id="calendarGrid"></div>
+        <div id="calendarDayList" style="margin-top:12px"></div>
       </div>
 
       <!-- Personal Tasks -->
@@ -818,11 +928,8 @@
         </select>
         <button class="btn btn-ghost btn-small" id="quickProjectBtn" title="Nuevo proyecto">+</button>
       </div>
-      <div class="input-row">
-        <select id="dependsOnSelect" style="flex:1">
-          <option value="">Depende de... (opcional)</option>
-        </select>
-        <button class="btn btn-ghost btn-small" id="chainBtn" title="Crear cadena de tareas para varios miembros en secuencia" style="white-space:nowrap">🔗 Cadena</button>
+      <div class="input-row" style="justify-content:flex-end">
+        <button class="btn btn-ghost btn-small" id="chainBtn" title="Crear cadena de tareas para varios miembros en secuencia" style="white-space:nowrap">🔗 Crear cadena de tareas</button>
       </div>
       <div class="input-row">
         <input type="text" id="taskInput" placeholder="Escribe una nueva tarea..." style="flex:2">

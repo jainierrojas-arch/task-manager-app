@@ -36,7 +36,6 @@ const el = {
   teamList: document.getElementById('teamList'),
   projectSelect: document.getElementById('projectSelect'),
   assignSelect: document.getElementById('assignSelect'),
-  dependsOnSelect: document.getElementById('dependsOnSelect'),
   taskInput: document.getElementById('taskInput'),
   durationInput: document.getElementById('durationInput'),
   durationUnit: document.getElementById('durationUnit'),
@@ -169,6 +168,7 @@ function showApp() {
   loadTelegramToken();
   loadClaudeStatus();
   loadReminderInterval();
+  loadTabsMode();
 }
 
 function showLogin() {
@@ -186,7 +186,6 @@ function subscribeToData() {
   unsubscribeTasks = db.collection('tasks').orderBy('createdAt', 'desc').onSnapshot((snapshot) => {
     tasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     renderAll();
-    renderDependsOnSelect();
   });
 
   unsubscribeProjects = db.collection('projects').orderBy('name').onSnapshot((snapshot) => {
@@ -210,6 +209,138 @@ function subscribeToData() {
 }
 
 // ===== RENDER =====
+// ===== CALENDAR =====
+let calCursor = new Date();
+let calSelectedDate = null;
+
+function tasksOnDate(date) {
+  const y = date.getFullYear(), m = date.getMonth(), d = date.getDate();
+  const matches = (t) => {
+    if (!t.deadline) return false;
+    const dd = t.deadline.toDate ? t.deadline.toDate() : new Date(t.deadline);
+    return dd.getFullYear() === y && dd.getMonth() === m && dd.getDate() === d;
+  };
+  const team = tasks.filter(t => matches(t) && t.status !== 'completed');
+  const personal = personalTasks.filter(t => matches(t) && t.status !== 'completed');
+  return { team, personal, all: [...team, ...personal] };
+}
+
+function renderCalendar() {
+  const grid = document.getElementById('calendarGrid');
+  const label = document.getElementById('calMonthLabel');
+  if (!grid || !label) return;
+
+  const year = calCursor.getFullYear();
+  const month = calCursor.getMonth();
+  label.textContent = calCursor.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+
+  const firstOfMonth = new Date(year, month, 1);
+  const firstDow = (firstOfMonth.getDay() + 6) % 7; // lunes=0
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const today = new Date();
+  const todayKey = today.toDateString();
+
+  let html = '';
+  for (let i = 0; i < firstDow; i++) html += '<div class="calendar-day other-month"></div>';
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dt = new Date(year, month, d);
+    const key = dt.toDateString();
+    const { team, personal, all } = tasksOnDate(dt);
+    const classes = ['calendar-day'];
+    if (all.length > 0) classes.push('has-tasks');
+    if (key === todayKey) classes.push('today');
+    if (calSelectedDate && key === calSelectedDate) classes.push('selected');
+
+    html += `<div class="${classes.join(' ')}" onclick="selectCalendarDay('${key}')">`;
+    html += `<div class="calendar-day-num">${d}</div>`;
+    const preview = [
+      ...team.map(t => ({ ...t, _personal: false })),
+      ...personal.map(t => ({ ...t, _personal: true }))
+    ];
+    preview.slice(0, 2).forEach(t => {
+      const overdue = !t._personal && (t.deadline.toDate ? t.deadline.toDate() : new Date(t.deadline)) < today;
+      const cls = t._personal ? 'personal' : (overdue ? 'overdue' : '');
+      html += `<div class="calendar-task-dot ${cls}" title="${esc(t.text)}">${esc(t.text.slice(0, 14))}</div>`;
+    });
+    if (preview.length > 2) html += `<div class="calendar-task-dot">+${preview.length - 2}</div>`;
+    html += '</div>';
+  }
+  grid.innerHTML = html;
+  renderCalendarDayList();
+}
+
+function renderCalendarDayList() {
+  const container = document.getElementById('calendarDayList');
+  if (!container) return;
+  if (!calSelectedDate) { container.innerHTML = ''; return; }
+  const date = new Date(calSelectedDate);
+  const { all } = tasksOnDate(date);
+  if (all.length === 0) {
+    container.innerHTML = `<div class="empty-state"><div class="empty-state-text" style="font-size:12px">Sin tareas para este dia</div></div>`;
+    return;
+  }
+  let html = `<div style="padding:8px 12px;font-weight:600;font-size:13px;text-transform:capitalize">${date.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}</div>`;
+  all.forEach(t => {
+    const isPersonal = !t.projectName;
+    const color = isPersonal ? '#BB8FCE' : (t.projectColor || '#666');
+    html += `<div class="task-item" style="border-left-color:${color};margin:4px 12px">
+      <div style="flex:1">
+        <div class="task-text">${esc(t.text)}</div>
+        <div class="task-meta">
+          <span class="task-assignee">${isPersonal ? 'Personal' : esc(t.assignedToName || '')}</span>
+          <span class="task-tag">${isPersonal ? 'Personal' : esc(t.projectName)}</span>
+          ${t.link ? `<span class="task-tag" style="background:rgba(153,102,255,0.2);color:#b794ff;cursor:pointer" onclick="window.api.openExternal('${esc(t.link)}')">🔗 Link</span>` : ''}
+        </div>
+      </div>
+    </div>`;
+  });
+  container.innerHTML = html;
+}
+
+function selectCalendarDay(key) {
+  calSelectedDate = key;
+  renderCalendar();
+}
+window.selectCalendarDay = selectCalendarDay;
+
+document.getElementById('calPrev').addEventListener('click', () => {
+  calCursor = new Date(calCursor.getFullYear(), calCursor.getMonth() - 1, 1);
+  renderCalendar();
+});
+document.getElementById('calNext').addEventListener('click', () => {
+  calCursor = new Date(calCursor.getFullYear(), calCursor.getMonth() + 1, 1);
+  renderCalendar();
+});
+document.getElementById('calToday').addEventListener('click', () => {
+  calCursor = new Date();
+  calSelectedDate = new Date().toDateString();
+  renderCalendar();
+});
+
+// ===== TABS VIEW MODE =====
+async function loadTabsMode() {
+  const multirow = await window.api.getTabsMultirow();
+  applyTabsMode(multirow);
+}
+
+function applyTabsMode(multirow) {
+  const navTabs = document.querySelector('.nav-tabs');
+  if (!navTabs) return;
+  if (multirow) navTabs.classList.add('multirow');
+  else navTabs.classList.remove('multirow');
+}
+
+const tabModeBtn = document.getElementById('tabModeBtn');
+if (tabModeBtn) {
+  tabModeBtn.addEventListener('click', async () => {
+    const navTabs = document.querySelector('.nav-tabs');
+    const willBe = !navTabs.classList.contains('multirow');
+    applyTabsMode(willBe);
+    await window.api.setTabsMultirow(willBe);
+  });
+}
+
 // ===== DEADLINE COUNTDOWN HELPERS =====
 function formatTimeRemaining(ms) {
   if (ms < 0) {
@@ -270,6 +401,7 @@ function renderAll() {
   renderTaskList(el.myTaskList, [...myTasks, ...myPendingApproval], 'my-tasks');
   renderTaskList(el.approvalList, pendingApproval, 'approval');
   renderCompletedList(completed.slice(0, 100));
+  if (currentTab === 'calendar') renderCalendar();
 }
 
 function renderPersonalList() {
@@ -277,6 +409,7 @@ function renderPersonalList() {
   const count = pending.length;
   if (el.personalBadge) el.personalBadge.textContent = count;
   if (el.personalCount) el.personalCount.textContent = count;
+  if (currentTab === 'calendar') renderCalendar();
 
   if (!el.personalList) return;
   if (personalTasks.length === 0) {
@@ -668,20 +801,6 @@ function renderAssignSelect() {
   if (current) el.assignSelect.value = current;
 }
 
-function renderDependsOnSelect() {
-  const current = el.dependsOnSelect.value;
-  const projectId = el.projectSelect.value;
-  el.dependsOnSelect.innerHTML = '<option value="">Depende de... (opcional)</option>';
-  const candidates = tasks.filter(t => t.status !== 'completed' && (!projectId || t.projectId === projectId));
-  candidates.forEach(t => {
-    const opt = document.createElement('option');
-    opt.value = t.id;
-    const short = t.text.length > 40 ? t.text.slice(0, 40) + '...' : t.text;
-    opt.textContent = `${short} - ${t.assignedToName || ''}`;
-    el.dependsOnSelect.appendChild(opt);
-  });
-  if (current && candidates.some(t => t.id === current)) el.dependsOnSelect.value = current;
-}
 
 function renderTeam() {
   if (teamMembers.length === 0) {
@@ -743,7 +862,6 @@ async function addTask() {
   const text = el.taskInput.value.trim();
   const projectId = el.projectSelect.value;
   const assignTo = el.assignSelect.value;
-  const dependsOnId = el.dependsOnSelect.value;
   const amount = parseInt(el.durationInput.value);
   const unit = el.durationUnit.value || 'days';
 
@@ -756,7 +874,6 @@ async function addTask() {
 
   const project = projects.find(p => p.id === projectId);
   const assignee = teamMembers.find(m => m.id === assignTo);
-  const dependsOnTask = dependsOnId ? tasks.find(t => t.id === dependsOnId) : null;
 
   const taskData = {
     text: text,
@@ -773,12 +890,6 @@ async function addTask() {
     createdAt: firebase.firestore.FieldValue.serverTimestamp()
   };
 
-  if (dependsOnTask) {
-    taskData.dependsOn = dependsOnTask.id;
-    taskData.dependsOnText = dependsOnTask.text;
-    taskData.dependsOnAssigneeName = dependsOnTask.assignedToName || '';
-  }
-
   if (amount && amount > 0) {
     const deadline = new Date();
     if (unit === 'hours') deadline.setHours(deadline.getHours() + amount);
@@ -792,15 +903,11 @@ async function addTask() {
 
   el.taskInput.value = '';
   el.durationInput.value = '';
-  el.dependsOnSelect.value = '';
 
   if (assignee && assignee.telegramChatId && assignTo !== currentUser.uid) {
     const deadlineMsg = amount && amount > 0 ? `\nPlazo: *${amount} ${unit === 'hours' ? 'hora(s)' : 'dia(s)'}*` : '';
-    const dependsMsg = dependsOnTask
-      ? `\nEn espera de *${dependsOnTask.assignedToName || 'otro miembro'}*: ${dependsOnTask.text}`
-      : '';
     window.api.sendTelegramMessage(assignee.telegramChatId,
-      `Nueva tarea asignada por *${currentUserData.name}*:\n${text}\nProyecto: *${project.name}*${deadlineMsg}${dependsMsg}`
+      `Nueva tarea asignada por *${currentUserData.name}*:\n${text}\nProyecto: *${project.name}*${deadlineMsg}`
     );
   }
 }
@@ -1493,7 +1600,6 @@ function handleAddClick() {
 }
 el.addTaskBtn.addEventListener('click', handleAddClick);
 el.taskInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleAddClick(); });
-el.projectSelect.addEventListener('change', renderDependsOnSelect);
 
 // ===== CHAIN (multi-step) MODAL =====
 const chainModal = document.getElementById('chainModal');
@@ -1631,12 +1737,14 @@ document.querySelectorAll('.nav-tab').forEach(tab => {
     if (tabContent) tabContent.classList.add('active');
     const showInput = (currentTab === 'main' || currentTab === 'my-tasks' || currentTab === 'personal');
     el.inputArea.style.display = showInput ? 'block' : 'none';
+    if (currentTab === 'calendar') renderCalendar();
 
     const isPersonal = currentTab === 'personal';
     const projectRow = el.projectSelect.closest('.input-row');
-    const dependsRow = el.dependsOnSelect.closest('.input-row');
+    const chainBtn = document.getElementById('chainBtn');
+    const chainRow = chainBtn ? chainBtn.closest('.input-row') : null;
     if (projectRow) projectRow.style.display = isPersonal ? 'none' : 'flex';
-    if (dependsRow) dependsRow.style.display = isPersonal ? 'none' : 'flex';
+    if (chainRow) chainRow.style.display = isPersonal ? 'none' : 'flex';
     el.taskInput.placeholder = isPersonal ? 'Nueva tarea personal (solo tu la veras)...' : 'Escribe una nueva tarea...';
   });
 });
