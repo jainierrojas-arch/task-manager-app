@@ -38,7 +38,8 @@ const el = {
   assignSelect: document.getElementById('assignSelect'),
   dependsOnSelect: document.getElementById('dependsOnSelect'),
   taskInput: document.getElementById('taskInput'),
-  daysInput: document.getElementById('daysInput'),
+  durationInput: document.getElementById('durationInput'),
+  durationUnit: document.getElementById('durationUnit'),
   addTaskBtn: document.getElementById('addTaskBtn'),
   mainBadge: document.getElementById('mainBadge'),
   myBadge: document.getElementById('myBadge'),
@@ -209,6 +210,51 @@ function subscribeToData() {
 }
 
 // ===== RENDER =====
+// ===== DEADLINE COUNTDOWN HELPERS =====
+function formatTimeRemaining(ms) {
+  if (ms < 0) {
+    const totalMin = Math.floor(-ms / 60000);
+    const d = Math.floor(totalMin / (60 * 24));
+    const h = Math.floor((totalMin % (60 * 24)) / 60);
+    if (d > 0) return `Vencida hace ${d}d ${h}h`;
+    if (h > 0) return `Vencida hace ${h}h`;
+    return 'Vencida';
+  }
+  const totalMin = Math.floor(ms / 60000);
+  if (totalMin < 1) return '<1m restante';
+  const d = Math.floor(totalMin / (60 * 24));
+  const h = Math.floor((totalMin % (60 * 24)) / 60);
+  const m = totalMin % 60;
+  if (d > 0) return `${d}d ${h}h restantes`;
+  if (h > 0) return `${h}h ${m}m restantes`;
+  return `${m}m restantes`;
+}
+
+function deadlineClass(ms) {
+  if (ms < 0) return 'deadline-overdue';
+  if (ms < 24 * 60 * 60 * 1000) return 'deadline-soon';
+  return 'deadline-ok';
+}
+
+function deadlineBadgeHtml(deadlineDate) {
+  const ts = deadlineDate.getTime();
+  const ms = ts - Date.now();
+  return `<span class="task-deadline ${deadlineClass(ms)}" data-deadline="${ts}">${formatTimeRemaining(ms)}</span>`;
+}
+
+function updateCountdowns() {
+  document.querySelectorAll('.task-deadline[data-deadline]').forEach(span => {
+    const ts = parseInt(span.dataset.deadline);
+    if (!ts) return;
+    const ms = ts - Date.now();
+    span.textContent = formatTimeRemaining(ms);
+    span.classList.remove('deadline-ok', 'deadline-soon', 'deadline-overdue');
+    span.classList.add(deadlineClass(ms));
+  });
+}
+
+setInterval(updateCountdowns, 60 * 1000);
+
 function renderAll() {
   const pending = tasks.filter(t => t.status === 'pending');
   const pendingApproval = tasks.filter(t => t.status === 'pending_approval');
@@ -259,13 +305,7 @@ function renderPersonalList() {
     let deadlineBadge = '';
     if (task.deadline && !completed) {
       const deadlineDate = task.deadline.toDate ? task.deadline.toDate() : new Date(task.deadline);
-      const now = new Date();
-      const diffMs = deadlineDate - now;
-      const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-      if (diffDays < 0) deadlineBadge = `<span class="task-deadline deadline-overdue">Vencida</span>`;
-      else if (diffDays === 0) deadlineBadge = `<span class="task-deadline deadline-soon">Hoy</span>`;
-      else if (diffDays <= 2) deadlineBadge = `<span class="task-deadline deadline-soon">${diffDays}d</span>`;
-      else deadlineBadge = `<span class="task-deadline deadline-ok">${diffDays}d</span>`;
+      deadlineBadge = deadlineBadgeHtml(deadlineDate);
     }
 
     const checkClass = completed ? 'task-check checked' : 'task-check';
@@ -289,7 +329,8 @@ function renderPersonalList() {
 async function addPersonalTask() {
   const text = el.taskInput.value.trim();
   if (!text) { el.taskInput.focus(); return; }
-  const days = parseInt(el.daysInput.value);
+  const amount = parseInt(el.durationInput.value);
+  const unit = el.durationUnit.value || 'days';
 
   const data = {
     text,
@@ -298,15 +339,17 @@ async function addPersonalTask() {
     status: 'pending',
     createdAt: firebase.firestore.FieldValue.serverTimestamp()
   };
-  if (days && days > 0) {
+  if (amount && amount > 0) {
     const deadline = new Date();
-    deadline.setDate(deadline.getDate() + days);
+    if (unit === 'hours') deadline.setHours(deadline.getHours() + amount);
+    else deadline.setDate(deadline.getDate() + amount);
     data.deadline = firebase.firestore.Timestamp.fromDate(deadline);
-    data.deadlineDays = days;
+    data.deadlineUnit = unit;
+    data.deadlineAmount = amount;
   }
   await db.collection('personalTasks').add(data);
   el.taskInput.value = '';
-  el.daysInput.value = '';
+  el.durationInput.value = '';
 }
 
 async function completePersonalTask(taskId) {
@@ -383,21 +426,8 @@ function renderTaskList(container, taskList, mode) {
       let overdueClass = '';
       if (task.deadline) {
         const deadlineDate = task.deadline.toDate ? task.deadline.toDate() : new Date(task.deadline);
-        const now = new Date();
-        const diffMs = deadlineDate - now;
-        const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-
-        if (diffDays < 0) {
-          deadlineBadge = `<span class="task-deadline deadline-overdue">Vencida hace ${Math.abs(diffDays)}d</span>`;
-          overdueClass = 'overdue';
-        } else if (diffDays === 0) {
-          deadlineBadge = `<span class="task-deadline deadline-overdue">Vence hoy</span>`;
-          overdueClass = 'overdue';
-        } else if (diffDays <= 2) {
-          deadlineBadge = `<span class="task-deadline deadline-soon">${diffDays}d restante${diffDays !== 1 ? 's' : ''}</span>`;
-        } else {
-          deadlineBadge = `<span class="task-deadline deadline-ok">${diffDays}d restantes</span>`;
-        }
+        deadlineBadge = deadlineBadgeHtml(deadlineDate);
+        if (deadlineDate.getTime() - Date.now() < 0) overdueClass = 'overdue';
       }
 
       // Approval buttons (only admin in approval tab, or creator)
@@ -641,7 +671,8 @@ async function addTask() {
   const projectId = el.projectSelect.value;
   const assignTo = el.assignSelect.value;
   const dependsOnId = el.dependsOnSelect.value;
-  const days = parseInt(el.daysInput.value);
+  const amount = parseInt(el.durationInput.value);
+  const unit = el.durationUnit.value || 'days';
 
   if (!text) { el.taskInput.focus(); return; }
   if (!projectId) {
@@ -675,21 +706,23 @@ async function addTask() {
     taskData.dependsOnAssigneeName = dependsOnTask.assignedToName || '';
   }
 
-  if (days && days > 0) {
+  if (amount && amount > 0) {
     const deadline = new Date();
-    deadline.setDate(deadline.getDate() + days);
+    if (unit === 'hours') deadline.setHours(deadline.getHours() + amount);
+    else deadline.setDate(deadline.getDate() + amount);
     taskData.deadline = firebase.firestore.Timestamp.fromDate(deadline);
-    taskData.deadlineDays = days;
+    taskData.deadlineUnit = unit;
+    taskData.deadlineAmount = amount;
   }
 
   await db.collection('tasks').add(taskData);
 
   el.taskInput.value = '';
-  el.daysInput.value = '';
+  el.durationInput.value = '';
   el.dependsOnSelect.value = '';
 
   if (assignee && assignee.telegramChatId && assignTo !== currentUser.uid) {
-    const deadlineMsg = days && days > 0 ? `\nPlazo: *${days} dia(s)*` : '';
+    const deadlineMsg = amount && amount > 0 ? `\nPlazo: *${amount} ${unit === 'hours' ? 'hora(s)' : 'dia(s)'}*` : '';
     const dependsMsg = dependsOnTask
       ? `\nEn espera de *${dependsOnTask.assignedToName || 'otro miembro'}*: ${dependsOnTask.text}`
       : '';
