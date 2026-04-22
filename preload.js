@@ -1,0 +1,32 @@
+const { contextBridge, ipcRenderer } = require('electron');
+
+contextBridge.exposeInMainWorld('api', {
+  // Window controls
+  minimizeWindow: () => ipcRenderer.invoke('minimize-window'),
+  closeWindow: () => ipcRenderer.invoke('close-window'),
+  toggleAlwaysOnTop: () => ipcRenderer.invoke('toggle-always-on-top'),
+  getAlwaysOnTop: () => ipcRenderer.invoke('get-always-on-top'),
+
+  // Telegram settings
+  getTelegramToken: () => ipcRenderer.invoke('get-telegram-token'),
+  setTelegramToken: (token) => ipcRenderer.invoke('set-telegram-token', token),
+
+  // Telegram messaging (renderer -> main -> Telegram)
+  sendTelegramMessage: (chatId, message) => ipcRenderer.send('telegram-send-message', { chatId, message }),
+  notifyAllTelegram: (chatIds, message) => ipcRenderer.send('telegram-notify-all', { chatIds, message }),
+
+  // Telegram events (main -> renderer)
+  onTelegramLinkUser: (callback) => ipcRenderer.on('telegram-link-user', (_, data) => callback(data)),
+  onTelegramAddTask: (callback) => ipcRenderer.on('telegram-add-task', (_, data) => callback(data)),
+  onTelegramAssignTask: (callback) => ipcRenderer.on('telegram-assign-task', (_, data) => callback(data)),
+  onTelegramGetMyTasks: (callback) => ipcRenderer.on('telegram-get-my-tasks', (_, data) => callback(data)),
+  onTelegramGetAllTasks: (callback) => ipcRenderer.on('telegram-get-all-tasks', (_, data) => callback(data)),
+  onTelegramCompleteTask: (callback) => ipcRenderer.on('telegram-complete-task', (_, data) => callback(data)),
+  onTelegramGetProjects: (callback) => ipcRenderer.on('telegram-get-projects', (_, data) => callback(data)),
+  onTelegramGetTeam: (callback) => ipcRenderer.on('telegram-get-team', (_, data) => callback(data)),
+
+  // Auto-update
+  onUpdateStatus: (callback) => ipcRenderer.on('update-status', (_, data) => callback(data)),
+  installUpdate: () => ipcRenderer.invoke('install-update'),
+  getAppVersion: () => ipcRenderer.invoke('get-app-version')
+});

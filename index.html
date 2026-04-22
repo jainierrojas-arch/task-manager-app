@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Task Manager - Equipo</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg-primary: #1a1b2e;
+      --bg-secondary: #232442;
+      --bg-card: #2a2b4a;
+      --bg-hover: #33345a;
+      --text-primary: #e8e8f0;
+      --text-secondary: #9d9db5;
+      --accent: #6c63ff;
+      --accent-hover: #5a52e0;
+      --success: #4ecdc4;
+      --danger: #ff6b6b;
+      --warning: #ffd93d;
+      --border: #3a3b5c;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      height: 100vh;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    /* ===== TITLEBAR ===== */
+    .titlebar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 38px;
+      background: var(--bg-secondary);
+      padding: 0 12px;
+      -webkit-app-region: drag;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .titlebar-title { font-size: 13px; font-weight: 600; color: var(--text-secondary); letter-spacing: 0.5px; }
+    .titlebar-buttons { display: flex; gap: 8px; -webkit-app-region: no-drag; }
+    .titlebar-btn { width: 14px; height: 14px; border-radius: 50%; border: none; cursor: pointer; transition: opacity 0.2s; }
+    .titlebar-btn:hover { opacity: 0.8; }
+    .btn-minimize { background: var(--warning); }
+    .btn-pin { background: var(--success); }
+    .btn-pin.unpinned { background: var(--text-secondary); }
+    .btn-close { background: var(--danger); }
+
+    /* ===== LOGIN SCREEN ===== */
+    .login-screen {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: calc(100vh - 38px);
+      padding: 40px;
+    }
+
+    .login-screen.hidden { display: none; }
+
+    .login-logo { font-size: 48px; margin-bottom: 16px; }
+    .login-title { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+    .login-subtitle { font-size: 13px; color: var(--text-secondary); margin-bottom: 32px; }
+
+    .login-form { width: 100%; max-width: 300px; }
+    .login-form input {
+      width: 100%;
+      padding: 12px 16px;
+      background: var(--bg-card);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-size: 14px;
+      outline: none;
+      margin-bottom: 12px;
+      transition: border-color 0.2s;
+    }
+    .login-form input:focus { border-color: var(--accent); }
+    .login-form input::placeholder { color: var(--text-secondary); }
+
+    .login-btn {
+      width: 100%;
+      padding: 12px;
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+      margin-bottom: 12px;
+    }
+    .login-btn:hover { background: var(--accent-hover); }
+
+    .login-toggle {
+      text-align: center;
+      font-size: 12px;
+      color: var(--text-secondary);
+      cursor: pointer;
+    }
+    .login-toggle span { color: var(--accent); }
+    .login-toggle span:hover { text-decoration: underline; }
+
+    .login-error {
+      background: rgba(255, 107, 107, 0.15);
+      color: var(--danger);
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      margin-bottom: 12px;
+      display: none;
+    }
+    .login-error.visible { display: block; }
+
+    /* ===== MAIN APP ===== */
+    .app-container {
+      display: none;
+      flex-direction: column;
+      height: calc(100vh - 38px);
+    }
+    .app-container.active { display: flex; }
+
+    /* User bar */
+    .user-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+    }
+
+    .user-avatar {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+      color: white;
+    }
+
+    .user-name { flex: 1; font-weight: 500; }
+    .user-role {
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: var(--accent);
+      color: white;
+    }
+
+    .logout-btn {
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      font-size: 14px;
+      padding: 4px;
+    }
+    .logout-btn:hover { color: var(--danger); }
+
+    /* Nav tabs */
+    .nav-tabs {
+      display: flex;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .nav-tabs::-webkit-scrollbar { display: none; }
+
+    .nav-tab {
+      padding: 10px 14px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      white-space: nowrap;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .nav-tab:hover { color: var(--text-primary); background: var(--bg-hover); }
+    .nav-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    .tab-badge {
+      background: var(--accent);
+      color: white;
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 10px;
+      min-width: 18px;
+      text-align: center;
+    }
+
+    /* Content */
+    .content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+    .content::-webkit-scrollbar { width: 6px; }
+    .content::-webkit-scrollbar-track { background: transparent; }
+    .content::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* Input area */
+    .input-area {
+      padding: 12px;
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--border);
+    }
+
+    .input-row { display: flex; gap: 8px; margin-bottom: 8px; }
+    .input-row:last-child { margin-bottom: 0; }
+
+    select, input[type="text"] {
+      flex: 1;
+      padding: 8px 12px;
+      background: var(--bg-card);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    select:focus, input[type="text"]:focus { border-color: var(--accent); }
+
+    .btn {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .btn-primary { background: var(--accent); color: white; }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-small { padding: 4px 10px; font-size: 11px; border-radius: 6px; }
+    .btn-ghost { background: transparent; color: var(--text-secondary); border: 1px solid var(--border); }
+    .btn-ghost:hover { background: var(--bg-hover); color: var(--text-primary); }
+    .btn-danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
+    .btn-danger:hover { background: var(--danger); color: white; }
+
+    /* Project section */
+    .project-section { margin-bottom: 16px; }
+
+    .project-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      background: var(--bg-card);
+      border-radius: 10px;
+      margin-bottom: 8px;
+    }
+
+    .project-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .project-name { font-size: 13px; font-weight: 600; flex: 1; }
+    .project-count {
+      font-size: 11px;
+      color: var(--text-secondary);
+      background: var(--bg-primary);
+      padding: 2px 8px;
+      border-radius: 10px;
+    }
+
+    /* Task item */
+    .task-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 10px 12px;
+      background: var(--bg-card);
+      border-radius: 8px;
+      margin-bottom: 6px;
+      transition: all 0.2s;
+      animation: slideIn 0.3s ease;
+      border-left: 3px solid transparent;
+    }
+    .task-item:hover { background: var(--bg-hover); }
+
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(-8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes fadeOut {
+      from { opacity: 1; transform: translateX(0); }
+      to { opacity: 0; transform: translateX(50px); }
+    }
+
+    .task-item.completing { animation: fadeOut 0.3s ease forwards; }
+
+    .task-check {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      border: 2px solid var(--border);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: all 0.2s;
+      margin-top: 2px;
+    }
+    .task-check:hover { border-color: var(--success); background: rgba(78, 205, 196, 0.1); }
+    .task-check:hover::after { content: '\2713'; color: var(--success); font-size: 12px; font-weight: bold; }
+
+    .task-text { font-size: 13px; line-height: 1.4; }
+
+    .task-meta {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 4px;
+      flex-wrap: wrap;
+    }
+
+    .task-tag {
+      font-size: 9px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: var(--bg-primary);
+      color: var(--text-secondary);
+    }
+
+    .task-assignee {
+      font-size: 10px;
+      padding: 1px 8px;
+      border-radius: 10px;
+      background: rgba(108, 99, 255, 0.2);
+      color: var(--accent);
+      font-weight: 500;
+    }
+
+    .task-delete {
+      opacity: 0;
+      cursor: pointer;
+      color: var(--danger);
+      font-size: 14px;
+      transition: opacity 0.2s;
+      background: none;
+      border: none;
+      padding: 4px;
+      margin-top: 2px;
+    }
+    .task-item:hover .task-delete { opacity: 1; }
+
+    /* Completed */
+    .task-item.completed { opacity: 0.5; }
+    .task-item.completed .task-text { text-decoration: line-through; color: var(--text-secondary); }
+    .task-item.completed .task-check { background: var(--success); border-color: var(--success); }
+    .task-item.completed .task-check::after { content: '\2713'; color: white; font-size: 12px; font-weight: bold; }
+
+    /* Empty state */
+    .empty-state { text-align: center; padding: 40px 20px; color: var(--text-secondary); }
+    .empty-state-icon { font-size: 48px; margin-bottom: 12px; }
+    .empty-state-text { font-size: 14px; margin-bottom: 4px; }
+    .empty-state-sub { font-size: 12px; opacity: 0.6; }
+
+    /* Team members */
+    .team-member {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      background: var(--bg-card);
+      border-radius: 8px;
+      margin-bottom: 6px;
+    }
+
+    .team-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 700;
+      color: white;
+    }
+
+    .team-info { flex: 1; }
+    .team-name { font-size: 13px; font-weight: 500; }
+    .team-email { font-size: 11px; color: var(--text-secondary); }
+    .team-tasks { font-size: 11px; color: var(--accent); }
+
+    .online-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--success);
+    }
+
+    /* Settings */
+    .settings-panel { padding: 16px; }
+    .settings-group { margin-bottom: 20px; }
+    .settings-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+    .settings-input-group { display: flex; gap: 8px; }
+    .settings-input-group input { flex: 1; }
+
+    .status-indicator { display: flex; align-items: center; gap: 6px; font-size: 12px; margin-top: 8px; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .status-dot.connected { background: var(--success); }
+    .status-dot.disconnected { background: var(--danger); }
+
+    .telegram-instructions {
+      background: var(--bg-card);
+      border-radius: 10px;
+      padding: 16px;
+      margin-top: 12px;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .telegram-instructions h4 { margin-bottom: 8px; color: var(--accent); }
+    .telegram-instructions ol { padding-left: 20px; }
+    .telegram-instructions code { background: var(--bg-primary); padding: 2px 6px; border-radius: 4px; font-size: 11px; }
+
+    /* Modal */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-overlay.active { display: flex; }
+
+    .modal {
+      background: var(--bg-secondary);
+      border-radius: 12px;
+      padding: 24px;
+      width: 90%;
+      max-width: 340px;
+      border: 1px solid var(--border);
+    }
+    .modal-title { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
+    .modal input, .modal select { width: 100%; margin-bottom: 12px; }
+    .modal-buttons { display: flex; gap: 8px; justify-content: flex-end; }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .section-title { font-size: 14px; font-weight: 600; color: var(--text-secondary); }
+
+    .project-action-btn {
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+    .project-action-btn:hover { background: var(--bg-primary); color: var(--danger); }
+
+    .loading-spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <!-- Title Bar -->
+  <div class="titlebar">
+    <span class="titlebar-title">TASK MANAGER - EQUIPO</span>
+    <div class="titlebar-buttons">
+      <button class="titlebar-btn btn-pin" id="btnPin" title="Siempre visible"></button>
+      <button class="titlebar-btn btn-minimize" id="btnMinimize" title="Minimizar"></button>
+      <button class="titlebar-btn btn-close" id="btnClose" title="Cerrar"></button>
+    </div>
+  </div>
+
+  <!-- LOGIN SCREEN -->
+  <div class="login-screen" id="loginScreen">
+    <div class="login-logo">&#128203;</div>
+    <div class="login-title">Task Manager</div>
+    <div class="login-subtitle">Inicia sesion para ver las tareas del equipo</div>
+
+    <div class="login-form">
+      <div class="login-error" id="loginError"></div>
+      <input type="text" id="loginName" placeholder="Tu nombre (solo al registrarte)" style="display:none">
+      <input type="text" id="loginEmail" placeholder="Email">
+      <input type="password" id="loginPassword" placeholder="Contrasena">
+      <button class="login-btn" id="loginBtn">Iniciar Sesion</button>
+      <div class="login-toggle" id="loginToggle">
+        No tienes cuenta? <span>Registrate</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN APP -->
+  <div class="app-container" id="appContainer">
+    <!-- User bar -->
+    <div class="user-bar">
+      <div class="user-avatar" id="userAvatar">J</div>
+      <span class="user-name" id="userName">Usuario</span>
+      <span class="user-role" id="userRole">miembro</span>
+      <button class="logout-btn" id="logoutBtn" title="Cerrar sesion">&#x2716;</button>
+    </div>
+
+    <!-- Update banner -->
+    <div id="updateBanner" style="display:none;padding:8px 12px;background:#4ecdc4;color:#1a1b2e;font-size:12px;font-weight:600;text-align:center;cursor:pointer;">
+      <span id="updateText">Actualizacion disponible...</span>
+    </div>
+
+    <!-- Navigation -->
+    <div class="nav-tabs">
+      <div class="nav-tab active" data-tab="main">
+        &#128203; Tareas
+        <span class="tab-badge" id="mainBadge">0</span>
+      </div>
+      <div class="nav-tab" data-tab="my-tasks">
+        &#128100; Mis Tareas
+        <span class="tab-badge" id="myBadge">0</span>
+      </div>
+      <div class="nav-tab" data-tab="completed">
+        &#9989; Hechas
+      </div>
+      <div class="nav-tab" data-tab="team">
+        &#128101; Equipo
+      </div>
+      <div class="nav-tab" data-tab="settings">
+        &#9881; Config
+      </div>
+    </div>
+
+    <!-- Content -->
+    <div class="content" id="contentArea">
+      <!-- All tasks -->
+      <div class="tab-content active" id="tabMain">
+        <div id="taskList"></div>
+      </div>
+
+      <!-- My tasks -->
+      <div class="tab-content" id="tabMyTasks">
+        <div id="myTaskList"></div>
+      </div>
+
+      <!-- Completed -->
+      <div class="tab-content" id="tabCompleted">
+        <div class="section-header">
+          <span class="section-title">Tareas Completadas</span>
+          <button class="btn btn-small btn-ghost" id="clearAllCompleted">Limpiar</button>
+        </div>
+        <div id="completedList"></div>
+      </div>
+
+      <!-- Team -->
+      <div class="tab-content" id="tabTeam">
+        <div class="section-header">
+          <span class="section-title">Miembros del Equipo</span>
+        </div>
+        <div id="teamList"></div>
+      </div>
+
+      <!-- Settings -->
+      <div class="tab-content" id="tabSettings">
+        <div class="settings-panel">
+          <div class="settings-group">
+            <div class="settings-label">Bot de Telegram</div>
+            <div class="settings-input-group">
+              <input type="text" id="telegramToken" placeholder="Token del bot (de @BotFather)">
+              <button class="btn btn-primary btn-small" id="saveTelegram">Guardar</button>
+            </div>
+            <div class="status-indicator" id="telegramStatus">
+              <span class="status-dot disconnected"></span>
+              <span>No conectado</span>
+            </div>
+            <div class="telegram-instructions">
+              <h4>Configurar bot de equipo:</h4>
+              <ol>
+                <li>Abre Telegram y busca <code>@BotFather</code></li>
+                <li>Envia <code>/newbot</code> y sigue las instrucciones</li>
+                <li>Copia el token y pegalo arriba</li>
+                <li>Cada miembro abre el bot y envia <code>/vincular su@email.com</code></li>
+              </ol>
+            </div>
+          </div>
+
+          <div class="settings-group">
+            <div class="settings-label">Proyectos</div>
+            <button class="btn btn-primary" id="newProjectBtn" style="width:100%">+ Nuevo Proyecto</button>
+            <div id="projectListSettings" style="margin-top:12px"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Input Area -->
+    <div class="input-area" id="inputArea">
+      <div class="input-row">
+        <select id="projectSelect">
+          <option value="">Proyecto...</option>
+        </select>
+        <select id="assignSelect">
+          <option value="">Asignar a...</option>
+        </select>
+        <button class="btn btn-ghost btn-small" id="quickProjectBtn" title="Nuevo proyecto">+</button>
+      </div>
+      <div class="input-row">
+        <input type="text" id="taskInput" placeholder="Escribe una nueva tarea...">
+        <button class="btn btn-primary" id="addTaskBtn">Agregar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- New Project Modal -->
+  <div class="modal-overlay" id="projectModal">
+    <div class="modal">
+      <div class="modal-title">Nuevo Proyecto</div>
+      <input type="text" id="projectNameInput" placeholder="Nombre del proyecto">
+      <div class="modal-buttons">
+        <button class="btn btn-ghost" id="cancelProject">Cancelar</button>
+        <button class="btn btn-primary" id="confirmProject">Crear</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+
+  <script>
+    // Firebase Configuration
+    firebase.initializeApp({
+      apiKey: "AIzaSyDiLAvhCsJOtHYOtH8x7P8aN3NB6fhvaf0",
+      authDomain: "app-de-tareas-e4209.firebaseapp.com",
+      projectId: "app-de-tareas-e4209",
+      storageBucket: "app-de-tareas-e4209.firebasestorage.app",
+      messagingSenderId: "1189986545334",
+      appId: "1:1189986545334:web:0b5d29b7affa2fecc0d017"
+    });
+
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+  </script>
+  <script src="renderer.js"></script>
+</body>
+</html>

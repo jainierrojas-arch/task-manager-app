@@ -1,0 +1,62 @@
+{
+  "name": "task-manager-app",
+  "version": "2.0.0",
+  "description": "App colaborativa de gestion de tareas con Firebase y Telegram",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:mac": "electron-builder --mac",
+    "build:win": "electron-builder --win",
+    "build": "electron-builder --mac --win",
+    "publish:mac": "electron-builder --mac --publish always",
+    "publish:win": "electron-builder --win --publish always",
+    "publish": "electron-builder --mac --win --publish always"
+  },
+  "build": {
+    "appId": "com.jainier.taskmanager",
+    "productName": "Task Manager",
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "renderer.js",
+      "icon.png"
+    ],
+    "publish": {
+      "provider": "github",
+      "owner": "jainierrojas-arch",
+      "repo": "task-manager-app"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "icon.icns",
+      "category": "public.app-category.productivity"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "icon256.png"
+    },
+    "nsis": {
+      "oneClick": true,
+      "installerIcon": "icon256.png",
+      "uninstallerIcon": "icon256.png",
+      "installerHeaderIcon": "icon256.png",
+      "shortcutName": "Task Manager"
+    },
+    "dmg": {
+      "title": "Task Manager",
+      "contents": [
+        { "x": 130, "y": 220 },
+        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+      ]
+    }
+  },
+  "dependencies": {
+    "electron-updater": "^6.1.7",
+    "node-telegram-bot-api": "^0.66.0"
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.13.3"
+  }
+}
