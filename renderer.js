@@ -2045,16 +2045,66 @@ function renderAIHistory() {
   const container = document.getElementById('aiHistory');
   if (!container) return;
   if (aiHistory.length === 0) { container.innerHTML = ''; return; }
-  container.innerHTML = aiHistory.map((h, i) => {
+  const recent = aiHistory.slice(0, 2);
+  container.innerHTML = recent.map((h, i) => {
     const opacity = i === 0 ? 0.75 : 0.45;
     const resultColor = h.type === 'error' ? '#ff9090' : '#7fc3b9';
     const shortResult = (h.result || '').replace(/\n/g, ' ');
-    return `<div style="font-size:10px;line-height:1.4;padding:2px 0;opacity:${opacity}">
+    return `<div onclick="reuseAIHistory(${i})" title="Click para reusar" style="font-size:10px;line-height:1.4;padding:2px 0;opacity:${opacity};cursor:pointer">
       <div style="color:var(--text-dim);font-style:italic">→ ${esc(h.user)}</div>
       <div style="color:${resultColor};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(shortResult)}</div>
     </div>`;
   }).join('');
 }
+
+function reuseAIHistory(index) {
+  const h = aiHistory[index];
+  if (!h) return;
+  const input = document.getElementById('aiInput');
+  if (input) { input.value = h.user; input.focus(); }
+}
+window.reuseAIHistory = reuseAIHistory;
+
+function openAIHistoryModal() {
+  const list = document.getElementById('aiHistoryList');
+  if (!list) return;
+  if (aiHistory.length === 0) {
+    list.innerHTML = '<div style="color:var(--text-dim);padding:16px;font-size:12px;text-align:center">Aun no hay historial.</div>';
+  } else {
+    list.innerHTML = aiHistory.map((h, i) => {
+      const color = h.type === 'error' ? '#ff9090' : '#7fc3b9';
+      return `<div onclick="reuseAIHistoryFromModal(${i})" title="Click para reusar en el input" style="padding:8px 10px;margin-bottom:6px;border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:12px;line-height:1.4;transition:background 0.15s" onmouseover="this.style.background='var(--bg-hover)'" onmouseout="this.style.background=''">
+        <div style="color:var(--text-dim);font-style:italic;margin-bottom:4px">→ ${esc(h.user)}</div>
+        <div style="color:${color};white-space:pre-wrap">${esc(h.result || '')}</div>
+      </div>`;
+    }).join('');
+  }
+  document.getElementById('aiHistoryModal').classList.add('active');
+}
+
+function reuseAIHistoryFromModal(index) {
+  reuseAIHistory(index);
+  document.getElementById('aiHistoryModal').classList.remove('active');
+}
+window.reuseAIHistoryFromModal = reuseAIHistoryFromModal;
+
+const aiHistoryBtn = document.getElementById('aiHistoryBtn');
+if (aiHistoryBtn) aiHistoryBtn.addEventListener('click', openAIHistoryModal);
+const closeAiHistoryBtn = document.getElementById('closeAiHistory');
+if (closeAiHistoryBtn) closeAiHistoryBtn.addEventListener('click', () => {
+  document.getElementById('aiHistoryModal').classList.remove('active');
+});
+const aiHistoryClearBtn = document.getElementById('aiHistoryClear');
+if (aiHistoryClearBtn) aiHistoryClearBtn.addEventListener('click', () => {
+  if (!confirm('Borrar todo el historial del agente?')) return;
+  aiHistory.length = 0;
+  renderAIHistory();
+  openAIHistoryModal();
+});
+const aiHistoryModal = document.getElementById('aiHistoryModal');
+if (aiHistoryModal) aiHistoryModal.addEventListener('click', (e) => {
+  if (e.target === aiHistoryModal) aiHistoryModal.classList.remove('active');
+});
 
 function showAIResult(text, type = 'info') {
   const out = document.getElementById('aiResult');
@@ -2074,7 +2124,7 @@ async function aiDispatch(text) {
   // Mover el resultado anterior al historial antes de procesar uno nuevo
   if (lastAiUserMsg && lastAiResult) {
     aiHistory.unshift({ user: lastAiUserMsg, result: lastAiResult, type: lastAiResultType });
-    if (aiHistory.length > 2) aiHistory.pop();
+    if (aiHistory.length > 10) aiHistory.pop();
     renderAIHistory();
   }
   lastAiUserMsg = text;

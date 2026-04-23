@@ -958,10 +958,25 @@
     <!-- AI footer -->
     <div class="ai-footer">
       <div id="aiResult" style="display:none;padding:8px 12px;margin:6px 12px 0;background:var(--bg-card);border-radius:6px;font-size:12px;line-height:1.5;white-space:pre-wrap"></div>
-      <div id="aiHistory" style="padding:0 12px"></div>
-      <div style="display:flex;gap:6px;padding:10px 12px">
+      <div style="display:flex;gap:6px;padding:10px 12px 6px">
         <input type="text" id="aiInput" placeholder="Pidele a Claude: 'asigna a juan...', 'crea cadena...', 'nueva tarea personal...'" style="flex:1">
         <button class="btn btn-primary btn-small" id="aiSendBtn">Enviar</button>
+      </div>
+      <div id="aiHistory" style="padding:0 12px 4px"></div>
+      <div style="display:flex;justify-content:flex-end;padding:0 12px 8px">
+        <button class="btn btn-ghost btn-small" id="aiHistoryBtn" style="font-size:10px;padding:3px 8px;opacity:0.7">📜 Historial</button>
+      </div>
+    </div>
+
+    <!-- AI History Modal -->
+    <div class="modal-overlay" id="aiHistoryModal">
+      <div class="modal" style="max-width:580px;max-height:80vh;display:flex;flex-direction:column">
+        <div class="modal-title">Historial del agente (click para reusar)</div>
+        <div id="aiHistoryList" style="overflow-y:auto;flex:1;margin-bottom:12px"></div>
+        <div class="modal-buttons">
+          <button class="btn btn-ghost" id="aiHistoryClear" style="margin-right:auto;color:var(--danger)">Borrar todo</button>
+          <button class="btn btn-ghost" id="closeAiHistory">Cerrar</button>
+        </div>
       </div>
     </div>
   </div>
