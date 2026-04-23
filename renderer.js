@@ -487,7 +487,8 @@ async function addPersonalTask() {
   };
   if (amount && amount > 0) {
     const deadline = new Date();
-    if (unit === 'hours') deadline.setHours(deadline.getHours() + amount);
+    if (unit === 'minutes') deadline.setMinutes(deadline.getMinutes() + amount);
+    else if (unit === 'hours') deadline.setHours(deadline.getHours() + amount);
     else deadline.setDate(deadline.getDate() + amount);
     data.deadline = firebase.firestore.Timestamp.fromDate(deadline);
     data.deadlineUnit = unit;
@@ -896,7 +897,8 @@ async function addTask() {
 
   if (amount && amount > 0) {
     const deadline = new Date();
-    if (unit === 'hours') deadline.setHours(deadline.getHours() + amount);
+    if (unit === 'minutes') deadline.setMinutes(deadline.getMinutes() + amount);
+    else if (unit === 'hours') deadline.setHours(deadline.getHours() + amount);
     else deadline.setDate(deadline.getDate() + amount);
     taskData.deadline = firebase.firestore.Timestamp.fromDate(deadline);
     taskData.deadlineUnit = unit;
@@ -909,7 +911,8 @@ async function addTask() {
   el.durationInput.value = '';
 
   if (assignee && assignee.telegramChatId && assignTo !== currentUser.uid) {
-    const deadlineMsg = amount && amount > 0 ? `\nPlazo: *${amount} ${unit === 'hours' ? 'hora(s)' : 'dia(s)'}*` : '';
+    const unitLabel = unit === 'minutes' ? 'minuto(s)' : unit === 'hours' ? 'hora(s)' : 'dia(s)';
+    const deadlineMsg = amount && amount > 0 ? `\nPlazo: *${amount} ${unitLabel}*` : '';
     window.api.sendTelegramMessage(assignee.telegramChatId,
       `Nueva tarea asignada por *${currentUserData.name}*:\n${text}\nProyecto: *${project.name}*${deadlineMsg}`
     );
@@ -1638,16 +1641,28 @@ function closeChainModal() {
 function addChainStepRow() {
   const row = document.createElement('div');
   row.className = 'chain-step-row';
-  row.style.cssText = 'display:flex;gap:8px;margin-bottom:8px;align-items:center';
+  row.style.cssText = 'display:flex;flex-direction:column;gap:4px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border)';
   const optionsHtml = teamMembers.map(m => `<option value="${m.id}">${esc(m.name)}${m.id === currentUser.uid ? ' (yo)' : ''}</option>`).join('');
   row.innerHTML = `
-    <span class="chain-step-num" style="min-width:22px;color:var(--text-dim);font-size:12px;font-weight:600">1.</span>
-    <input type="text" class="chain-step-text" placeholder="Descripcion del paso" style="flex:2;margin:0">
-    <select class="chain-step-user" style="flex:1;margin:0">
-      <option value="">Asignar a...</option>
-      ${optionsHtml}
-    </select>
-    <button class="btn btn-ghost btn-small chain-step-remove" title="Quitar paso" style="color:var(--danger);padding:4px 8px">&times;</button>
+    <div style="display:flex;gap:8px;align-items:center">
+      <span class="chain-step-num" style="min-width:22px;color:var(--text-dim);font-size:12px;font-weight:600">1.</span>
+      <input type="text" class="chain-step-text" placeholder="Descripcion del paso" style="flex:2;margin:0">
+      <select class="chain-step-user" style="flex:1;margin:0">
+        <option value="">Asignar a...</option>
+        ${optionsHtml}
+      </select>
+      <button class="btn btn-ghost btn-small chain-step-remove" title="Quitar paso" style="color:var(--danger);padding:4px 8px">&times;</button>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;margin-left:30px">
+      <span style="color:var(--text-dim);font-size:11px">Plazo:</span>
+      <input type="number" class="chain-step-amount" placeholder="Tiempo" min="1" style="flex:0;max-width:80px;margin:0">
+      <select class="chain-step-unit" style="flex:0;min-width:100px;max-width:120px;margin:0">
+        <option value="">Sin plazo</option>
+        <option value="minutes">Minutos</option>
+        <option value="hours">Horas</option>
+        <option value="days">Dias</option>
+      </select>
+    </div>
   `;
   row.querySelector('.chain-step-remove').addEventListener('click', () => {
     row.remove();
@@ -1678,8 +1693,17 @@ async function confirmChain() {
   for (const row of rows) {
     const text = row.querySelector('.chain-step-text').value.trim();
     const userId = row.querySelector('.chain-step-user').value;
+    const amount = parseInt(row.querySelector('.chain-step-amount').value);
+    const unit = row.querySelector('.chain-step-unit').value;
     if (!text || !userId) continue;
-    steps.push({ text, userId });
+    let deadlineDate = null;
+    if (amount && amount > 0 && unit) {
+      deadlineDate = new Date();
+      if (unit === 'minutes') deadlineDate.setMinutes(deadlineDate.getMinutes() + amount);
+      else if (unit === 'hours') deadlineDate.setHours(deadlineDate.getHours() + amount);
+      else deadlineDate.setDate(deadlineDate.getDate() + amount);
+    }
+    steps.push({ text, userId, deadlineDate });
   }
   if (steps.length < 2) {
     alert('Agrega al menos 2 pasos con texto y miembro asignado.');
@@ -1713,13 +1737,17 @@ async function confirmChain() {
       taskData.dependsOnText = previousText;
       taskData.dependsOnAssigneeName = previousAssigneeName;
     }
+    if (step.deadlineDate) {
+      taskData.deadline = firebase.firestore.Timestamp.fromDate(step.deadlineDate);
+    }
 
     const ref = await db.collection('tasks').add(taskData);
 
     if (assignee.telegramChatId && assignee.id !== currentUser.uid) {
       const depMsg = previousText ? `\nEn espera de *${previousAssigneeName}*: ${previousText}` : '';
+      const dlMsg = step.deadlineDate ? `\nPlazo: *${step.deadlineDate.toLocaleDateString('es-ES', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}*` : '';
       window.api.sendTelegramMessage(assignee.telegramChatId,
-        `Nueva tarea en cadena (*${currentUserData.name}*):\n${step.text}\nProyecto: *${project.name}*${depMsg}`
+        `Nueva tarea en cadena (*${currentUserData.name}*):\n${step.text}\nProyecto: *${project.name}*${dlMsg}${depMsg}`
       );
     }
 
