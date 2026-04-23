@@ -251,18 +251,30 @@ function initTelegram() {
 
 // IPC: Send message to Telegram from renderer
 ipcMain.on('telegram-send-message', (_, { chatId, message }) => {
-  if (telegramBot && chatId) {
-    telegramBot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+  if (!telegramBot || !chatId) {
+    console.warn('[telegram] cannot send — bot not active or missing chatId', { hasBot: !!telegramBot, chatId });
+    return;
   }
+  telegramBot.sendMessage(chatId, message, { parse_mode: 'Markdown' })
+    .catch(err => {
+      console.warn('[telegram] send failed with Markdown, retrying plain text:', err.message);
+      // Reintentar sin Markdown en caso de error de parsing
+      telegramBot.sendMessage(chatId, message)
+        .catch(err2 => console.error('[telegram] send failed completely:', err2.message, 'chatId:', chatId));
+    });
 });
 
 // IPC: Notify all linked Telegram users
 ipcMain.on('telegram-notify-all', (_, { chatIds, message }) => {
-  if (telegramBot && chatIds) {
-    chatIds.forEach(chatId => {
-      telegramBot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
-    });
-  }
+  if (!telegramBot || !chatIds) return;
+  chatIds.forEach(chatId => {
+    telegramBot.sendMessage(chatId, message, { parse_mode: 'Markdown' })
+      .catch(err => {
+        console.warn('[telegram] notify-all failed with Markdown, retrying plain:', err.message);
+        telegramBot.sendMessage(chatId, message)
+          .catch(err2 => console.error('[telegram] notify-all failed completely:', err2.message));
+      });
+  });
 });
 
 function registerIpcHandlers() {

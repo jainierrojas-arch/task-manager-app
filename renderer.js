@@ -2075,10 +2075,10 @@ async function aiAssignTaskInternal({ projectName, taskText, assignToEmail, dead
   }
   const ref = await db.collection('tasks').add(taskData);
 
-  if (assignee.telegramChatId && assignee.id !== currentUser.uid) {
+  if (assignee.id !== currentUser.uid) {
     const depMsg = dependsOnTaskId ? `\nEn espera de *${dependsOnAssigneeName || 'otro'}*: ${dependsOnTaskText || ''}` : '';
     const dlMsg = dl ? `\nPlazo: *${dl.toLocaleDateString('es-ES', { day: 'numeric', month: 'long' })}*` : '';
-    sendTelegramNotif(assignee.telegramChatId,
+    notifyAssignedOrWarn(assignee,
       `*${currentUserData.name}* te asigno una tarea:\n${taskText}\nProyecto: *${project.name}*${dlMsg}${depMsg}`);
   }
   return { success: true, taskId: ref.id, assigneeName: assignee.name, projectName: project.name, deadline: dl };
