@@ -572,6 +572,30 @@
     .calendar-task-dot.overdue { background: rgba(255, 107, 107, 0.3); }
     .calendar-task-dot.personal { background: rgba(187, 143, 206, 0.3); }
 
+    /* Toast */
+    .toast-container {
+      position: fixed;
+      bottom: 140px;
+      right: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      z-index: 10000;
+      pointer-events: none;
+    }
+    .toast {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 11px;
+      max-width: 280px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      transition: opacity 0.3s;
+    }
+    .toast.success { border-left: 3px solid #4ecdc4; }
+    .toast.warn { border-left: 3px solid #ff9090; }
+
     /* Modal */
     .modal-overlay {
       display: none;

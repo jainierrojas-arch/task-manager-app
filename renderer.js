@@ -826,7 +826,9 @@ function renderTeam() {
     const waiting = tasks.filter(t => t.assignedTo === m.id && t.status === 'pending_approval').length;
     const done = tasks.filter(t => t.assignedTo === m.id && t.status === 'completed').length;
     const color = userColors[i % userColors.length];
-    const linked = m.telegramChatId ? 'Telegram vinculado' : 'Sin Telegram';
+    const linkedHtml = m.telegramChatId
+      ? '<span style="color:#4ecdc4">✓ Telegram vinculado</span>'
+      : '<span style="color:#ff9090" title="Este miembro no recibira notificaciones hasta vincular. Pidele que envie /vincular ' + esc(m.email) + ' al bot">✗ Sin Telegram</span>';
 
     const roleLabel = m.role === 'admin' ? 'Admin' : 'Miembro';
     const canChangeRole = currentUserData && currentUserData.role === 'admin' && m.id !== currentUser.uid;
@@ -839,7 +841,7 @@ function renderTeam() {
         <div class="team-avatar" style="background:${color}">${m.name.charAt(0).toUpperCase()}</div>
         <div class="team-info">
           <div class="team-name">${esc(m.name)} ${m.id === currentUser.uid ? '(tu)' : ''} <span style="font-size:10px;color:${m.role === 'admin' ? 'var(--success)' : 'var(--text-secondary)'}">[${roleLabel}]</span></div>
-          <div class="team-email">${esc(m.email)} - ${linked}</div>
+          <div class="team-email">${esc(m.email)} · ${linkedHtml}</div>
           <div class="team-tasks">${pending} pendientes - ${waiting} por aprobar - ${done} completadas ${roleBtn}</div>
         </div>
       </div>`;
@@ -917,10 +919,10 @@ async function addTask() {
   el.taskInput.value = '';
   el.durationInput.value = '';
 
-  if (assignee && assignee.telegramChatId && assignTo !== currentUser.uid) {
+  if (assignee && assignTo !== currentUser.uid) {
     const unitLabel = unit === 'minutes' ? 'minuto(s)' : unit === 'hours' ? 'hora(s)' : 'dia(s)';
     const deadlineMsg = amount && amount > 0 ? `\nPlazo: *${amount} ${unitLabel}*` : '';
-    window.api.sendTelegramMessage(assignee.telegramChatId,
+    notifyAssignedOrWarn(assignee,
       `Nueva tarea asignada por *${currentUserData.name}*:\n${text}\nProyecto: *${project.name}*${deadlineMsg}`
     );
   }
@@ -1762,10 +1764,10 @@ async function confirmChain() {
 
     const ref = await db.collection('tasks').add(taskData);
 
-    if (assignee.telegramChatId && assignee.id !== currentUser.uid) {
+    if (assignee.id !== currentUser.uid) {
       const depMsg = previousText ? `\nEn espera de *${previousAssigneeName}*: ${previousText}` : '';
       const dlMsg = step.deadlineDate ? `\nPlazo: *${step.deadlineDate.toLocaleDateString('es-ES', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}*` : '';
-      window.api.sendTelegramMessage(assignee.telegramChatId,
+      notifyAssignedOrWarn(assignee,
         `Nueva tarea en cadena (*${currentUserData.name}*):\n${step.text}\nProyecto: *${project.name}*${dlMsg}${depMsg}`
       );
     }
@@ -1913,6 +1915,33 @@ function formatDate(timestamp) {
   if (!timestamp) return '';
   const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
   return date.toLocaleDateString('es', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
+// ===== TOAST =====
+function showToast(msg, type = 'success', durationMs = 3500) {
+  let container = document.getElementById('toastContainer');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toastContainer';
+    container.className = 'toast-container';
+    document.body.appendChild(container);
+  }
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.textContent = msg;
+  container.appendChild(t);
+  setTimeout(() => { t.style.opacity = '0'; }, durationMs);
+  setTimeout(() => t.remove(), durationMs + 400);
+}
+
+function notifyAssignedOrWarn(assignee, message) {
+  if (!assignee || assignee.id === currentUser.uid) return;
+  if (assignee.telegramChatId) {
+    window.api.sendTelegramMessage(assignee.telegramChatId, message);
+    showToast(`✓ Notificado a ${assignee.name} por Telegram`, 'success');
+  } else {
+    showToast(`⚠️ ${assignee.name} no tiene Telegram vinculado — no recibira la notif`, 'warn', 5000);
+  }
 }
 
 // ===== AI DISPATCH (IN-APP AGENT) =====
@@ -2390,8 +2419,8 @@ document.getElementById('calTaskConfirm').addEventListener('click', async () => 
       deadline: firebase.firestore.Timestamp.fromDate(deadline),
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
-    if (assignee && assignee.telegramChatId && assignTo !== currentUser.uid) {
-      window.api.sendTelegramMessage(assignee.telegramChatId,
+    if (assignee && assignTo !== currentUser.uid) {
+      notifyAssignedOrWarn(assignee,
         `Nueva tarea asignada por *${currentUserData.name}* para *${deadline.toLocaleDateString('es-ES', { day: 'numeric', month: 'long' })}*:\n${text}\nProyecto: *${project.name}*`);
     }
   }
