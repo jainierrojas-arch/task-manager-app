@@ -181,6 +181,13 @@ function showLogin() {
 
 el.logoutBtn.addEventListener('click', () => auth.signOut());
 
+const cloudBtn = document.getElementById('cloudBtn');
+if (cloudBtn) {
+  cloudBtn.addEventListener('click', () => {
+    window.api.openExternal('https://drive.google.com/drive/folders/1BuRcSTdiHx07lcUsO9WUe1BoCk81NX2e?usp=sharing');
+  });
+}
+
 // ===== FIRESTORE REAL-TIME =====
 function subscribeToData() {
   unsubscribeTasks = db.collection('tasks').orderBy('createdAt', 'desc').onSnapshot((snapshot) => {
