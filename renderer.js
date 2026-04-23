@@ -16,8 +16,19 @@ let unsubscribePersonal = null;
 let unsubscribeNotifQueue = null;
 let reminderTimer = null;
 
-// User colors for completed tab
-const userColors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#DDA0DD', '#BB8FCE', '#F0B27A', '#82E0AA', '#F1948A', '#AED6F1'];
+// Colores por miembro - escogidos para maximo contraste visual entre si
+const userColors = [
+  '#FF4757', // rojo vivo
+  '#1E90FF', // azul vivo
+  '#2ED573', // verde vivo
+  '#FFA502', // naranja
+  '#BE2EDD', // morado
+  '#FFD93D', // amarillo
+  '#00D2D3', // cyan
+  '#FF6348', // coral
+  '#70A1FF', // azul cielo
+  '#EE5A6F'  // rosa frambuesa
+];
 
 // ===== DOM ELEMENTS =====
 const el = {
@@ -313,11 +324,14 @@ function renderCalendarDayList() {
   all.forEach(t => {
     const isPersonal = !t.projectName;
     const color = isPersonal ? '#BB8FCE' : (t.projectColor || '#666');
+    const calChip = isPersonal
+      ? `<span class="task-assignee" style="background:rgba(187,143,206,0.22);color:#BB8FCE">Personal</span>`
+      : assigneeChips(t);
     html += `<div class="task-item" style="border-left-color:${color};margin:4px 12px">
       <div style="flex:1">
         <div class="task-text">${esc(t.text)}</div>
         <div class="task-meta">
-          <span class="task-assignee">${isPersonal ? 'Personal' : esc(t.assignedToName || '')}</span>
+          ${calChip}
           <span class="task-tag">${isPersonal ? 'Personal' : esc(t.projectName)}</span>
           ${t.link ? `<span class="task-tag" style="background:rgba(153,102,255,0.2);color:#b794ff;cursor:pointer" onclick="window.api.openExternal('${esc(t.link)}')">🔗 Link</span>` : ''}
         </div>
@@ -765,6 +779,30 @@ function getUserColor(userId) {
   return userColors[idx >= 0 ? idx % userColors.length : 0];
 }
 
+function hexToRgba(hex, alpha) {
+  const h = (hex || '#666').replace('#', '');
+  const r = parseInt(h.substring(0, 2), 16);
+  const g = parseInt(h.substring(2, 4), 16);
+  const b = parseInt(h.substring(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function userChip(userId, name) {
+  const c = getUserColor(userId);
+  return `<span class="task-assignee" style="background:${hexToRgba(c, 0.32)};color:${c};border:1px solid ${hexToRgba(c, 0.5)}">${esc(name)}</span>`;
+}
+
+function assigneeChips(task) {
+  const creatorId = task.createdBy;
+  const creatorName = task.createdByName;
+  const assigneeId = task.assignedTo;
+  const assigneeName = task.assignedToName || 'Sin asignar';
+  if (!creatorName || creatorId === assigneeId) {
+    return userChip(assigneeId, assigneeName);
+  }
+  return `${userChip(creatorId, creatorName)}<span style="opacity:0.55;margin:0 2px;font-size:11px">→</span>${userChip(assigneeId, assigneeName)}`;
+}
+
 function renderTaskList(container, taskList, mode) {
   if (taskList.length === 0) {
     const emptyMessages = {
@@ -910,7 +948,7 @@ function renderTaskList(container, taskList, mode) {
           <div style="flex:1">
             <div class="task-text">${esc(task.text)}</div>
             <div class="task-meta">
-              <span class="task-assignee">${esc(assignee)}</span>
+              ${assigneeChips(task)}
               ${statusBadge}
               ${deadlineBadge}
               ${blockedBadge}
