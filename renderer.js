@@ -1655,8 +1655,8 @@ function addChainStepRow() {
     </div>
     <div style="display:flex;gap:8px;align-items:center;margin-left:30px">
       <span style="color:var(--text-dim);font-size:11px">Plazo:</span>
-      <input type="number" class="chain-step-amount" placeholder="Tiempo" min="1" style="flex:0;max-width:80px;margin:0">
-      <select class="chain-step-unit" style="flex:0;min-width:100px;max-width:120px;margin:0">
+      <input type="number" class="chain-step-amount" placeholder="Cantidad" min="1" style="width:90px;padding:8px 12px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none;margin:0">
+      <select class="chain-step-unit" style="flex:0 0 110px;margin:0">
         <option value="">Sin plazo</option>
         <option value="minutes">Minutos</option>
         <option value="hours">Horas</option>

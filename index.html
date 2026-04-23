@@ -260,7 +260,7 @@
     .input-row { display: flex; gap: 8px; margin-bottom: 8px; }
     .input-row:last-child { margin-bottom: 0; }
 
-    select, input[type="text"] {
+    select, input[type="text"], input[type="number"], input[type="password"], input[type="url"], input[type="email"] {
       flex: 1;
       padding: 8px 12px;
       background: var(--bg-card);
@@ -271,7 +271,7 @@
       outline: none;
       transition: border-color 0.2s;
     }
-    select:focus, input[type="text"]:focus { border-color: var(--accent); }
+    select:focus, input:focus { border-color: var(--accent); }
 
     .btn {
       padding: 8px 16px;
