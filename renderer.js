@@ -11,6 +11,7 @@ let unsubscribeTasks = null;
 let unsubscribeProjects = null;
 let unsubscribeUsers = null;
 let unsubscribePersonal = null;
+let unsubscribeNotifQueue = null;
 let reminderTimer = null;
 
 // User colors for completed tab
@@ -169,6 +170,7 @@ function showApp() {
   loadClaudeStatus();
   loadReminderInterval();
   loadTabsMode();
+  subscribeToNotificationQueue();
 }
 
 function showLogin() {
@@ -951,7 +953,7 @@ async function completeTask(taskId) {
       .map(m => m.telegramChatId);
 
     if (notifyIds.length > 0) {
-      window.api.notifyAllTelegram(notifyIds,
+      sendTelegramNotifToMany(notifyIds,
         `*${currentUserData.name}* termino una tarea y espera aprobacion:\n${task.text}\nProyecto: *${task.projectName}*`
       );
     }
@@ -962,7 +964,7 @@ async function completeTask(taskId) {
       const depAssignee = teamMembers.find(m => m.id === dep.assignedTo);
       if (depAssignee && depAssignee.telegramChatId && depAssignee.id !== currentUser.uid) {
         const linkMsg = task.link ? `\nMaterial: ${task.link}` : '';
-        window.api.sendTelegramMessage(depAssignee.telegramChatId,
+        sendTelegramNotif(depAssignee.telegramChatId,
           `*${currentUserData.name}* termino su paso (pendiente de aprobacion del admin).\nPrepara tu parte:\n*${dep.text}*\nProyecto: *${dep.projectName}*${linkMsg}`
         );
       }
@@ -989,7 +991,7 @@ async function approveTask(taskId) {
   if (task) {
     const assignee = teamMembers.find(m => m.id === task.assignedTo);
     if (assignee && assignee.telegramChatId) {
-      window.api.sendTelegramMessage(assignee.telegramChatId,
+      sendTelegramNotif(assignee.telegramChatId,
         `Tu tarea fue *aprobada* por *${currentUserData.name}*:\n${task.text}`
       );
     }
@@ -1000,7 +1002,7 @@ async function approveTask(taskId) {
       const depAssignee = teamMembers.find(m => m.id === dep.assignedTo);
       if (depAssignee && depAssignee.telegramChatId) {
         const linkMsg = task.link ? `\n\nMaterial: ${task.link}` : '';
-        window.api.sendTelegramMessage(depAssignee.telegramChatId,
+        sendTelegramNotif(depAssignee.telegramChatId,
           `*${task.assignedToName || 'Un miembro'}* termino: ${task.text}\n\nYa puedes empezar tu tarea:\n*${dep.text}*\nProyecto: *${dep.projectName}*${linkMsg}`
         );
       }
@@ -1021,7 +1023,7 @@ async function rejectTask(taskId) {
   if (task) {
     const assignee = teamMembers.find(m => m.id === task.assignedTo);
     if (assignee && assignee.telegramChatId) {
-      window.api.sendTelegramMessage(assignee.telegramChatId,
+      sendTelegramNotif(assignee.telegramChatId,
         `Tu tarea fue *rechazada* por *${currentUserData.name}* y volvio a pendientes:\n${task.text}`
       );
     }
@@ -1529,6 +1531,7 @@ el.saveTelegram.addEventListener('click', async () => {
   if (!token) return;
   await window.api.setTelegramToken(token);
   updateTelegramStatus(true);
+  subscribeToNotificationQueue();
 });
 
 function updateTelegramStatus(connected) {
@@ -1917,6 +1920,59 @@ function formatDate(timestamp) {
   return date.toLocaleDateString('es', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
+// ===== TELEGRAM NOTIFICATION QUEUE (Firebase-based) =====
+// Cualquier instancia (tenga o no el bot) puede encolar notificaciones.
+// La instancia admin (con bot activo) las procesa y las envia.
+async function sendTelegramNotif(chatId, message) {
+  if (!chatId || !message) return;
+  try {
+    const localToken = await window.api.getTelegramToken();
+    if (localToken) {
+      // Mi app tiene bot local: envio directo (mas rapido)
+      window.api.sendTelegramMessage(chatId, message);
+      return;
+    }
+  } catch (e) { /* fallthrough a queue */ }
+  // Sin bot local: encolar en Firebase para que otra instancia la procese
+  try {
+    await db.collection('notifications').add({
+      chatId: String(chatId),
+      message,
+      status: 'pending',
+      createdBy: currentUser ? currentUser.uid : 'unknown',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  } catch (e) {
+    console.error('Failed to queue telegram notification:', e);
+  }
+}
+
+async function sendTelegramNotifToMany(chatIds, message) {
+  if (!Array.isArray(chatIds)) return;
+  for (const id of chatIds) await sendTelegramNotif(id, message);
+}
+
+async function subscribeToNotificationQueue() {
+  if (unsubscribeNotifQueue) { unsubscribeNotifQueue(); unsubscribeNotifQueue = null; }
+  const token = await window.api.getTelegramToken();
+  if (!token) return; // Solo la instancia con bot procesa la cola
+  unsubscribeNotifQueue = db.collection('notifications')
+    .where('status', '==', 'pending')
+    .onSnapshot(snap => {
+      snap.docChanges().forEach(change => {
+        if (change.type !== 'added') return;
+        const { chatId, message } = change.doc.data();
+        if (!chatId || !message) {
+          change.doc.ref.delete().catch(() => {});
+          return;
+        }
+        window.api.sendTelegramMessage(chatId, message);
+        // Dar 1s para que salga y borrar
+        setTimeout(() => change.doc.ref.delete().catch(() => {}), 1500);
+      });
+    });
+}
+
 // ===== TOAST =====
 function showToast(msg, type = 'success', durationMs = 3500) {
   let container = document.getElementById('toastContainer');
@@ -1937,7 +1993,7 @@ function showToast(msg, type = 'success', durationMs = 3500) {
 function notifyAssignedOrWarn(assignee, message) {
   if (!assignee || assignee.id === currentUser.uid) return;
   if (assignee.telegramChatId) {
-    window.api.sendTelegramMessage(assignee.telegramChatId, message);
+    sendTelegramNotif(assignee.telegramChatId, message);
     showToast(`✓ Notificado a ${assignee.name} por Telegram`, 'success');
   } else {
     showToast(`⚠️ ${assignee.name} no tiene Telegram vinculado — no recibira la notif`, 'warn', 5000);
@@ -2022,7 +2078,7 @@ async function aiAssignTaskInternal({ projectName, taskText, assignToEmail, dead
   if (assignee.telegramChatId && assignee.id !== currentUser.uid) {
     const depMsg = dependsOnTaskId ? `\nEn espera de *${dependsOnAssigneeName || 'otro'}*: ${dependsOnTaskText || ''}` : '';
     const dlMsg = dl ? `\nPlazo: *${dl.toLocaleDateString('es-ES', { day: 'numeric', month: 'long' })}*` : '';
-    window.api.sendTelegramMessage(assignee.telegramChatId,
+    sendTelegramNotif(assignee.telegramChatId,
       `*${currentUserData.name}* te asigno una tarea:\n${taskText}\nProyecto: *${project.name}*${dlMsg}${depMsg}`);
   }
   return { success: true, taskId: ref.id, assigneeName: assignee.name, projectName: project.name, deadline: dl };
