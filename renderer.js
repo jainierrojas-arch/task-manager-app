@@ -5,6 +5,8 @@ let tasks = [];
 let projects = [];
 let teamMembers = [];
 let personalTasks = [];
+let personalProjectsList = []; // proyectos custom del usuario (no incluye 'General')
+let currentPersonalProject = 'General';
 let alwaysOnTop = true;
 let currentTab = 'main';
 let unsubscribeTasks = null;
@@ -67,7 +69,16 @@ const el = {
   projectListSettings: document.getElementById('projectListSettings'),
   btnPin: document.getElementById('btnPin'),
   btnMinimize: document.getElementById('btnMinimize'),
-  btnClose: document.getElementById('btnClose')
+  btnClose: document.getElementById('btnClose'),
+  personalProjectsChips: document.getElementById('personalProjectsChips'),
+  personalHeaderName: document.getElementById('personalHeaderName'),
+  personalProjectRow: document.getElementById('personalProjectRow'),
+  personalProjectSelect: document.getElementById('personalProjectSelect'),
+  newPersonalProjectBtn: document.getElementById('newPersonalProjectBtn'),
+  personalProjectModal: document.getElementById('personalProjectModal'),
+  personalProjectNameInput: document.getElementById('personalProjectNameInput'),
+  confirmPersonalProject: document.getElementById('confirmPersonalProject'),
+  cancelPersonalProject: document.getElementById('cancelPersonalProject')
 };
 
 // ===== AUTH =====
@@ -163,6 +174,11 @@ function showApp() {
   el.userAvatar.textContent = currentUserData.name.charAt(0).toUpperCase();
   el.userName.textContent = currentUserData.name;
   el.userRole.textContent = currentUserData.role || 'miembro';
+
+  personalProjectsList = Array.isArray(currentUserData.personalProjects) ? [...currentUserData.personalProjects] : [];
+  currentPersonalProject = 'General';
+  renderPersonalChips();
+  renderPersonalProjectSelect();
 
   subscribeToData();
   initTelegramHandlers();
@@ -419,23 +435,35 @@ function renderAll() {
 
 function renderPersonalList() {
   const pending = personalTasks.filter(t => t.status !== 'completed');
-  const count = pending.length;
-  if (el.personalBadge) el.personalBadge.textContent = count;
-  if (el.personalCount) el.personalCount.textContent = count;
+  const totalCount = pending.length;
+  if (el.personalBadge) el.personalBadge.textContent = totalCount;
   if (currentTab === 'calendar') renderCalendar();
 
+  // Refresca chips con contadores
+  renderPersonalChips();
+
   if (!el.personalList) return;
-  if (personalTasks.length === 0) {
+
+  const visible = personalTasks.filter(t => personalProjectOf(t) === currentPersonalProject);
+  const visiblePending = visible.filter(t => t.status !== 'completed').length;
+  if (el.personalCount) el.personalCount.textContent = visiblePending;
+  if (el.personalHeaderName) {
+    el.personalHeaderName.textContent = currentPersonalProject === 'General'
+      ? 'Tareas personales - General'
+      : `Proyecto personal: ${currentPersonalProject}`;
+  }
+
+  if (visible.length === 0) {
     el.personalList.innerHTML = `
       <div class="empty-state">
         <div class="empty-state-icon">&#128246;</div>
-        <div class="empty-state-text">No tienes tareas personales</div>
-        <div class="empty-state-sub">Escribe abajo para agregar una. Solo tu las veras.</div>
+        <div class="empty-state-text">No hay tareas en "${esc(currentPersonalProject)}"</div>
+        <div class="empty-state-sub">Crea una desde la pestana Nueva (modo personal) o el agente.</div>
       </div>`;
     return;
   }
 
-  const sorted = [...personalTasks].sort((a, b) => {
+  const sorted = [...visible].sort((a, b) => {
     if (a.status === 'completed' && b.status !== 'completed') return 1;
     if (b.status === 'completed' && a.status !== 'completed') return -1;
     const at = a.createdAt?.seconds || 0;
@@ -460,9 +488,16 @@ function renderPersonalList() {
     if (task.link) {
       linkBadge = `<span class="task-tag" style="background:rgba(153,102,255,0.2);color:#b794ff;cursor:pointer" onclick="openTaskLink('personalTasks','${task.id}')" title="${esc(task.link)}">🔗 Abrir material</span>`;
     }
+    let videoBadge = '';
+    if (task.videoLink) {
+      videoBadge = `<span class="task-tag" style="background:rgba(255,90,90,0.2);color:#ff8a8a;cursor:pointer" onclick="openTaskVideo('personalTasks','${task.id}')" title="${esc(task.videoLink)}">🎬 Video de referencia</span>`;
+    }
     const linkBtn = task.link
       ? `<button class="btn-add-note" onclick="showLinkModal('personalTasks','${task.id}')" title="Editar link">✏️ Link</button>`
       : `<button class="btn-add-note" onclick="showLinkModal('personalTasks','${task.id}')">🔗 + Link</button>`;
+    const videoBtn = task.videoLink
+      ? `<button class="btn-add-note" onclick="showVideoModal('personalTasks','${task.id}')" title="Editar video">✏️ Video</button>`
+      : `<button class="btn-add-note" onclick="showVideoModal('personalTasks','${task.id}')">🎬 + Video</button>`;
     html += `
       <div class="task-item ${completed ? 'completed' : ''}" style="border-left-color:${color}">
         <div class="${checkClass}" ${onClick} title="${completed ? 'Completada' : 'Marcar como terminada'}"></div>
@@ -471,8 +506,10 @@ function renderPersonalList() {
           <div class="task-meta">
             ${deadlineBadge}
             ${linkBadge}
+            ${videoBadge}
             <span class="task-tag">${time}</span>
             ${linkBtn}
+            ${videoBtn}
           </div>
         </div>
         <button class="task-delete" onclick="deletePersonalTask('${task.id}')" title="Eliminar">&#10005;</button>
@@ -487,11 +524,14 @@ async function addPersonalTask() {
   const amount = parseInt(el.durationInput.value);
   const unit = el.durationUnit.value || 'days';
 
+  const selectedProject = (el.personalProjectSelect && el.personalProjectSelect.value) || currentPersonalProject || 'General';
+
   const data = {
     text,
     ownerId: currentUser.uid,
     ownerName: currentUserData.name,
     status: 'pending',
+    personalProject: selectedProject,
     createdAt: firebase.firestore.FieldValue.serverTimestamp()
   };
   if (amount && amount > 0) {
@@ -506,6 +546,13 @@ async function addPersonalTask() {
   await db.collection('personalTasks').add(data);
   el.taskInput.value = '';
   el.durationInput.value = '';
+
+  // Si se creo en un proyecto distinto al chip activo, cambiar al chip nuevo
+  if (selectedProject !== currentPersonalProject) {
+    currentPersonalProject = selectedProject;
+    renderPersonalChips();
+    renderPersonalList();
+  }
 }
 
 async function completePersonalTask(taskId) {
@@ -522,6 +569,98 @@ async function deletePersonalTask(taskId) {
 
 window.completePersonalTask = completePersonalTask;
 window.deletePersonalTask = deletePersonalTask;
+
+// ===== PERSONAL PROJECTS =====
+function allPersonalProjects() {
+  return ['General', ...personalProjectsList];
+}
+
+function personalProjectOf(task) {
+  return task.personalProject || 'General';
+}
+
+function renderPersonalChips() {
+  if (!el.personalProjectsChips) return;
+  const all = allPersonalProjects();
+  if (!all.includes(currentPersonalProject)) currentPersonalProject = 'General';
+  let html = '';
+  all.forEach(name => {
+    const count = personalTasks.filter(t => personalProjectOf(t) === name && t.status !== 'completed').length;
+    const active = name === currentPersonalProject ? ' active' : '';
+    const removeBtn = name !== 'General'
+      ? `<button class="chip-remove" title="Quitar proyecto" onclick="event.stopPropagation(); deletePersonalProject('${esc(name)}')">&#10005;</button>`
+      : '';
+    html += `<div class="personal-chip${active}" onclick="switchPersonalProject('${esc(name)}')">${esc(name)}${count > 0 ? ` <span style="opacity:0.7">(${count})</span>` : ''}${removeBtn}</div>`;
+  });
+  html += `<div class="personal-chip add" onclick="showPersonalProjectModal()" title="Nuevo proyecto personal">+ Nuevo</div>`;
+  el.personalProjectsChips.innerHTML = html;
+}
+
+function renderPersonalProjectSelect() {
+  if (!el.personalProjectSelect) return;
+  const all = allPersonalProjects();
+  el.personalProjectSelect.innerHTML = all.map(n => `<option value="${esc(n)}"${n === currentPersonalProject ? ' selected' : ''}>${esc(n)}</option>`).join('');
+}
+
+function switchPersonalProject(name) {
+  currentPersonalProject = name;
+  renderPersonalChips();
+  renderPersonalProjectSelect();
+  renderPersonalList();
+}
+window.switchPersonalProject = switchPersonalProject;
+
+function showPersonalProjectModal() {
+  if (!el.personalProjectModal) return;
+  el.personalProjectNameInput.value = '';
+  el.personalProjectModal.classList.add('active');
+  setTimeout(() => el.personalProjectNameInput.focus(), 100);
+}
+window.showPersonalProjectModal = showPersonalProjectModal;
+
+function hidePersonalProjectModal() {
+  if (el.personalProjectModal) el.personalProjectModal.classList.remove('active');
+}
+
+async function addPersonalProject(name) {
+  name = (name || '').trim();
+  if (!name) return;
+  if (name.toLowerCase() === 'general') return;
+  if (personalProjectsList.includes(name)) { currentPersonalProject = name; renderPersonalChips(); renderPersonalProjectSelect(); renderPersonalList(); return; }
+  personalProjectsList.push(name);
+  currentPersonalProject = name;
+  await db.collection('users').doc(currentUser.uid).update({
+    personalProjects: personalProjectsList
+  });
+  renderPersonalChips();
+  renderPersonalProjectSelect();
+  renderPersonalList();
+}
+
+async function deletePersonalProject(name) {
+  if (name === 'General') return;
+  const count = personalTasks.filter(t => personalProjectOf(t) === name).length;
+  const msg = count > 0
+    ? `Quitar el proyecto "${name}"? Las ${count} tarea(s) que tiene pasaran a "General".`
+    : `Quitar el proyecto "${name}"?`;
+  if (!confirm(msg)) return;
+  personalProjectsList = personalProjectsList.filter(p => p !== name);
+  if (currentPersonalProject === name) currentPersonalProject = 'General';
+  await db.collection('users').doc(currentUser.uid).update({
+    personalProjects: personalProjectsList
+  });
+  if (count > 0) {
+    const batch = db.batch();
+    personalTasks.filter(t => personalProjectOf(t) === name).forEach(t => {
+      batch.update(db.collection('personalTasks').doc(t.id), { personalProject: 'General' });
+    });
+    await batch.commit();
+  }
+  renderPersonalChips();
+  renderPersonalProjectSelect();
+  renderPersonalList();
+}
+window.deletePersonalProject = deletePersonalProject;
 
 // ===== TASK LINK =====
 const linkModal = document.getElementById('linkModal');
@@ -570,6 +709,55 @@ document.getElementById('removeLink').addEventListener('click', async () => {
   });
   linkModal.classList.remove('active');
   linkEditing = null;
+});
+
+// ===== VIDEO DE REFERENCIA =====
+const videoModal = document.getElementById('videoModal');
+const videoInput = document.getElementById('videoInput');
+let videoEditing = null; // { collection, taskId }
+
+function openTaskVideo(collection, taskId) {
+  const t = (collection === 'personalTasks' ? personalTasks : tasks).find(x => x.id === taskId);
+  if (t && t.videoLink) window.api.openExternal(t.videoLink);
+}
+window.openTaskVideo = openTaskVideo;
+
+function showVideoModal(collection, taskId) {
+  const doc = (collection === 'personalTasks' ? personalTasks : tasks).find(t => t.id === taskId);
+  videoEditing = { collection, taskId };
+  videoInput.value = doc?.videoLink || '';
+  document.getElementById('removeVideo').style.display = doc?.videoLink ? 'inline-block' : 'none';
+  videoModal.classList.add('active');
+  setTimeout(() => videoInput.focus(), 100);
+}
+window.showVideoModal = showVideoModal;
+
+document.getElementById('cancelVideo').addEventListener('click', () => {
+  videoModal.classList.remove('active');
+  videoEditing = null;
+});
+videoModal.addEventListener('click', (e) => {
+  if (e.target === videoModal) { videoModal.classList.remove('active'); videoEditing = null; }
+});
+videoInput.addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') document.getElementById('confirmVideo').click();
+});
+document.getElementById('confirmVideo').addEventListener('click', async () => {
+  if (!videoEditing) return;
+  let url = videoInput.value.trim();
+  if (url && !/^https?:\/\//i.test(url)) url = 'https://' + url;
+  if (!url) return;
+  await db.collection(videoEditing.collection).doc(videoEditing.taskId).update({ videoLink: url });
+  videoModal.classList.remove('active');
+  videoEditing = null;
+});
+document.getElementById('removeVideo').addEventListener('click', async () => {
+  if (!videoEditing) return;
+  await db.collection(videoEditing.collection).doc(videoEditing.taskId).update({
+    videoLink: firebase.firestore.FieldValue.delete()
+  });
+  videoModal.classList.remove('active');
+  videoEditing = null;
 });
 
 function getUserColor(userId) {
@@ -694,6 +882,18 @@ function renderTaskList(container, taskList, mode) {
           : `<button class="btn-add-note" onclick="showLinkModal('tasks','${task.id}')">🔗 + Link</button>`;
       }
 
+      // Video de referencia badge + edit
+      let videoBadge = '';
+      if (task.videoLink) {
+        videoBadge = `<span class="task-tag" style="background:rgba(255,90,90,0.2);color:#ff8a8a;cursor:pointer" onclick="openTaskVideo('tasks','${task.id}')" title="${esc(task.videoLink)}">🎬 Video de referencia</span>`;
+      }
+      let videoBtn = '';
+      if (canAddMeta) {
+        videoBtn = task.videoLink
+          ? `<button class="btn-add-note" onclick="showVideoModal('tasks','${task.id}')" title="Editar video">✏️ Video</button>`
+          : `<button class="btn-add-note" onclick="showVideoModal('tasks','${task.id}')">🎬 + Video</button>`;
+      }
+
       let blockedBadge = '';
       if (task.dependsOn) {
         const dep = tasks.find(t => t.id === task.dependsOn);
@@ -715,10 +915,12 @@ function renderTaskList(container, taskList, mode) {
               ${deadlineBadge}
               ${blockedBadge}
               ${linkBadge}
+              ${videoBadge}
               <span class="task-tag">${source}</span>
               <span class="task-tag">${time}</span>
               ${addNoteBtn}
               ${linkBtn}
+              ${videoBtn}
             </div>
             ${notesHtml}
             ${actionButtons}
@@ -1805,6 +2007,8 @@ function applyNewMode(mode) {
   const isPersonal = mode === 'personal';
   if (projectRow) projectRow.style.display = isPersonal ? 'none' : 'flex';
   if (chainRow) chainRow.style.display = isPersonal ? 'none' : 'flex';
+  if (el.personalProjectRow) el.personalProjectRow.style.display = isPersonal ? 'flex' : 'none';
+  if (isPersonal) renderPersonalProjectSelect();
   el.taskInput.placeholder = isPersonal ? 'Nueva tarea personal (solo tu la veras)...' : 'Escribe la tarea...';
   document.querySelectorAll('.new-mode-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.mode === mode);
@@ -1836,6 +2040,22 @@ el.cancelProject.addEventListener('click', hideProjectModal);
 el.projectNameInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') createProject(); });
 el.projectModal.addEventListener('click', (e) => { if (e.target === el.projectModal) hideProjectModal(); });
 
+// Personal project modal handlers
+if (el.newPersonalProjectBtn) el.newPersonalProjectBtn.addEventListener('click', showPersonalProjectModal);
+if (el.confirmPersonalProject) el.confirmPersonalProject.addEventListener('click', async () => {
+  const name = el.personalProjectNameInput.value.trim();
+  if (!name) { el.personalProjectNameInput.focus(); return; }
+  await addPersonalProject(name);
+  hidePersonalProjectModal();
+});
+if (el.cancelPersonalProject) el.cancelPersonalProject.addEventListener('click', hidePersonalProjectModal);
+if (el.personalProjectNameInput) el.personalProjectNameInput.addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') el.confirmPersonalProject.click();
+});
+if (el.personalProjectModal) el.personalProjectModal.addEventListener('click', (e) => {
+  if (e.target === el.personalProjectModal) hidePersonalProjectModal();
+});
+
 el.clearAllCompleted.addEventListener('click', async () => {
   const completed = tasks.filter(t => t.status === 'completed');
   if (completed.length === 0) return;
@@ -1861,8 +2081,11 @@ window.api.getAlwaysOnTop().then(v => {
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     hideProjectModal();
+    hidePersonalProjectModal();
     editModal.classList.remove('active');
     noteModal.classList.remove('active');
+    linkModal.classList.remove('active');
+    videoModal.classList.remove('active');
   }
 });
 
@@ -2124,12 +2347,13 @@ async function aiCreatePersonalTask({ task_text, deadline_iso }) {
     ownerName: currentUserData.name,
     status: 'pending',
     source: 'ai',
+    personalProject: currentPersonalProject || 'General',
     createdAt: firebase.firestore.FieldValue.serverTimestamp()
   };
   const dl = parseDeadlineIso(deadline_iso);
   if (dl) data.deadline = firebase.firestore.Timestamp.fromDate(dl);
   await db.collection('personalTasks').add(data);
-  return `✓ Tarea personal creada: ${task_text}${deadlineLabel(dl)}`;
+  return `✓ Tarea personal creada en "${data.personalProject}": ${task_text}${deadlineLabel(dl)}`;
 }
 
 const aiHistory = [];
@@ -2457,6 +2681,7 @@ document.getElementById('calTaskConfirm').addEventListener('click', async () => 
       ownerName: currentUserData.name,
       status: 'pending',
       source: 'calendar',
+      personalProject: currentPersonalProject || 'General',
       deadline: firebase.firestore.Timestamp.fromDate(deadline),
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });

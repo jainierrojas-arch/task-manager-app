@@ -209,6 +209,78 @@
     }
     .tab-mode-btn:hover { color: var(--text-primary); }
 
+    /* Pin toggle button al lado de la tab Equipo */
+    .pin-toggle-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 10px;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text-secondary);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      margin: 4px 2px;
+      transition: all 0.15s;
+    }
+    .pin-toggle-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+    .pin-toggle-btn .pin-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--success);
+      flex-shrink: 0;
+      transition: background 0.15s;
+    }
+    .pin-toggle-btn.unpinned .pin-dot { background: var(--text-secondary); }
+    .pin-toggle-btn.unpinned { opacity: 0.7; }
+
+    /* Personal project chips */
+    .personal-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+    .personal-chip {
+      padding: 5px 12px;
+      border-radius: 14px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .personal-chip:hover { background: var(--bg-hover); color: var(--text-primary); }
+    .personal-chip.active {
+      background: #BB8FCE;
+      color: white;
+      border-color: #BB8FCE;
+    }
+    .personal-chip .chip-remove {
+      background: none;
+      border: none;
+      color: inherit;
+      cursor: pointer;
+      font-size: 11px;
+      padding: 0;
+      margin-left: 2px;
+      opacity: 0.6;
+    }
+    .personal-chip .chip-remove:hover { opacity: 1; }
+    .personal-chip.add {
+      background: transparent;
+      border-style: dashed;
+    }
+
     .nav-tab {
       padding: 10px 14px;
       font-size: 12px;
@@ -736,7 +808,6 @@
   <div class="titlebar">
     <span class="titlebar-title">TASK MANAGER - EQUIPO</span>
     <div class="titlebar-buttons">
-      <button class="titlebar-btn btn-pin" id="btnPin" title="Siempre visible"></button>
       <button class="titlebar-btn btn-minimize" id="btnMinimize" title="Minimizar"></button>
       <button class="titlebar-btn btn-close" id="btnClose" title="Cerrar"></button>
     </div>
@@ -806,6 +877,10 @@
       <div class="nav-tab" data-tab="team">
         &#128101; Equipo
       </div>
+      <button class="pin-toggle-btn" id="btnPin" title="Fijar ventana siempre visible">
+        <span class="pin-dot"></span>
+        FIJAR Ventana
+      </button>
       <div class="nav-tab" data-tab="settings">
         &#9881; Config
       </div>
@@ -866,9 +941,10 @@
 
       <!-- Personal Tasks -->
       <div class="tab-content" id="tabPersonal">
+        <div id="personalProjectsChips" class="personal-chips"></div>
         <div class="project-section">
           <div class="project-header" style="border-left:3px solid #BB8FCE">
-            <span class="project-name">Tareas personales (solo las ves tu)</span>
+            <span class="project-name" id="personalHeaderName">Tareas personales (solo las ves tu)</span>
             <span class="project-count" id="personalCount">0</span>
           </div>
           <div id="personalList"></div>
@@ -891,6 +967,12 @@
                 <option value="">Asignar a...</option>
               </select>
               <button class="btn btn-ghost btn-small" id="quickProjectBtn" title="Nuevo proyecto">+</button>
+            </div>
+            <div class="input-row" id="personalProjectRow" style="display:none">
+              <select id="personalProjectSelect" style="flex:1">
+                <option value="General">General</option>
+              </select>
+              <button class="btn btn-ghost btn-small" id="newPersonalProjectBtn" title="Nuevo proyecto personal">+</button>
             </div>
             <div class="input-row" style="justify-content:flex-end">
               <button class="btn btn-ghost btn-small" id="chainBtn" title="Crear cadena de tareas para varios miembros en secuencia" style="white-space:nowrap">🔗 Crear cadena de tareas</button>
@@ -1014,6 +1096,21 @@
     </div>
   </div>
 
+  <!-- New Personal Project Modal -->
+  <div class="modal-overlay" id="personalProjectModal">
+    <div class="modal">
+      <div class="modal-title">Nuevo proyecto personal</div>
+      <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px">
+        Solo tu veras este proyecto y sus tareas.
+      </div>
+      <input type="text" id="personalProjectNameInput" placeholder="Nombre del proyecto">
+      <div class="modal-buttons">
+        <button class="btn btn-ghost" id="cancelPersonalProject">Cancelar</button>
+        <button class="btn btn-primary" id="confirmPersonalProject">Crear</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Edit Task Modal -->
   <div class="modal-overlay" id="editModal">
     <div class="modal">
@@ -1074,6 +1171,22 @@
         <button class="btn btn-ghost" id="removeLink" style="margin-right:auto;color:var(--danger);display:none">Quitar link</button>
         <button class="btn btn-ghost" id="cancelLink">Cancelar</button>
         <button class="btn btn-primary" id="confirmLink">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Video de referencia Modal -->
+  <div class="modal-overlay" id="videoModal">
+    <div class="modal">
+      <div class="modal-title">Agregar video de referencia</div>
+      <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px">
+        Pega la URL del video de referencia (YouTube, Loom, Vimeo, etc).
+      </div>
+      <input type="url" id="videoInput" placeholder="https://...">
+      <div class="modal-buttons">
+        <button class="btn btn-ghost" id="removeVideo" style="margin-right:auto;color:var(--danger);display:none">Quitar video</button>
+        <button class="btn btn-ghost" id="cancelVideo">Cancelar</button>
+        <button class="btn btn-primary" id="confirmVideo">Guardar</button>
       </div>
     </div>
   </div>
