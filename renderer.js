@@ -829,7 +829,7 @@ function renderTeam() {
     const done = tasks.filter(t => t.assignedTo === m.id && t.status === 'completed').length;
     const color = userColors[i % userColors.length];
     const linkedHtml = m.telegramChatId
-      ? '<span style="color:#4ecdc4">✓ Telegram vinculado</span>'
+      ? `<span style="color:#4ecdc4">✓ Telegram vinculado</span> <button class="btn btn-ghost" onclick="testTelegramNotif('${m.telegramChatId}','${esc(m.name)}')" style="font-size:10px;padding:2px 8px;margin-left:4px">Probar</button>`
       : '<span style="color:#ff9090" title="Este miembro no recibira notificaciones hasta vincular. Pidele que envie /vincular ' + esc(m.email) + ' al bot">✗ Sin Telegram</span>';
 
     const roleLabel = m.role === 'admin' ? 'Admin' : 'Miembro';
@@ -1994,11 +1994,17 @@ function notifyAssignedOrWarn(assignee, message) {
   if (!assignee || assignee.id === currentUser.uid) return;
   if (assignee.telegramChatId) {
     sendTelegramNotif(assignee.telegramChatId, message);
-    showToast(`✓ Notificado a ${assignee.name} por Telegram`, 'success');
+    showToast(`✓ Notificado a ${assignee.name} (chat ${assignee.telegramChatId})`, 'success');
   } else {
     showToast(`⚠️ ${assignee.name} no tiene Telegram vinculado — no recibira la notif`, 'warn', 5000);
   }
 }
+
+async function testTelegramNotif(chatId, name) {
+  await sendTelegramNotif(chatId, `Prueba: mensaje de test a ${name}. Si lees esto, el bot puede enviarte notificaciones.`);
+  showToast(`✓ Prueba enviada a ${name} (chat ${chatId})`, 'success');
+}
+window.testTelegramNotif = testTelegramNotif;
 
 // ===== AI DISPATCH (IN-APP AGENT) =====
 function parseDeadlineIso(iso) {
