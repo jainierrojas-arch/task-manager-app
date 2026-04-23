@@ -2037,15 +2037,49 @@ async function aiCreatePersonalTask({ task_text, deadline_iso }) {
   return `✓ Tarea personal creada: ${task_text}${deadlineLabel(dl)}`;
 }
 
+const aiHistory = [];
+let lastAiUserMsg = null;
+let lastAiResult = null;
+
+function renderAIHistory() {
+  const container = document.getElementById('aiHistory');
+  if (!container) return;
+  if (aiHistory.length === 0) { container.innerHTML = ''; return; }
+  container.innerHTML = aiHistory.map((h, i) => {
+    const opacity = i === 0 ? 0.75 : 0.45;
+    const resultColor = h.type === 'error' ? '#ff9090' : '#7fc3b9';
+    const shortResult = (h.result || '').replace(/\n/g, ' ');
+    return `<div style="font-size:10px;line-height:1.4;padding:2px 0;opacity:${opacity}">
+      <div style="color:var(--text-dim);font-style:italic">→ ${esc(h.user)}</div>
+      <div style="color:${resultColor};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(shortResult)}</div>
+    </div>`;
+  }).join('');
+}
+
 function showAIResult(text, type = 'info') {
   const out = document.getElementById('aiResult');
   if (!out) return;
   out.style.display = 'block';
   out.textContent = text;
   out.style.color = type === 'error' ? '#ff6b6b' : type === 'success' ? '#4ecdc4' : 'var(--text-secondary)';
+  if (type !== 'info') {
+    lastAiResult = text;
+    lastAiResultType = type;
+  }
 }
 
+let lastAiResultType = 'info';
+
 async function aiDispatch(text) {
+  // Mover el resultado anterior al historial antes de procesar uno nuevo
+  if (lastAiUserMsg && lastAiResult) {
+    aiHistory.unshift({ user: lastAiUserMsg, result: lastAiResult, type: lastAiResultType });
+    if (aiHistory.length > 2) aiHistory.pop();
+    renderAIHistory();
+  }
+  lastAiUserMsg = text;
+  lastAiResult = null;
+
   showAIResult('Pensando...', 'info');
 
   const myTasks = tasks.filter(t => t.assignedTo === currentUser.uid && t.status === 'pending');
