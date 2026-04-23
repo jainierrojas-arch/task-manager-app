@@ -953,6 +953,18 @@ async function completeTask(taskId) {
         `*${currentUserData.name}* termino una tarea y espera aprobacion:\n${task.text}\nProyecto: *${task.projectName}*`
       );
     }
+
+    // Notify next in chain (heads-up — still needs admin approval)
+    const dependents = tasks.filter(t => t.dependsOn === taskId && t.status !== 'completed');
+    dependents.forEach(dep => {
+      const depAssignee = teamMembers.find(m => m.id === dep.assignedTo);
+      if (depAssignee && depAssignee.telegramChatId && depAssignee.id !== currentUser.uid) {
+        const linkMsg = task.link ? `\nMaterial: ${task.link}` : '';
+        window.api.sendTelegramMessage(depAssignee.telegramChatId,
+          `*${currentUserData.name}* termino su paso (pendiente de aprobacion del admin).\nPrepara tu parte:\n*${dep.text}*\nProyecto: *${dep.projectName}*${linkMsg}`
+        );
+      }
+    });
   }
 }
 
