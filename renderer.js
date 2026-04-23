@@ -2006,6 +2006,10 @@ async function testTelegramNotif(chatId, name) {
 }
 window.testTelegramNotif = testTelegramNotif;
 
+window.api.onTelegramSendError(({ chatId, error }) => {
+  showToast(`❌ Telegram fallo: ${error} (chat ${chatId})`, 'warn', 8000);
+});
+
 // ===== AI DISPATCH (IN-APP AGENT) =====
 function parseDeadlineIso(iso) {
   if (!iso) return null;

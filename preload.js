@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld('api', {
   onTelegramGetProjects: (callback) => ipcRenderer.on('telegram-get-projects', (_, data) => callback(data)),
   onTelegramGetTeam: (callback) => ipcRenderer.on('telegram-get-team', (_, data) => callback(data)),
   onTelegramNaturalMessage: (callback) => ipcRenderer.on('telegram-natural-message', (_, data) => callback(data)),
+  onTelegramSendError: (callback) => ipcRenderer.on('telegram-send-error', (_, data) => callback(data)),
 
   // Claude API
   getClaudeApiKeyStatus: () => ipcRenderer.invoke('get-claude-api-key-status'),

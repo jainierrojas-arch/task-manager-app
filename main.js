@@ -252,15 +252,19 @@ function initTelegram() {
 // IPC: Send message to Telegram from renderer
 ipcMain.on('telegram-send-message', (_, { chatId, message }) => {
   if (!telegramBot || !chatId) {
-    console.warn('[telegram] cannot send — bot not active or missing chatId', { hasBot: !!telegramBot, chatId });
+    const err = !telegramBot ? 'Bot no esta activo (token vacio)' : 'chatId vacio';
+    console.warn('[telegram] cannot send', err);
+    if (mainWindow) mainWindow.webContents.send('telegram-send-error', { chatId, error: err });
     return;
   }
   telegramBot.sendMessage(chatId, message, { parse_mode: 'Markdown' })
     .catch(err => {
-      console.warn('[telegram] send failed with Markdown, retrying plain text:', err.message);
-      // Reintentar sin Markdown en caso de error de parsing
+      console.warn('[telegram] Markdown failed, retry plain:', err.message);
       telegramBot.sendMessage(chatId, message)
-        .catch(err2 => console.error('[telegram] send failed completely:', err2.message, 'chatId:', chatId));
+        .catch(err2 => {
+          console.error('[telegram] send failed:', err2.message, 'chatId:', chatId);
+          if (mainWindow) mainWindow.webContents.send('telegram-send-error', { chatId, error: err2.message });
+        });
     });
 });
 
