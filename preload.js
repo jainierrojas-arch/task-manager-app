@@ -50,5 +50,8 @@ contextBridge.exposeInMainWorld('api', {
 
   // Chat lateral: expandir/colapsar ventana
   chatExpandWindow: (extraWidth) => ipcRenderer.invoke('chat-expand-window', extraWidth),
-  chatCollapseWindow: () => ipcRenderer.invoke('chat-collapse-window')
+  chatCollapseWindow: () => ipcRenderer.invoke('chat-collapse-window'),
+
+  // Deposito de ideas
+  toggleDeposit: () => ipcRenderer.invoke('toggle-deposit-window')
 });

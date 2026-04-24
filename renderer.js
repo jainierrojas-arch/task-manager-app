@@ -16,6 +16,9 @@ let unsubscribeUsers = null;
 let unsubscribePersonal = null;
 let unsubscribeNotifQueue = null;
 let unsubscribeChat = null;
+let unsubscribeDeposit = null;
+let depositEntries = [];
+let depositLastViewedAt = null;
 let reminderTimer = null;
 let chatMessages = [];
 let chatOpen = false;
@@ -222,6 +225,7 @@ function showLogin() {
   if (unsubscribeProjects) unsubscribeProjects();
   if (unsubscribeUsers) unsubscribeUsers();
   if (unsubscribeChat) { unsubscribeChat(); unsubscribeChat = null; }
+  if (unsubscribeDeposit) { unsubscribeDeposit(); unsubscribeDeposit = null; }
   if (chatOpen) closeChat();
 }
 
@@ -231,6 +235,21 @@ const cloudBtn = document.getElementById('cloudBtn');
 if (cloudBtn) {
   cloudBtn.addEventListener('click', () => {
     window.api.openExternal('https://drive.google.com/drive/folders/1BuRcSTdiHx07lcUsO9WUe1BoCk81NX2e?usp=sharing');
+  });
+}
+
+const depositBtn = document.getElementById('depositBtn');
+if (depositBtn) {
+  depositBtn.addEventListener('click', async () => {
+    await window.api.toggleDeposit();
+    // Marcar como visto (reset badge)
+    if (currentUser) {
+      depositLastViewedAt = firebase.firestore.Timestamp.now();
+      renderDepositBadge();
+      db.collection('users').doc(currentUser.uid).update({
+        depositLastViewedAt: depositLastViewedAt
+      }).catch(() => {});
+    }
   });
 }
 
@@ -277,6 +296,36 @@ function subscribeToData() {
     });
 
   chatLastReadAt = currentUserData.chatLastReadAt || null;
+
+  unsubscribeDeposit = db.collection('depositEntries')
+    .orderBy('createdAt', 'desc')
+    .limit(200)
+    .onSnapshot((snapshot) => {
+      depositEntries = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      renderDepositBadge();
+    });
+
+  depositLastViewedAt = currentUserData.depositLastViewedAt || null;
+}
+
+function renderDepositBadge() {
+  const badge = document.getElementById('depositUnreadBadge');
+  if (!badge) return;
+  const lastMs = depositLastViewedAt
+    ? (depositLastViewedAt.toDate ? depositLastViewedAt.toDate().getTime() : new Date(depositLastViewedAt).getTime())
+    : 0;
+  const count = depositEntries.filter(e => {
+    if (e.createdBy === currentUser.uid) return false;
+    if (!e.createdAt) return false;
+    const ms = e.createdAt.toDate ? e.createdAt.toDate().getTime() : new Date(e.createdAt).getTime();
+    return ms > lastMs;
+  }).length;
+  if (count <= 0) {
+    badge.style.display = 'none';
+    return;
+  }
+  badge.textContent = count > 99 ? '99+' : String(count);
+  badge.style.display = 'inline-block';
 }
 
 // ===== RENDER =====

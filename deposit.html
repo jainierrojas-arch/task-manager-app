@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Deposito - Task Manager</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg-primary: #1a1b2e;
+      --bg-secondary: #232442;
+      --bg-card: #2a2b4a;
+      --bg-hover: #33345a;
+      --text-primary: #e8e8f0;
+      --text-secondary: #9d9db5;
+      --text-dim: #6d6d8a;
+      --accent: #6c63ff;
+      --accent-hover: #5a52e0;
+      --success: #4ecdc4;
+      --danger: #ff6b6b;
+      --warning: #ffd93d;
+      --border: #3a3b5c;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      height: 100vh;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    .titlebar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 38px;
+      background: var(--bg-secondary);
+      padding: 0 12px;
+      -webkit-app-region: drag;
+      border-bottom: 1px solid var(--border);
+    }
+    .titlebar-title { font-size: 13px; font-weight: 600; color: var(--text-secondary); letter-spacing: 0.5px; }
+    .titlebar-buttons { display: flex; gap: 8px; -webkit-app-region: no-drag; }
+    .titlebar-btn { width: 14px; height: 14px; border-radius: 50%; border: none; cursor: pointer; transition: opacity 0.2s; }
+    .titlebar-btn:hover { opacity: 0.8; }
+    .btn-minimize { background: var(--warning); }
+    .btn-close { background: var(--danger); }
+
+    .app { display: flex; height: calc(100vh - 38px); }
+
+    .sidebar {
+      width: 240px;
+      background: var(--bg-secondary);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+    }
+    .sidebar-header {
+      padding: 14px 14px 8px;
+      font-size: 11px;
+      color: var(--text-secondary);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .category-list { flex: 1; overflow-y: auto; padding: 0 8px 8px; }
+    .category-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      margin-bottom: 2px;
+      font-size: 13px;
+      transition: background 0.15s;
+    }
+    .category-item:hover { background: var(--bg-hover); }
+    .category-item.active { background: var(--accent); color: white; }
+    .category-item .cat-name { flex: 1; }
+    .category-item .cat-count {
+      font-size: 10px;
+      opacity: 0.7;
+      background: rgba(255,255,255,0.12);
+      padding: 1px 7px;
+      border-radius: 8px;
+    }
+    .category-item .cat-delete {
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      cursor: pointer;
+      font-size: 12px;
+      padding: 2px 4px;
+      border-radius: 3px;
+      opacity: 0;
+      transition: opacity 0.15s, color 0.15s;
+    }
+    .category-item:hover .cat-delete { opacity: 0.7; }
+    .category-item .cat-delete:hover { color: var(--danger); opacity: 1 !important; }
+    .category-item.active .cat-delete { color: rgba(255,255,255,0.7); }
+
+    .sidebar-footer {
+      padding: 10px;
+      border-top: 1px solid var(--border);
+    }
+
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .main-header {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .main-title { font-size: 18px; font-weight: 700; flex: 1; }
+    .main-subtitle { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+
+    .entries-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 14px 18px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+    .entries-area::-webkit-scrollbar { width: 7px; }
+    .entries-area::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    .entry {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+      margin-bottom: 10px;
+      transition: border-color 0.15s;
+    }
+    .entry:hover { border-color: var(--accent); }
+    .entry.converted {
+      opacity: 0.75;
+      border-left: 3px solid var(--success);
+    }
+
+    .entry-head {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .entry-title { font-size: 14px; font-weight: 600; flex: 1; line-height: 1.3; }
+    .entry-badges { display: flex; gap: 4px; flex-wrap: wrap; }
+    .entry-badge {
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: var(--bg-card);
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+    .entry-badge.success {
+      background: rgba(78,205,196,0.2);
+      color: var(--success);
+    }
+
+    .entry-desc {
+      font-size: 12px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+      margin-bottom: 8px;
+      white-space: pre-wrap;
+    }
+
+    .entry-links { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+    .entry-link-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 9px;
+      border-radius: 14px;
+      font-size: 11px;
+      cursor: pointer;
+      background: rgba(153,102,255,0.18);
+      color: #b794ff;
+      border: 1px solid rgba(153,102,255,0.3);
+      max-width: 260px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .entry-link-chip:hover { background: rgba(153,102,255,0.3); }
+    .entry-link-chip.video {
+      background: rgba(255,90,90,0.18);
+      color: #ff8a8a;
+      border-color: rgba(255,90,90,0.3);
+    }
+    .entry-link-chip.video:hover { background: rgba(255,90,90,0.3); }
+
+    .entry-meta {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+    .entry-author { flex: 1; }
+    .entry-actions { display: flex; gap: 6px; }
+
+    .btn {
+      padding: 6px 12px;
+      border: none;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      white-space: nowrap;
+    }
+    .btn-primary { background: var(--accent); color: white; }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-small { padding: 4px 10px; font-size: 11px; }
+    .btn-ghost { background: transparent; color: var(--text-secondary); border: 1px solid var(--border); }
+    .btn-ghost:hover { background: var(--bg-hover); color: var(--text-primary); }
+    .btn-danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
+    .btn-danger:hover { background: var(--danger); color: white; }
+    .btn-success { background: var(--success); color: #1a1b2e; font-weight: 600; }
+    .btn-success:hover { background: #3ab8af; }
+    .btn-full { width: 100%; justify-content: center; }
+
+    input[type="text"], input[type="url"], select, textarea {
+      width: 100%;
+      padding: 8px 12px;
+      background: var(--bg-card);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 13px;
+      outline: none;
+      font-family: inherit;
+      transition: border-color 0.15s;
+    }
+    input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+    textarea { resize: vertical; min-height: 60px; }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text-secondary);
+    }
+    .empty-state-icon { font-size: 48px; margin-bottom: 12px; }
+    .empty-state-text { font-size: 14px; margin-bottom: 4px; }
+    .empty-state-sub { font-size: 12px; opacity: 0.6; }
+
+    /* Modal */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.55);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .modal-overlay.active { display: flex; }
+    .modal {
+      background: var(--bg-secondary);
+      border-radius: 12px;
+      padding: 20px;
+      width: 100%;
+      max-width: 520px;
+      max-height: 90vh;
+      overflow-y: auto;
+      border: 1px solid var(--border);
+    }
+    .modal-title { font-size: 16px; font-weight: 600; margin-bottom: 14px; }
+    .modal-row { margin-bottom: 10px; }
+    .modal-row label {
+      display: block;
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin-bottom: 4px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .modal-buttons { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+
+    .link-row {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px;
+      margin-bottom: 8px;
+    }
+    .link-row-top {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+    .link-row-top .link-type { flex: 1; }
+    .link-row input { margin-bottom: 6px; }
+    .link-row input:last-child { margin-bottom: 0; }
+    .link-row .remove-link {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--danger);
+      cursor: pointer;
+      padding: 4px 10px;
+      font-size: 14px;
+      border-radius: 6px;
+    }
+    .link-row .remove-link:hover { background: var(--danger); color: white; }
+
+    .assign-step {
+      background: var(--bg-card);
+      border-radius: 8px;
+      padding: 10px;
+      margin-bottom: 8px;
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    .assign-step select { flex: 1; }
+    .assign-step .remove-step {
+      background: none;
+      border: none;
+      color: var(--danger);
+      cursor: pointer;
+      font-size: 16px;
+      padding: 4px 8px;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: var(--text-secondary);
+      font-size: 13px;
+    }
+
+    .toast-container {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      z-index: 200;
+      pointer-events: none;
+    }
+    .toast {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 12px;
+      max-width: 320px;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.4);
+      transition: opacity 0.3s;
+    }
+    .toast.success { border-left: 3px solid var(--success); }
+    .toast.error { border-left: 3px solid var(--danger); }
+  </style>
+</head>
+<body>
+  <div class="titlebar">
+    <span class="titlebar-title">📦 DEPOSITO DE IDEAS</span>
+    <div class="titlebar-buttons">
+      <button class="titlebar-btn btn-minimize" id="btnMinimize" title="Minimizar"></button>
+      <button class="titlebar-btn btn-close" id="btnClose" title="Cerrar"></button>
+    </div>
+  </div>
+
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-header">CATEGORIAS</div>
+      <div class="category-list" id="categoryList"></div>
+      <div class="sidebar-footer">
+        <button class="btn btn-ghost btn-small btn-full" id="newCategoryBtn">+ Nueva categoria</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="main-header">
+        <div style="flex:1">
+          <div class="main-title" id="mainTitle">Deposito</div>
+          <div class="main-subtitle" id="mainSubtitle">Ideas colaborativas del equipo</div>
+        </div>
+        <button class="btn btn-primary" id="newEntryBtn" style="display:none">+ Nueva idea</button>
+      </header>
+      <div class="entries-area" id="entriesArea"></div>
+    </main>
+  </div>
+
+  <!-- Modal: nueva categoria -->
+  <div class="modal-overlay" id="categoryModal">
+    <div class="modal" style="max-width:340px">
+      <div class="modal-title">Nueva categoria</div>
+      <input type="text" id="categoryNameInput" placeholder="Nombre (ej. Tutoriales, Diseño...)">
+      <div class="modal-buttons">
+        <button class="btn btn-ghost" id="cancelCategory">Cancelar</button>
+        <button class="btn btn-primary" id="confirmCategory">Crear</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: nueva/editar entrada -->
+  <div class="modal-overlay" id="entryModal">
+    <div class="modal">
+      <div class="modal-title" id="entryModalTitle">Nueva idea</div>
+      <div class="modal-row">
+        <label>Titulo</label>
+        <input type="text" id="entryTitleInput" placeholder="Ej: Reel estilo storytelling sobre X">
+      </div>
+      <div class="modal-row">
+        <label>Descripcion / notas</label>
+        <textarea id="entryDescInput" placeholder="Detalles, idea, observaciones..."></textarea>
+      </div>
+      <div class="modal-row">
+        <label>Links (video de referencia, material, recursos)</label>
+        <div id="entryLinksWrap"></div>
+        <button class="btn btn-ghost btn-small" id="addLinkBtn" style="margin-top:4px">+ Agregar link</button>
+      </div>
+      <div class="modal-buttons">
+        <button class="btn btn-ghost" id="cancelEntry">Cancelar</button>
+        <button class="btn btn-primary" id="confirmEntry">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: asignar como tarea -->
+  <div class="modal-overlay" id="assignModal">
+    <div class="modal">
+      <div class="modal-title">Asignar como tarea</div>
+      <div class="modal-row">
+        <label>Idea</label>
+        <div id="assignIdeaPreview" style="font-size:13px;color:var(--text-primary);padding:8px;background:var(--bg-card);border-radius:8px"></div>
+      </div>
+      <div class="modal-row">
+        <label>Proyecto</label>
+        <select id="assignProject"><option value="">Elige proyecto...</option></select>
+      </div>
+      <div class="modal-row">
+        <label>Tipo</label>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-ghost btn-small assign-mode-btn active" data-mode="single" style="flex:1">Asignacion individual</button>
+          <button class="btn btn-ghost btn-small assign-mode-btn" data-mode="chain" style="flex:1">Cadena multi-paso</button>
+        </div>
+      </div>
+      <div class="modal-row" id="assignSingleWrap">
+        <label>Asignar a</label>
+        <select id="assignSingleMember"><option value="">Elige miembro...</option></select>
+        <label style="margin-top:8px">Plazo (opcional)</label>
+        <div style="display:flex;gap:6px">
+          <input type="number" id="assignSingleAmount" placeholder="Cantidad" min="1" style="flex:1">
+          <select id="assignSingleUnit" style="flex:1">
+            <option value="days">Dias</option>
+            <option value="hours">Horas</option>
+            <option value="minutes">Minutos</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-row" id="assignChainWrap" style="display:none">
+        <label>Pasos en secuencia</label>
+        <div id="chainSteps"></div>
+        <button class="btn btn-ghost btn-small" id="addChainStep" style="margin-top:4px">+ Agregar paso</button>
+      </div>
+      <div class="modal-buttons">
+        <button class="btn btn-ghost" id="cancelAssign">Cancelar</button>
+        <button class="btn btn-success" id="confirmAssign">Convertir en tarea</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script src="vendor/firebase-app-compat.js"></script>
+  <script src="vendor/firebase-auth-compat.js"></script>
+  <script src="vendor/firebase-firestore-compat.js"></script>
+  <script>
+    firebase.initializeApp({
+      apiKey: "AIzaSyDiLAvhCsJOtHYOtH8x7P8aN3NB6fhvaf0",
+      authDomain: "app-de-tareas-e4209.firebaseapp.com",
+      projectId: "app-de-tareas-e4209",
+      storageBucket: "app-de-tareas-e4209.firebasestorage.app",
+      messagingSenderId: "1189986545334",
+      appId: "1:1189986545334:web:0b5d29b7affa2fecc0d017"
+    });
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+  </script>
+  <script src="deposit-renderer.js"></script>
+</body>
+</html>

@@ -53,9 +53,72 @@ const store = new JsonStore({
 });
 
 let mainWindow;
+let depositWindow;
 let telegramBot;
 let TelegramBotLib;
 let anthropic;
+
+function positionDepositWindow() {
+  if (!depositWindow || depositWindow.isDestroyed()) return;
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const b = mainWindow.getBounds();
+  const db = depositWindow.getBounds();
+  depositWindow.setBounds({ x: b.x + b.width + 4, y: b.y, width: db.width, height: Math.max(600, b.height) });
+}
+
+function toggleDepositWindow() {
+  // Ventana ya existe -> toggle visible/oculto (evita re-inicializar Firebase)
+  if (depositWindow && !depositWindow.isDestroyed()) {
+    if (depositWindow.isVisible()) {
+      depositWindow.hide();
+    } else {
+      positionDepositWindow();
+      depositWindow.show();
+    }
+    return;
+  }
+  // Primera vez: crear la ventana
+  let x, y, width = 820, height = 720;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    const b = mainWindow.getBounds();
+    x = b.x + b.width + 4;
+    y = b.y;
+    height = Math.max(600, b.height);
+  }
+  depositWindow = new BrowserWindow({
+    width, height, x, y,
+    minWidth: 700, minHeight: 500,
+    frame: false, resizable: true, skipTaskbar: false,
+    show: false,
+    parent: mainWindow || undefined,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'deposit-preload.js')
+    },
+    titleBarStyle: 'hidden',
+    trafficLightPosition: { x: -100, y: -100 },
+    backgroundColor: '#1a1b2e'
+  });
+  depositWindow.loadFile('deposit.html');
+  depositWindow.once('ready-to-show', () => {
+    if (depositWindow && !depositWindow.isDestroyed()) depositWindow.show();
+  });
+  depositWindow.on('closed', () => { depositWindow = null; });
+
+  // Seguir el movimiento de la ventana principal
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    const follow = () => positionDepositWindow();
+    mainWindow.on('move', follow);
+    mainWindow.on('resize', follow);
+    depositWindow.on('closed', () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.removeListener('move', follow);
+        mainWindow.removeListener('resize', follow);
+      }
+    });
+  }
+}
 
 function initAnthropic() {
   const key = store.get('claudeApiKey');
@@ -375,6 +438,18 @@ function registerIpcHandlers() {
     mainWindow.setBounds({ x: b.x, y: b.y, width: preChatWidth, height: b.height }, true);
     preChatWidth = null;
     return true;
+  });
+
+  // Deposito: ventana pegada al lado con toggle
+  ipcMain.handle('toggle-deposit-window', () => {
+    toggleDepositWindow();
+    return true;
+  });
+  ipcMain.handle('deposit-minimize', () => {
+    if (depositWindow) depositWindow.minimize();
+  });
+  ipcMain.handle('deposit-close', () => {
+    if (depositWindow) depositWindow.close();
   });
 }
 
