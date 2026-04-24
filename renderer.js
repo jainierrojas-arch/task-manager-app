@@ -7,6 +7,7 @@ let teamMembers = [];
 let personalTasks = [];
 let personalProjectsList = []; // proyectos custom del usuario (no incluye 'General')
 let currentPersonalProject = 'General';
+let lastInteractedProject = null; // {id, name} del ultimo proyecto de equipo tocado por el usuario
 let alwaysOnTop = true;
 let currentTab = 'main';
 let unsubscribeTasks = null;
@@ -190,6 +191,7 @@ function showApp() {
   currentPersonalProject = 'General';
   renderPersonalChips();
   renderPersonalProjectSelect();
+  setupProjectInteractionTracking();
 
   subscribeToData();
   initTelegramHandlers();
@@ -512,6 +514,9 @@ function renderPersonalList() {
     const videoBtn = task.videoLink
       ? `<button class="btn-add-note" onclick="showVideoModal('personalTasks','${task.id}')" title="Editar video">✏️ Video</button>`
       : `<button class="btn-add-note" onclick="showVideoModal('personalTasks','${task.id}')">🎬 + Video</button>`;
+    const editBtn = !completed
+      ? `<button class="task-delete" onclick="editPersonalTask('${task.id}')" title="Editar" style="color:var(--accent)">&#9998;</button>`
+      : '';
     html += `
       <div class="task-item ${completed ? 'completed' : ''}" style="border-left-color:${color}">
         <div class="${checkClass}" ${onClick} title="${completed ? 'Completada' : 'Marcar como terminada'}"></div>
@@ -526,6 +531,7 @@ function renderPersonalList() {
             ${videoBtn}
           </div>
         </div>
+        ${editBtn}
         <button class="task-delete" onclick="deletePersonalTask('${task.id}')" title="Eliminar">&#10005;</button>
       </div>`;
   });
@@ -779,6 +785,38 @@ function getUserColor(userId) {
   return userColors[idx >= 0 ? idx % userColors.length : 0];
 }
 
+// Rastrea el ultimo proyecto de equipo con el que el usuario interactuo
+// para que el agente IA pueda crear tareas alli sin que el usuario lo repita.
+function trackInteractedProject(projectId, projectName) {
+  if (!projectId) return;
+  lastInteractedProject = { id: projectId, name: projectName || '' };
+}
+
+function setupProjectInteractionTracking() {
+  const containers = [el.taskList, el.myTaskList, el.approvalList, el.completedList];
+  containers.forEach(c => {
+    if (!c || c._trackedProjectClicks) return;
+    c._trackedProjectClicks = true;
+    c.addEventListener('click', (e) => {
+      const node = e.target.closest('[data-project-id]');
+      if (!node) return;
+      const id = node.dataset.projectId;
+      const name = node.dataset.projectName;
+      if (id) trackInteractedProject(id, name);
+    }, true);
+  });
+
+  if (el.projectSelect && !el.projectSelect._trackedChange) {
+    el.projectSelect._trackedChange = true;
+    el.projectSelect.addEventListener('change', () => {
+      const id = el.projectSelect.value;
+      if (!id) return;
+      const p = projects.find(x => x.id === id);
+      trackInteractedProject(id, p ? p.name : '');
+    });
+  }
+}
+
 function hexToRgba(hex, alpha) {
   const h = (hex || '#666').replace('#', '');
   const r = parseInt(h.substring(0, 2), 16);
@@ -833,9 +871,10 @@ function renderTaskList(container, taskList, mode) {
   const isAdmin = currentUserData && currentUserData.role === 'admin';
   let html = '';
 
-  for (const [, group] of Object.entries(grouped)) {
+  for (const [projectKey, group] of Object.entries(grouped)) {
+    const projectIdAttr = projectKey === 'sin-proyecto' ? '' : projectKey;
     html += `<div class="project-section">
-      <div class="project-header">
+      <div class="project-header" data-project-id="${projectIdAttr}" data-project-name="${esc(group.name)}" style="cursor:pointer" title="Click para que el agente IA use este proyecto por defecto">
         <span class="project-dot" style="background:${group.color}"></span>
         <span class="project-name">${esc(group.name)}</span>
         <span class="project-count">${group.tasks.length}</span>
@@ -943,7 +982,7 @@ function renderTaskList(container, taskList, mode) {
       }
 
       html += `
-        <div class="task-item ${overdueClass}" data-id="${task.id}" style="border-left-color:${group.color}">
+        <div class="task-item ${overdueClass}" data-id="${task.id}" data-project-id="${task.projectId || ''}" data-project-name="${esc(task.projectName || '')}" style="border-left-color:${group.color}">
           ${checkBtn}
           <div style="flex:1">
             <div class="task-text">${esc(task.text)}</div>
@@ -1270,23 +1309,23 @@ async function rejectTask(taskId) {
   }
 }
 
-// Edit task modal
-let editingTaskId = null;
+// Edit task modal (maneja tareas de equipo y personales)
+let editingTask = null; // { id, collection }
 const editModal = document.getElementById('editModal');
 const editTaskInput = document.getElementById('editTaskInput');
 
 document.getElementById('cancelEdit').addEventListener('click', () => {
   editModal.classList.remove('active');
-  editingTaskId = null;
+  editingTask = null;
 });
 
 document.getElementById('confirmEdit').addEventListener('click', async () => {
   const newText = editTaskInput.value.trim();
-  if (editingTaskId && newText) {
-    await db.collection('tasks').doc(editingTaskId).update({ text: newText });
+  if (editingTask && newText) {
+    await db.collection(editingTask.collection).doc(editingTask.id).update({ text: newText });
   }
   editModal.classList.remove('active');
-  editingTaskId = null;
+  editingTask = null;
 });
 
 editTaskInput.addEventListener('keypress', (e) => {
@@ -1294,17 +1333,27 @@ editTaskInput.addEventListener('keypress', (e) => {
 });
 
 editModal.addEventListener('click', (e) => {
-  if (e.target === editModal) { editModal.classList.remove('active'); editingTaskId = null; }
+  if (e.target === editModal) { editModal.classList.remove('active'); editingTask = null; }
 });
 
 async function editTask(taskId) {
   const task = tasks.find(t => t.id === taskId);
   if (!task || !canEdit(task)) return;
-  editingTaskId = taskId;
+  editingTask = { id: taskId, collection: 'tasks' };
   editTaskInput.value = task.text;
   editModal.classList.add('active');
   setTimeout(() => editTaskInput.focus(), 100);
 }
+
+async function editPersonalTask(taskId) {
+  const task = personalTasks.find(t => t.id === taskId);
+  if (!task) return;
+  editingTask = { id: taskId, collection: 'personalTasks' };
+  editTaskInput.value = task.text;
+  editModal.classList.add('active');
+  setTimeout(() => editTaskInput.focus(), 100);
+}
+window.editPersonalTask = editPersonalTask;
 
 // Add note modal
 let notingTaskId = null;
@@ -2498,11 +2547,28 @@ async function aiDispatch(text) {
   const isoNow = now.toISOString();
   const humanNow = now.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
+  // Contexto donde esta parado el usuario - para resolver "agregame X" sin mencionar proyecto
+  const tabLabels = {
+    main: 'Tareas del equipo', 'my-tasks': 'Mis tareas', approval: 'Por aprobar',
+    completed: 'Hechas', personal: 'Personal', calendar: 'Calendario',
+    team: 'Equipo', new: 'Nueva', settings: 'Config'
+  };
+  const contextLines = [`Pestana actual: ${tabLabels[currentTab] || currentTab}`];
+  if (currentTab === 'personal') {
+    contextLines.push(`Proyecto personal activo: "${currentPersonalProject}"`);
+  } else if (lastInteractedProject && lastInteractedProject.name) {
+    contextLines.push(`Ultimo proyecto de equipo que el usuario toco: "${lastInteractedProject.name}"`);
+  }
+  const contextBlock = contextLines.join('\n');
+
   const systemPrompt = `Eres un asistente de gestion de tareas en una app de equipo. Interpreta el mensaje del usuario y ejecuta la accion correcta usando las tools.
 
 Fecha y hora actual: ${humanNow} (${isoNow})
 
 Usuario actual: ${currentUserData.name} (${currentUserData.email})
+
+Contexto de la app ahora mismo:
+${contextBlock}
 
 Proyectos existentes: ${projects.map(p => p.name).join(', ') || '(ninguno)'}
 
@@ -2517,6 +2583,13 @@ Reglas:
 - Tarea para otro miembro => assign_task
 - 2 o mas tareas en secuencia ("primero A, despues B") => assign_chain_tasks
 - Saludos, preguntas, cosas que no son acciones => reply_message
+
+CONTEXTO IMPLICITO (muy importante):
+- Si el usuario dice "agregame X", "agrega X", "nueva tarea X" SIN mencionar proyecto ni a quien, usa el contexto de arriba:
+  * Pestana "Personal" => add_personal_task (el proyecto personal activo ya se aplica automaticamente, NO lo pongas en task_text)
+  * Pestana "Tareas del equipo" / "Mis tareas" / "Por aprobar" + hay "Ultimo proyecto de equipo" => add_task usando ese project_name
+  * Si no hay contexto suficiente (ej. pestana Calendario o no hay ultimo proyecto tocado) => reply_message pidiendo al usuario el proyecto
+- Si el usuario SI menciona explicitamente proyecto o persona, ignora el contexto y usa lo que dijo.
 
 Deadlines (plazos):
 - Si el usuario menciona una fecha/dia ("para el viernes", "en 3 dias", "el 30 de abril", "mañana", "hoy a las 5pm"), calcula la fecha correspondiente basandote en la fecha actual y pasala en deadline_iso (formato ISO 8601, ej: "2026-04-25T23:59:00").
