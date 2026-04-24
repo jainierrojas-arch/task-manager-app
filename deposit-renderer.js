@@ -6,10 +6,19 @@ let entries = [];
 let projects = [];
 let teamMembers = [];
 let selectedCategoryId = null;
+let selectedSubcategoryId = null; // null=mostrar grid de subs, '__unsorted__'=ideas sin sub, ID=ideas de esa sub
 let editingEntryId = null;
 let assigningEntry = null;
 let assignMode = 'single';
 let unsubscribers = [];
+
+function rootCategories() { return categories.filter(c => !c.parentId); }
+function subcategoriesOf(parentId) { return categories.filter(c => c.parentId === parentId); }
+function entriesIn(catId, subId) {
+  if (subId === '__unsorted__') return entries.filter(e => e.categoryId === catId && !e.subcategoryId);
+  if (subId) return entries.filter(e => e.categoryId === catId && e.subcategoryId === subId);
+  return entries.filter(e => e.categoryId === catId);
+}
 
 const userColors = [
   '#FF4757', '#1E90FF', '#2ED573', '#FFA502', '#BE2EDD',
@@ -129,11 +138,13 @@ function subscribeAll() {
 // ===== CATEGORIES =====
 function renderCategories() {
   const list = document.getElementById('categoryList');
-  if (categories.length === 0) {
+  const roots = rootCategories();
+  if (roots.length === 0) {
     list.innerHTML = '<div style="padding:10px;color:var(--text-dim);font-size:12px">Sin categorias</div>';
     return;
   }
-  list.innerHTML = categories.map(c => {
+  list.innerHTML = roots.map(c => {
+    // Cuenta todas las ideas en esta categoria (incluyendo subs)
     const count = entries.filter(e => e.categoryId === c.id).length;
     const active = c.id === selectedCategoryId ? ' active' : '';
     const canDelete = !c.isDefault;
@@ -149,6 +160,7 @@ function renderCategories() {
     el.addEventListener('click', (e) => {
       if (e.target.dataset.delete) return;
       selectedCategoryId = el.dataset.id;
+      selectedSubcategoryId = null; // al cambiar de categoria, volver a vista de subs
       renderCategories();
       renderEntries();
     });
@@ -181,22 +193,92 @@ document.getElementById('cancelCategory').addEventListener('click', () => hideCa
 document.getElementById('confirmCategory').addEventListener('click', async () => {
   const name = document.getElementById('categoryNameInput').value.trim();
   if (!name) return;
-  await db.collection('depositCategories').add({
+  const modal = document.getElementById('categoryModal');
+  const mode = modal.dataset.mode;
+
+  if (mode === 'edit-sub') {
+    const subId = modal.dataset.editId;
+    const sub = categories.find(c => c.id === subId);
+    if (!sub) { hideCategoryModal(); return; }
+    if (name === sub.name) { hideCategoryModal(); return; }
+    await db.collection('depositCategories').doc(subId).update({ name });
+    const inSub = entries.filter(e => e.subcategoryId === subId);
+    if (inSub.length > 0) {
+      const batch = db.batch();
+      inSub.forEach(e => batch.update(db.collection('depositEntries').doc(e.id), { subcategoryName: name }));
+      await batch.commit();
+    }
+    hideCategoryModal();
+    toast('Subcategoria renombrada');
+    return;
+  }
+
+  const isSub = mode === 'sub';
+  const data = {
     name,
     createdAt: firebase.firestore.FieldValue.serverTimestamp(),
     createdBy: currentUser.uid
-  });
+  };
+  if (isSub && selectedCategoryId) data.parentId = selectedCategoryId;
+  await db.collection('depositCategories').add(data);
   hideCategoryModal();
-  toast(`Categoria "${name}" creada`);
+  toast(isSub ? `Subcategoria "${name}" creada` : `Categoria "${name}" creada`);
 });
 
 function showCategoryModal() {
+  document.getElementById('categoryModal').dataset.mode = 'root';
+  document.getElementById('categoryModal').querySelector('.modal-title').textContent = 'Nueva categoria';
   document.getElementById('categoryNameInput').value = '';
+  document.getElementById('categoryNameInput').placeholder = 'Nombre (ej. Tutoriales, Diseno...)';
   document.getElementById('categoryModal').classList.add('active');
   setTimeout(() => document.getElementById('categoryNameInput').focus(), 100);
 }
+
+function showSubcategoryModal() {
+  if (!selectedCategoryId) return;
+  const cat = categories.find(c => c.id === selectedCategoryId);
+  document.getElementById('categoryModal').dataset.mode = 'sub';
+  document.getElementById('categoryModal').querySelector('.modal-title').textContent = `Nueva subcategoria en "${cat ? cat.name : ''}"`;
+  document.getElementById('categoryNameInput').value = '';
+  document.getElementById('categoryNameInput').placeholder = 'Nombre (ej. Mes Abril, Cliente X...)';
+  document.getElementById('categoryModal').classList.add('active');
+  setTimeout(() => document.getElementById('categoryNameInput').focus(), 100);
+}
+
 function hideCategoryModal() {
   document.getElementById('categoryModal').classList.remove('active');
+}
+
+function renameSubcategory(subId) {
+  const sub = categories.find(c => c.id === subId);
+  if (!sub) return;
+  const modal = document.getElementById('categoryModal');
+  modal.dataset.mode = 'edit-sub';
+  modal.dataset.editId = subId;
+  modal.querySelector('.modal-title').textContent = `Renombrar subcategoria`;
+  const input = document.getElementById('categoryNameInput');
+  input.value = sub.name;
+  input.placeholder = 'Nuevo nombre';
+  modal.classList.add('active');
+  setTimeout(() => { input.focus(); input.select(); }, 100);
+}
+
+async function deleteSubcategory(subId) {
+  const sub = categories.find(c => c.id === subId);
+  if (!sub) return;
+  const inSub = entries.filter(e => e.subcategoryId === subId);
+  const msg = inSub.length > 0
+    ? `Eliminar la subcategoria "${sub.name}"? Sus ${inSub.length} idea(s) pasaran a "Sin clasificar".`
+    : `Eliminar la subcategoria "${sub.name}"?`;
+  if (!confirm(msg)) return;
+  const batch = db.batch();
+  inSub.forEach(e => batch.update(db.collection('depositEntries').doc(e.id), {
+    subcategoryId: firebase.firestore.FieldValue.delete()
+  }));
+  batch.delete(db.collection('depositCategories').doc(subId));
+  await batch.commit();
+  if (selectedSubcategoryId === subId) selectedSubcategoryId = null;
+  toast('Subcategoria eliminada');
 }
 
 // ===== ENTRIES =====
@@ -206,7 +288,7 @@ function renderEntries() {
   const sub = document.getElementById('mainSubtitle');
   const newBtn = document.getElementById('newEntryBtn');
 
-  if (!selectedCategoryId || categories.length === 0) {
+  if (!selectedCategoryId || rootCategories().length === 0) {
     title.textContent = 'Crea una categoria primero';
     sub.textContent = '';
     newBtn.style.display = 'none';
@@ -220,71 +302,180 @@ function renderEntries() {
   }
 
   const cat = categories.find(c => c.id === selectedCategoryId);
-  const catEntries = entries.filter(e => e.categoryId === selectedCategoryId);
-  title.textContent = cat.name;
-  sub.textContent = `${catEntries.length} idea${catEntries.length === 1 ? '' : 's'} en esta categoria`;
-  newBtn.style.display = 'inline-flex';
+  if (!cat) { selectedCategoryId = null; renderEntries(); return; }
 
-  if (catEntries.length === 0) {
-    area.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-state-icon">&#128161;</div>
-        <div class="empty-state-text">No hay ideas en "${esc(cat.name)}"</div>
-        <div class="empty-state-sub">Click en "+ Nueva idea" para empezar</div>
+  // VISTA 1: Grid de subcategorias (cuando no hay sub seleccionada)
+  if (!selectedSubcategoryId) {
+    const subs = subcategoriesOf(selectedCategoryId);
+    const totalIdeas = entriesIn(selectedCategoryId).length;
+    const unsortedCount = entriesIn(selectedCategoryId, '__unsorted__').length;
+    title.textContent = cat.name;
+    sub.textContent = `${subs.length} subcategoria${subs.length === 1 ? '' : 's'} - ${totalIdeas} idea${totalIdeas === 1 ? '' : 's'} en total`;
+    newBtn.style.display = 'none';
+
+    let cardsHtml = '';
+    // Tarjeta "Sin clasificar" siempre visible si hay ideas sin sub o si no hay subs aun
+    if (unsortedCount > 0 || subs.length === 0) {
+      cardsHtml += `
+        <div class="sub-card" data-sub-id="__unsorted__">
+          <div class="sub-card-icon">&#128196;</div>
+          <div class="sub-card-name">Sin clasificar</div>
+          <div class="sub-card-count">${unsortedCount} idea${unsortedCount === 1 ? '' : 's'}</div>
+        </div>`;
+    }
+    subs.forEach(s => {
+      const count = entriesIn(selectedCategoryId, s.id).length;
+      cardsHtml += `
+        <div class="sub-card" data-sub-id="${esc(s.id)}">
+          <button class="sub-card-edit" data-edit-sub="${esc(s.id)}" title="Renombrar subcategoria">&#9998;</button>
+          <button class="sub-card-delete" data-delete-sub="${esc(s.id)}" title="Eliminar subcategoria">&#10005;</button>
+          <div class="sub-card-icon">&#128193;</div>
+          <div class="sub-card-name">${esc(s.name)}</div>
+          <div class="sub-card-count">${count} idea${count === 1 ? '' : 's'}</div>
+        </div>`;
+    });
+    cardsHtml += `
+      <div class="sub-card add-card" id="addSubCardBtn">
+        <div class="sub-card-icon">&#10133;</div>
+        <div class="sub-card-name">Nueva subcategoria</div>
       </div>`;
+    area.innerHTML = `<div class="sub-grid">${cardsHtml}</div>`;
+
+    area.querySelectorAll('.sub-card[data-sub-id]').forEach(card => {
+      card.addEventListener('click', (e) => {
+        if (e.target.dataset.deleteSub) return;
+        selectedSubcategoryId = card.dataset.subId;
+        renderEntries();
+      });
+    });
+    area.querySelectorAll('[data-delete-sub]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteSubcategory(btn.dataset.deleteSub);
+      });
+    });
+    area.querySelectorAll('[data-edit-sub]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        renameSubcategory(btn.dataset.editSub);
+      });
+    });
+    const addBtn = document.getElementById('addSubCardBtn');
+    if (addBtn) addBtn.addEventListener('click', showSubcategoryModal);
     return;
   }
 
-  area.innerHTML = catEntries.map(e => renderEntryHtml(e)).join('');
-  area.querySelectorAll('[data-link-open]').forEach(chip => {
-    chip.addEventListener('click', () => window.api.openExternal(chip.dataset.linkOpen));
-  });
-  area.querySelectorAll('[data-edit]').forEach(btn => {
-    btn.addEventListener('click', () => showEntryModal(btn.dataset.edit));
-  });
-  area.querySelectorAll('[data-assign]').forEach(btn => {
-    btn.addEventListener('click', () => showAssignModal(btn.dataset.assign));
-  });
-  area.querySelectorAll('[data-take]').forEach(btn => {
-    btn.addEventListener('click', () => showAssignModal(btn.dataset.take, { takeForMe: true }));
-  });
-  area.querySelectorAll('[data-delete-entry]').forEach(btn => {
-    btn.addEventListener('click', () => deleteEntry(btn.dataset.deleteEntry));
+  // VISTA 2: Ideas de una subcategoria
+  const isUnsorted = selectedSubcategoryId === '__unsorted__';
+  const subName = isUnsorted ? 'Sin clasificar' : (categories.find(c => c.id === selectedSubcategoryId)?.name || '?');
+  const subEntries = entriesIn(selectedCategoryId, selectedSubcategoryId);
+  title.innerHTML = `<button class="back-btn" id="backToSubs" title="Volver a subcategorias">&#8592;</button> ${esc(cat.name)} <span style="opacity:0.5">/</span> ${esc(subName)}`;
+  sub.textContent = `${subEntries.length} idea${subEntries.length === 1 ? '' : 's'} aqui`;
+  newBtn.style.display = 'inline-flex';
+
+  if (subEntries.length === 0) {
+    area.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">&#128161;</div>
+        <div class="empty-state-text">No hay ideas en "${esc(subName)}"</div>
+        <div class="empty-state-sub">Click en "+ Nueva idea" para empezar</div>
+      </div>`;
+  } else {
+    area.innerHTML = subEntries.map(e => renderEntryHtml(e)).join('');
+    lazyFetchCovers(subEntries);
+    area.querySelectorAll('[data-link-open]').forEach(chip => {
+      chip.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const u = chip.dataset.linkOpen;
+        if (u) window.api.openExternal(u);
+      });
+    });
+    area.querySelectorAll('[data-edit]').forEach(btn => {
+      btn.addEventListener('click', () => showEntryModal(btn.dataset.edit));
+    });
+    area.querySelectorAll('[data-assign]').forEach(btn => {
+      btn.addEventListener('click', () => showAssignModal(btn.dataset.assign));
+    });
+    area.querySelectorAll('[data-take]').forEach(btn => {
+      btn.addEventListener('click', () => showAssignModal(btn.dataset.take, { takeForMe: true }));
+    });
+    area.querySelectorAll('[data-delete-entry]').forEach(btn => {
+      btn.addEventListener('click', () => deleteEntry(btn.dataset.deleteEntry));
+    });
+  }
+
+  const backBtn = document.getElementById('backToSubs');
+  if (backBtn) backBtn.addEventListener('click', () => {
+    selectedSubcategoryId = null;
+    renderEntries();
   });
 }
 
 function renderEntryHtml(e) {
   const author = e.createdByName || 'Anonimo';
   const color = getUserColor(e.createdBy);
-  const links = (e.links || []).map(l => {
+  const links = (e.links || []);
+  // Chips compactos sin URL larga
+  const linkChips = links.map(l => {
     const isVideo = l.type === 'video';
     const cls = isVideo ? 'entry-link-chip video' : 'entry-link-chip';
     const icon = isVideo ? '&#127916;' : '&#128279;';
-    const label = l.label || (isVideo ? 'Video de referencia' : shortUrl(l.url));
+    const label = l.label && l.label.length > 0
+      ? l.label
+      : (isVideo ? 'Video' : (l.type === 'recurso' ? 'Recurso' : 'Link'));
     return `<span class="${cls}" data-link-open="${esc(l.url)}" title="${esc(l.url)}">${icon} ${esc(label)}</span>`;
   }).join('');
   const convertedBadge = e.status === 'converted'
     ? `<span class="entry-badge success">&#10003; Convertida en tarea</span>`
     : '';
   const descHtml = e.description ? `<div class="entry-desc">${esc(e.description)}</div>` : '';
+  // Cover: imagen Open Graph del primer link (cacheada en e.coverImage)
+  const cover = e.coverImage;
+  const firstUrl = links[0]?.url || '';
+  const coverHtml = cover
+    ? `<div class="entry-cover" data-link-open="${esc(firstUrl)}" style="background-image:url('${esc(cover)}')"></div>`
+    : '';
   return `
-    <div class="entry ${e.status === 'converted' ? 'converted' : ''}">
-      <div class="entry-head">
-        <div class="entry-title">${esc(e.title || '(sin titulo)')}</div>
-        <div class="entry-badges">${convertedBadge}</div>
-      </div>
-      ${descHtml}
-      ${links ? `<div class="entry-links">${links}</div>` : ''}
-      <div class="entry-meta">
-        <div class="entry-author">Por <span style="color:${color};font-weight:600">${esc(author)}</span> &middot; ${timeAgo(e.createdAt)}</div>
-        <div class="entry-actions">
-          <button class="btn btn-ghost btn-small" data-edit="${esc(e.id)}" title="Editar">&#9998; Editar</button>
-          <button class="btn btn-danger btn-small" data-delete-entry="${esc(e.id)}" title="Eliminar">&#10005;</button>
-          <button class="btn btn-primary btn-small" data-take="${esc(e.id)}" title="Tomarla yo (sola o arrancar cadena)">&#128587; Tomar Tarea</button>
-          <button class="btn btn-success btn-small" data-assign="${esc(e.id)}">&#10140; Asignar como tarea</button>
+    <div class="entry-card ${e.status === 'converted' ? 'converted' : ''}" data-entry-id="${esc(e.id)}">
+      ${coverHtml}
+      <div class="entry-card-body">
+        <div class="entry-card-head">
+          <div class="entry-title">${esc(e.title || '(sin titulo)')}</div>
+          ${convertedBadge}
+        </div>
+        ${descHtml}
+        ${linkChips ? `<div class="entry-links">${linkChips}</div>` : ''}
+        <div class="entry-card-foot">
+          <div class="entry-author">Por <span style="color:${color};font-weight:600">${esc(author)}</span> &middot; ${timeAgo(e.createdAt)}</div>
+          <div class="entry-actions">
+            <button class="btn btn-ghost btn-small" data-edit="${esc(e.id)}" title="Editar">&#9998;</button>
+            <button class="btn btn-danger btn-small" data-delete-entry="${esc(e.id)}" title="Eliminar">&#10005;</button>
+            <button class="btn btn-primary btn-small" data-take="${esc(e.id)}" title="Tomarla yo (solo o cadena)">&#128587; Tomar</button>
+            <button class="btn btn-success btn-small" data-assign="${esc(e.id)}">&#10140; Asignar</button>
+          </div>
         </div>
       </div>
     </div>`;
+}
+
+// Tracking de fetches en curso para no repetir
+const ogFetchInFlight = new Set();
+
+async function lazyFetchCovers(visibleEntries) {
+  for (const entry of visibleEntries) {
+    if (entry.coverImage !== undefined) continue; // ya intentado (incluso si es null)
+    const links = entry.links || [];
+    if (links.length === 0) continue;
+    if (ogFetchInFlight.has(entry.id)) continue;
+    ogFetchInFlight.add(entry.id);
+    const url = links[0].url;
+    try {
+      const og = await window.api.fetchOgData(url);
+      const update = { coverImage: og.image || null };
+      await db.collection('depositEntries').doc(entry.id).update(update);
+    } catch (e) { /* ignore */ }
+    ogFetchInFlight.delete(entry.id);
+  }
 }
 
 function shortUrl(url) {
@@ -368,22 +559,27 @@ async function saveEntry() {
     });
   });
 
-  const data = {
-    title,
-    description,
-    links,
-    categoryId: selectedCategoryId,
-    categoryName: categories.find(c => c.id === selectedCategoryId)?.name || ''
-  };
-
   if (editingEntryId) {
-    await db.collection('depositEntries').doc(editingEntryId).update(data);
+    // Editar: solo cambia los campos editables, mantiene categoria/subcategoria original
+    await db.collection('depositEntries').doc(editingEntryId).update({
+      title, description, links
+    });
     toast('Idea actualizada');
   } else {
-    data.status = 'idea';
-    data.createdBy = currentUser.uid;
-    data.createdByName = currentUserData.name;
-    data.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+    // Crear: usar la categoria y subcategoria de donde estamos parados
+    const data = {
+      title, description, links,
+      categoryId: selectedCategoryId,
+      categoryName: categories.find(c => c.id === selectedCategoryId)?.name || '',
+      status: 'idea',
+      createdBy: currentUser.uid,
+      createdByName: currentUserData.name,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
+    if (selectedSubcategoryId && selectedSubcategoryId !== '__unsorted__') {
+      data.subcategoryId = selectedSubcategoryId;
+      data.subcategoryName = categories.find(c => c.id === selectedSubcategoryId)?.name || '';
+    }
     await db.collection('depositEntries').add(data);
     toast('Idea agregada al deposito');
   }

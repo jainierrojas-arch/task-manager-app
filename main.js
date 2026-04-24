@@ -478,6 +478,71 @@ function registerIpcHandlers() {
     toggleDepositWindow();
     return true;
   });
+
+  // Fetch Open Graph image / metadata para preview tipo WhatsApp en el deposito
+  ipcMain.handle('fetch-og-data', async (_, url) => {
+    if (!url || typeof url !== 'string' || !/^https?:\/\//i.test(url)) {
+      return { image: null, title: null, description: null };
+    }
+    return new Promise((resolve) => {
+      const httpLib = require(url.startsWith('https') ? 'https' : 'http');
+      let redirectsLeft = 5;
+      const fetchUrl = (u) => {
+        try {
+          const parsed = new URL(u);
+          const lib = parsed.protocol === 'https:' ? require('https') : require('http');
+          const req = lib.get({
+            host: parsed.hostname,
+            port: parsed.port,
+            path: parsed.pathname + parsed.search,
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Accept': 'text/html,application/xhtml+xml',
+              'Accept-Language': 'es,en;q=0.9'
+            }
+          }, (res) => {
+            // Redireccion
+            if ((res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 303 || res.statusCode === 307) && res.headers.location && redirectsLeft > 0) {
+              redirectsLeft--;
+              const next = new URL(res.headers.location, u).href;
+              res.resume();
+              return fetchUrl(next);
+            }
+            if (res.statusCode !== 200) {
+              res.resume();
+              return resolve({ image: null, title: null, description: null });
+            }
+            let html = '';
+            const maxBytes = 250 * 1024;
+            res.setEncoding('utf8');
+            res.on('data', chunk => {
+              html += chunk;
+              if (html.length > maxBytes) { res.destroy(); }
+            });
+            res.on('end', () => {
+              const findMeta = (prop) => {
+                const re1 = new RegExp(`<meta\\s+(?:property|name)=["']${prop}["']\\s+content=["']([^"']+)["']`, 'i');
+                const re2 = new RegExp(`<meta\\s+content=["']([^"']+)["']\\s+(?:property|name)=["']${prop}["']`, 'i');
+                const m1 = html.match(re1) || html.match(re2);
+                return m1 ? m1[1] : null;
+              };
+              resolve({
+                image: findMeta('og:image') || findMeta('twitter:image'),
+                title: findMeta('og:title') || findMeta('twitter:title'),
+                description: findMeta('og:description') || findMeta('twitter:description')
+              });
+            });
+            res.on('error', () => resolve({ image: null, title: null, description: null }));
+          });
+          req.on('error', () => resolve({ image: null, title: null, description: null }));
+          req.setTimeout(6000, () => { try { req.destroy(); } catch (_) {} resolve({ image: null, title: null, description: null }); });
+        } catch (e) {
+          resolve({ image: null, title: null, description: null });
+        }
+      };
+      fetchUrl(url);
+    });
+  });
   ipcMain.handle('deposit-minimize', () => {
     if (depositWindow) depositWindow.minimize();
   });

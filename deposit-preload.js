@@ -3,5 +3,6 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('api', {
   minimizeWindow: () => ipcRenderer.invoke('deposit-minimize'),
   closeWindow: () => ipcRenderer.invoke('deposit-close'),
-  openExternal: (url) => ipcRenderer.invoke('open-external', url)
+  openExternal: (url) => ipcRenderer.invoke('open-external', url),
+  fetchOgData: (url) => ipcRenderer.invoke('fetch-og-data', url)
 });

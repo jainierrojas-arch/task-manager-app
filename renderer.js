@@ -2,9 +2,11 @@
 let currentUser = null;
 let currentUserData = null;
 let tasks = [];
+let trashTasks = [];
 let projects = [];
 let teamMembers = [];
 let personalTasks = [];
+let trashPersonalTasks = [];
 let personalProjectsList = []; // proyectos custom del usuario (no incluye 'General')
 let currentPersonalProject = 'General';
 let lastInteractedProject = null; // {id, name} del ultimo proyecto de equipo tocado por el usuario
@@ -106,7 +108,10 @@ const el = {
   chatInput: document.getElementById('chatInput'),
   chatSendBtn: document.getElementById('chatSendBtn'),
   chatClose: document.getElementById('chatClose'),
-  chatUnreadBadge: document.getElementById('chatUnreadBadge')
+  chatUnreadBadge: document.getElementById('chatUnreadBadge'),
+  trashList: document.getElementById('trashList'),
+  trashBadge: document.getElementById('trashBadge'),
+  emptyTrashBtn: document.getElementById('emptyTrashBtn')
 };
 
 // ===== AUTH =====
@@ -256,8 +261,11 @@ if (depositBtn) {
 // ===== FIRESTORE REAL-TIME =====
 function subscribeToData() {
   unsubscribeTasks = db.collection('tasks').orderBy('createdAt', 'desc').onSnapshot((snapshot) => {
-    tasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const all = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    tasks = all.filter(t => !t.deletedAt);
+    trashTasks = all.filter(t => t.deletedAt);
     renderAll();
+    renderTrashList();
   });
 
   unsubscribeProjects = db.collection('projects').orderBy('name').onSnapshot((snapshot) => {
@@ -279,8 +287,11 @@ function subscribeToData() {
   unsubscribePersonal = db.collection('personalTasks')
     .where('ownerId', '==', currentUser.uid)
     .onSnapshot((snapshot) => {
-      personalTasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const all = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      personalTasks = all.filter(t => !t.deletedAt);
+      trashPersonalTasks = all.filter(t => t.deletedAt);
       renderPersonalList();
+      renderTrashList();
     });
 
   unsubscribeChat = db.collection('chatMessages')
@@ -665,12 +676,118 @@ async function completePersonalTask(taskId) {
 }
 
 async function deletePersonalTask(taskId) {
-  if (!confirm('Eliminar esta tarea personal?')) return;
+  const task = personalTasks.find(t => t.id === taskId);
+  if (!task) return;
+  if (!confirm(`Estas seguro que quieres eliminar esta tarea personal?\n\n"${task.text}"\n\nSe enviara a la Papelera. Podras restaurarla desde alli.`)) return;
+  await db.collection('personalTasks').doc(taskId).update({
+    deletedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    deletedBy: currentUser.uid,
+    deletedByName: currentUserData.name
+  });
+}
+
+async function restorePersonalTask(taskId) {
+  await db.collection('personalTasks').doc(taskId).update({
+    deletedAt: firebase.firestore.FieldValue.delete(),
+    deletedBy: firebase.firestore.FieldValue.delete(),
+    deletedByName: firebase.firestore.FieldValue.delete()
+  });
+}
+window.restorePersonalTask = restorePersonalTask;
+
+async function permanentlyDeletePersonalTask(taskId) {
+  const task = trashPersonalTasks.find(t => t.id === taskId);
+  if (!task) return;
+  if (!confirm(`Eliminar PERMANENTEMENTE esta tarea personal?\n\n"${task.text}"\n\nEsta accion no se puede deshacer.`)) return;
   await db.collection('personalTasks').doc(taskId).delete();
 }
+window.permanentlyDeletePersonalTask = permanentlyDeletePersonalTask;
 
 window.completePersonalTask = completePersonalTask;
 window.deletePersonalTask = deletePersonalTask;
+
+// ===== PAPELERA =====
+function renderTrashList() {
+  if (!el.trashList) return;
+  // Solo el creador (o admin) ve sus tareas eliminadas en la papelera
+  const isAdmin = currentUserData && currentUserData.role === 'admin';
+  const myTrashTeam = trashTasks.filter(t => isAdmin || t.createdBy === currentUser.uid || t.deletedBy === currentUser.uid);
+  const myTrashPersonal = trashPersonalTasks; // Las personales ya estan filtradas por ownerId
+  const total = myTrashTeam.length + myTrashPersonal.length;
+
+  // Badge en tab
+  if (el.trashBadge) {
+    if (total > 0) {
+      el.trashBadge.textContent = total > 99 ? '99+' : String(total);
+      el.trashBadge.style.display = 'inline-block';
+    } else {
+      el.trashBadge.style.display = 'none';
+    }
+  }
+
+  if (total === 0) {
+    el.trashList.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">&#128465;</div>
+        <div class="empty-state-text">Papelera vacia</div>
+        <div class="empty-state-sub">Las tareas eliminadas apareceran aqui y podras restaurarlas</div>
+      </div>`;
+    return;
+  }
+
+  // Combinar y ordenar por fecha de eliminacion (mas recientes primero)
+  const combined = [
+    ...myTrashTeam.map(t => ({ ...t, _kind: 'team' })),
+    ...myTrashPersonal.map(t => ({ ...t, _kind: 'personal' }))
+  ].sort((a, b) => {
+    const at = a.deletedAt?.seconds || 0;
+    const bt = b.deletedAt?.seconds || 0;
+    return bt - at;
+  });
+
+  let html = '';
+  combined.forEach(t => {
+    const isPersonal = t._kind === 'personal';
+    const color = isPersonal ? '#BB8FCE' : (t.projectColor || '#666');
+    const badge = isPersonal
+      ? '<span class="task-tag" style="background:rgba(187,143,206,0.2);color:#BB8FCE">Personal</span>'
+      : `<span class="task-tag">${esc(t.projectName || 'Sin proyecto')}</span>`;
+    const deletedByName = t.deletedByName || 'alguien';
+    const deletedTime = t.deletedAt ? timeAgo(t.deletedAt) : '';
+    const restoreFn = isPersonal ? 'restorePersonalTask' : 'restoreTask';
+    const permFn = isPersonal ? 'permanentlyDeletePersonalTask' : 'permanentlyDeleteTask';
+    html += `
+      <div class="task-item" style="border-left-color:${color};opacity:0.85">
+        <div style="flex:1">
+          <div class="task-text">${esc(t.text)}</div>
+          <div class="task-meta">
+            ${badge}
+            <span class="task-tag" style="background:rgba(255,107,107,0.15);color:var(--danger)">Eliminada por ${esc(deletedByName)} &middot; ${deletedTime}</span>
+          </div>
+          <div style="display:flex;gap:6px;margin-top:8px">
+            <button class="btn btn-ghost btn-small" onclick="${restoreFn}('${t.id}')" style="color:var(--success);border-color:var(--success)">&#8635; Restaurar</button>
+            <button class="btn btn-ghost btn-small" onclick="${permFn}('${t.id}')" style="color:var(--danger);border-color:var(--danger)">&#10005; Eliminar definitivamente</button>
+          </div>
+        </div>
+      </div>`;
+  });
+  el.trashList.innerHTML = html;
+}
+
+async function emptyTrash() {
+  const isAdmin = currentUserData && currentUserData.role === 'admin';
+  const myTrashTeam = trashTasks.filter(t => isAdmin || t.createdBy === currentUser.uid || t.deletedBy === currentUser.uid);
+  const myTrashPersonal = trashPersonalTasks;
+  const total = myTrashTeam.length + myTrashPersonal.length;
+  if (total === 0) return;
+  if (!confirm(`Vaciar la papelera? Se eliminaran PERMANENTEMENTE ${total} tarea(s). Esto no se puede deshacer.`)) return;
+  const batch = db.batch();
+  myTrashTeam.forEach(t => batch.delete(db.collection('tasks').doc(t.id)));
+  myTrashPersonal.forEach(t => batch.delete(db.collection('personalTasks').doc(t.id)));
+  await batch.commit();
+}
+
+if (el.emptyTrashBtn) el.emptyTrashBtn.addEventListener('click', emptyTrash);
 
 // ===== PERSONAL PROJECTS =====
 function allPersonalProjects() {
@@ -1503,9 +1620,32 @@ function canDelete(task) {
 
 async function deleteTask(taskId) {
   const task = tasks.find(t => t.id === taskId);
-  if (task && !canDelete(task)) return;
+  if (!task) return;
+  if (!canDelete(task)) return;
+  if (!confirm(`Estas seguro que quieres eliminar la tarea?\n\n"${task.text}"\n\nSe enviara a la Papelera. Podras restaurarla desde alli.`)) return;
+  await db.collection('tasks').doc(taskId).update({
+    deletedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    deletedBy: currentUser.uid,
+    deletedByName: currentUserData.name
+  });
+}
+
+async function restoreTask(taskId) {
+  await db.collection('tasks').doc(taskId).update({
+    deletedAt: firebase.firestore.FieldValue.delete(),
+    deletedBy: firebase.firestore.FieldValue.delete(),
+    deletedByName: firebase.firestore.FieldValue.delete()
+  });
+}
+window.restoreTask = restoreTask;
+
+async function permanentlyDeleteTask(taskId) {
+  const task = trashTasks.find(t => t.id === taskId);
+  if (!task) return;
+  if (!confirm(`Eliminar PERMANENTEMENTE la tarea "${task.text}"?\n\nEsta accion no se puede deshacer.`)) return;
   await db.collection('tasks').doc(taskId).delete();
 }
+window.permanentlyDeleteTask = permanentlyDeleteTask;
 
 async function deleteProject(projectId) {
   const project = projects.find(p => p.id === projectId);
@@ -2937,6 +3077,29 @@ function chatDayLabel(date) {
   return d.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
 }
 
+// Trackeo de mensajes ya renderizados en el DOM para append-only y evitar flicker
+const renderedChatIds = new Set();
+let lastChatDayKey = null;
+
+function chatMessageHtml(m) {
+  const own = m.authorId === currentUser.uid;
+  const color = getUserColor(m.authorId);
+  const initial = (m.authorName || '?').charAt(0).toUpperCase();
+  const time = formatChatTime(m.createdAt);
+  const author = own ? 'Tu' : esc(m.authorName || 'Usuario');
+  return `
+    <div class="chat-msg ${own ? 'own' : ''}" data-msg-id="${esc(m.id)}">
+      <div class="chat-msg-avatar" style="background:${color}">${initial}</div>
+      <div class="chat-msg-body">
+        <div class="chat-msg-meta">
+          <span class="chat-msg-author" style="color:${color}">${author}</span>
+          <span>${time}</span>
+        </div>
+        <div class="chat-msg-text">${esc(m.text)}</div>
+      </div>
+    </div>`;
+}
+
 function renderChatMessages() {
   const container = el.chatMessagesEl;
   if (!container) return;
@@ -2947,33 +3110,47 @@ function renderChatMessages() {
         <div class="empty-state-text" style="font-size:12px">Sin mensajes todavia</div>
         <div class="empty-state-sub" style="font-size:11px">Se el primero en escribir</div>
       </div>`;
+    renderedChatIds.clear();
+    lastChatDayKey = null;
     return;
   }
+
+  // Append-only: si todos los mensajes existentes ya estan en el DOM,
+  // solo agregamos los nuevos al final (evita flicker del re-render completo)
+  const newMessages = chatMessages.filter(m => !renderedChatIds.has(m.id));
+  const existingMessages = chatMessages.filter(m => renderedChatIds.has(m.id));
+  const allExistingStillThere = existingMessages.length === renderedChatIds.size;
+
+  if (renderedChatIds.size > 0 && newMessages.length > 0 && allExistingStillThere) {
+    let html = '';
+    newMessages.forEach(m => {
+      const d = chatTimestampToDate(m.createdAt);
+      const dayKey = d ? d.toDateString() : 'pending';
+      if (dayKey !== lastChatDayKey) {
+        html += `<div class="chat-day-divider">${d ? chatDayLabel(d) : 'Enviando...'}</div>`;
+        lastChatDayKey = dayKey;
+      }
+      html += chatMessageHtml(m);
+      renderedChatIds.add(m.id);
+    });
+    container.insertAdjacentHTML('beforeend', html);
+    container.scrollTop = container.scrollHeight;
+    return;
+  }
+
+  // Re-render completo (primer render o cambios en mensajes existentes)
+  renderedChatIds.clear();
+  lastChatDayKey = null;
   let html = '';
-  let lastDayKey = null;
   chatMessages.forEach(m => {
     const d = chatTimestampToDate(m.createdAt);
     const dayKey = d ? d.toDateString() : 'pending';
-    if (dayKey !== lastDayKey) {
+    if (dayKey !== lastChatDayKey) {
       html += `<div class="chat-day-divider">${d ? chatDayLabel(d) : 'Enviando...'}</div>`;
-      lastDayKey = dayKey;
+      lastChatDayKey = dayKey;
     }
-    const own = m.authorId === currentUser.uid;
-    const color = getUserColor(m.authorId);
-    const initial = (m.authorName || '?').charAt(0).toUpperCase();
-    const time = formatChatTime(m.createdAt);
-    const author = own ? 'Tu' : esc(m.authorName || 'Usuario');
-    html += `
-      <div class="chat-msg ${own ? 'own' : ''}">
-        <div class="chat-msg-avatar" style="background:${color}">${initial}</div>
-        <div class="chat-msg-body">
-          <div class="chat-msg-meta">
-            <span class="chat-msg-author" style="color:${color}">${author}</span>
-            <span>${time}</span>
-          </div>
-          <div class="chat-msg-text">${esc(m.text)}</div>
-        </div>
-      </div>`;
+    html += chatMessageHtml(m);
+    renderedChatIds.add(m.id);
   });
   container.innerHTML = html;
   container.scrollTop = container.scrollHeight;
@@ -3016,6 +3193,9 @@ async function openChat() {
   try { await window.api.chatExpandWindow(CHAT_EXTRA_WIDTH); } catch (e) { /* ignore */ }
   el.chatPanel.classList.add('open');
   el.chatToggleBtn.classList.add('active');
+  // Forzar re-render limpio al abrir (asegura dia divisores correctos y scroll al final)
+  renderedChatIds.clear();
+  lastChatDayKey = null;
   renderChatMessages();
   markChatAsRead();
   setTimeout(() => el.chatInput && el.chatInput.focus(), 200);

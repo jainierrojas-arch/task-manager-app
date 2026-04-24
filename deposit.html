@@ -148,6 +148,52 @@
       border-left: 3px solid var(--success);
     }
 
+    /* Card tipo ventana con cover image (preview tipo WhatsApp) */
+    .entry-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      margin-bottom: 12px;
+      transition: all 0.15s;
+    }
+    .entry-card:hover { border-color: var(--accent); box-shadow: 0 4px 14px rgba(108,99,255,0.12); }
+    .entry-card.converted {
+      opacity: 0.75;
+      border-left: 3px solid var(--success);
+    }
+    .entry-cover {
+      width: 100%;
+      height: 180px;
+      background-size: cover;
+      background-position: center;
+      background-color: var(--bg-card);
+      cursor: pointer;
+      border-bottom: 1px solid var(--border);
+      transition: opacity 0.15s;
+    }
+    .entry-cover:hover { opacity: 0.92; }
+    .entry-card-body { padding: 14px; }
+    .entry-card-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 6px;
+    }
+    .entry-card-foot {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+      font-size: 11px;
+      color: var(--text-dim);
+      flex-wrap: wrap;
+    }
+    .entry-card-foot .entry-author { flex: 1; }
+
     .entry-head {
       display: flex;
       align-items: flex-start;
@@ -373,6 +419,74 @@
     }
     .toast.success { border-left: 3px solid var(--success); }
     .toast.error { border-left: 3px solid var(--danger); }
+
+    /* Grid de subcategorias */
+    .sub-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 12px;
+    }
+    .sub-card {
+      position: relative;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px 12px;
+      cursor: pointer;
+      text-align: center;
+      aspect-ratio: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: all 0.15s;
+    }
+    .sub-card:hover {
+      border-color: var(--accent);
+      background: var(--bg-card);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(108,99,255,0.15);
+    }
+    .sub-card.add-card {
+      border-style: dashed;
+      opacity: 0.7;
+    }
+    .sub-card.add-card:hover { opacity: 1; }
+    .sub-card-icon { font-size: 32px; }
+    .sub-card-name { font-size: 13px; font-weight: 600; word-break: break-word; }
+    .sub-card-count { font-size: 11px; color: var(--text-secondary); }
+    .sub-card-delete, .sub-card-edit {
+      position: absolute;
+      top: 6px;
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      cursor: pointer;
+      font-size: 12px;
+      padding: 4px 6px;
+      border-radius: 4px;
+      opacity: 0;
+      transition: all 0.15s;
+    }
+    .sub-card-delete { right: 6px; }
+    .sub-card-edit { right: 28px; }
+    .sub-card:hover .sub-card-delete,
+    .sub-card:hover .sub-card-edit { opacity: 0.7; }
+    .sub-card-delete:hover { color: var(--danger); opacity: 1 !important; background: rgba(255,107,107,0.1); }
+    .sub-card-edit:hover { color: var(--accent); opacity: 1 !important; background: rgba(108,99,255,0.1); }
+
+    .back-btn {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-primary);
+      cursor: pointer;
+      font-size: 14px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      margin-right: 6px;
+    }
+    .back-btn:hover { background: var(--bg-hover); }
   </style>
 </head>
 <body>
