@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { autoUpdater } = require('electron-updater');
@@ -58,12 +58,37 @@ let telegramBot;
 let TelegramBotLib;
 let anthropic;
 
+function computeDepositBounds(width, height) {
+  // Devuelve {x, y, width, height} eligiendo la mejor ubicacion dentro del
+  // monitor donde esta la ventana principal. Prueba: lado derecho, lado
+  // izquierdo, y como fallback centra dentro del area visible.
+  let bounds = { x: 100, y: 100, width, height };
+  if (!mainWindow || mainWindow.isDestroyed()) return bounds;
+  const mb = mainWindow.getBounds();
+  const display = screen.getDisplayMatching(mb) || screen.getPrimaryDisplay();
+  const wa = display.workArea; // area visible (excluye taskbar/menubar)
+  const maxH = Math.min(Math.max(600, mb.height), wa.height - 20);
+  bounds.height = maxH;
+  bounds.width = Math.min(width, wa.width - 40);
+  bounds.y = Math.max(wa.y + 10, Math.min(mb.y, wa.y + wa.height - maxH - 10));
+  const rightX = mb.x + mb.width + 4;
+  const leftX = mb.x - bounds.width - 4;
+  if (rightX + bounds.width <= wa.x + wa.width) {
+    bounds.x = rightX;
+  } else if (leftX >= wa.x) {
+    bounds.x = leftX;
+  } else {
+    // No cabe a los lados: centra dentro del area visible
+    bounds.x = wa.x + Math.max(0, Math.floor((wa.width - bounds.width) / 2));
+  }
+  return bounds;
+}
+
 function positionDepositWindow() {
   if (!depositWindow || depositWindow.isDestroyed()) return;
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  const b = mainWindow.getBounds();
-  const db = depositWindow.getBounds();
-  depositWindow.setBounds({ x: b.x + b.width + 4, y: b.y, width: db.width, height: Math.max(600, b.height) });
+  const cur = depositWindow.getBounds();
+  const b = computeDepositBounds(cur.width, cur.height);
+  depositWindow.setBounds(b);
 }
 
 function toggleDepositWindow() {
@@ -74,19 +99,14 @@ function toggleDepositWindow() {
     } else {
       positionDepositWindow();
       depositWindow.show();
+      depositWindow.focus();
     }
     return;
   }
-  // Primera vez: crear la ventana
-  let x, y, width = 820, height = 720;
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    const b = mainWindow.getBounds();
-    x = b.x + b.width + 4;
-    y = b.y;
-    height = Math.max(600, b.height);
-  }
+  // Primera vez: crear la ventana con ubicacion calculada
+  const b = computeDepositBounds(820, 720);
   depositWindow = new BrowserWindow({
-    width, height, x, y,
+    width: b.width, height: b.height, x: b.x, y: b.y,
     minWidth: 700, minHeight: 500,
     frame: false, resizable: true, skipTaskbar: false,
     show: false,
@@ -101,8 +121,21 @@ function toggleDepositWindow() {
     backgroundColor: '#1a1b2e'
   });
   depositWindow.loadFile('deposit.html');
-  depositWindow.once('ready-to-show', () => {
-    if (depositWindow && !depositWindow.isDestroyed()) depositWindow.show();
+
+  // Mostrar cuando este lista. Fallback: si ready-to-show no dispara en 3s,
+  // mostrar igual para evitar ventana fantasma (p.ej. Windows con Firebase lento)
+  let shown = false;
+  const showOnce = () => {
+    if (shown || !depositWindow || depositWindow.isDestroyed()) return;
+    shown = true;
+    depositWindow.show();
+    depositWindow.focus();
+  };
+  depositWindow.once('ready-to-show', showOnce);
+  setTimeout(showOnce, 3000);
+
+  depositWindow.webContents.on('did-fail-load', (_, errCode, errDesc, url) => {
+    console.error('[deposit] did-fail-load:', errCode, errDesc, url);
   });
   depositWindow.on('closed', () => { depositWindow = null; });
 
