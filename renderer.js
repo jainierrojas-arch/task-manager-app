@@ -15,7 +15,13 @@ let unsubscribeProjects = null;
 let unsubscribeUsers = null;
 let unsubscribePersonal = null;
 let unsubscribeNotifQueue = null;
+let unsubscribeChat = null;
 let reminderTimer = null;
+let chatMessages = [];
+let chatOpen = false;
+let chatLastReadAt = null; // Firestore Timestamp
+const CHAT_MESSAGE_LIMIT = 100;
+const CHAT_EXTRA_WIDTH = 320;
 
 // Colores por miembro - escogidos para maximo contraste visual entre si
 const userColors = [
@@ -90,7 +96,14 @@ const el = {
   personalProjectModal: document.getElementById('personalProjectModal'),
   personalProjectNameInput: document.getElementById('personalProjectNameInput'),
   confirmPersonalProject: document.getElementById('confirmPersonalProject'),
-  cancelPersonalProject: document.getElementById('cancelPersonalProject')
+  cancelPersonalProject: document.getElementById('cancelPersonalProject'),
+  chatToggleBtn: document.getElementById('chatToggleBtn'),
+  chatPanel: document.getElementById('chatPanel'),
+  chatMessagesEl: document.getElementById('chatMessages'),
+  chatInput: document.getElementById('chatInput'),
+  chatSendBtn: document.getElementById('chatSendBtn'),
+  chatClose: document.getElementById('chatClose'),
+  chatUnreadBadge: document.getElementById('chatUnreadBadge')
 };
 
 // ===== AUTH =====
@@ -208,6 +221,8 @@ function showLogin() {
   if (unsubscribeTasks) unsubscribeTasks();
   if (unsubscribeProjects) unsubscribeProjects();
   if (unsubscribeUsers) unsubscribeUsers();
+  if (unsubscribeChat) { unsubscribeChat(); unsubscribeChat = null; }
+  if (chatOpen) closeChat();
 }
 
 el.logoutBtn.addEventListener('click', () => auth.signOut());
@@ -236,6 +251,10 @@ function subscribeToData() {
     teamMembers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     renderAssignSelect();
     renderTeam();
+    // Re-renderizar tareas y chat para que los colores asignados por miembro
+    // se actualicen cuando teamMembers termina de cargar despues de las tareas
+    if (tasks.length > 0) renderAll();
+    if (chatOpen) renderChatMessages();
   });
 
   unsubscribePersonal = db.collection('personalTasks')
@@ -244,6 +263,20 @@ function subscribeToData() {
       personalTasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       renderPersonalList();
     });
+
+  unsubscribeChat = db.collection('chatMessages')
+    .orderBy('createdAt', 'desc')
+    .limit(CHAT_MESSAGE_LIMIT)
+    .onSnapshot((snapshot) => {
+      chatMessages = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).reverse();
+      if (chatOpen) {
+        renderChatMessages();
+        markChatAsRead();
+      }
+      renderChatBadge();
+    });
+
+  chatLastReadAt = currentUserData.chatLastReadAt || null;
 }
 
 // ===== RENDER =====
@@ -2828,3 +2861,156 @@ document.getElementById('calTaskConfirm').addEventListener('click', async () => 
   }
   document.getElementById('calendarTaskModal').classList.remove('active');
 });
+
+// ===== CHAT GRUPAL =====
+function chatTimestampToDate(ts) {
+  if (!ts) return null;
+  if (ts.toDate) return ts.toDate();
+  if (ts.seconds) return new Date(ts.seconds * 1000);
+  return new Date(ts);
+}
+
+function formatChatTime(ts) {
+  const d = chatTimestampToDate(ts);
+  if (!d) return '';
+  const hh = d.getHours().toString().padStart(2, '0');
+  const mm = d.getMinutes().toString().padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
+function chatDayLabel(date) {
+  if (!date) return '';
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const d = new Date(date); d.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((today - d) / (24 * 3600 * 1000));
+  if (diffDays === 0) return 'Hoy';
+  if (diffDays === 1) return 'Ayer';
+  return d.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
+}
+
+function renderChatMessages() {
+  const container = el.chatMessagesEl;
+  if (!container) return;
+  if (chatMessages.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state" style="padding:24px 12px">
+        <div class="empty-state-icon" style="font-size:32px">&#128172;</div>
+        <div class="empty-state-text" style="font-size:12px">Sin mensajes todavia</div>
+        <div class="empty-state-sub" style="font-size:11px">Se el primero en escribir</div>
+      </div>`;
+    return;
+  }
+  let html = '';
+  let lastDayKey = null;
+  chatMessages.forEach(m => {
+    const d = chatTimestampToDate(m.createdAt);
+    const dayKey = d ? d.toDateString() : 'pending';
+    if (dayKey !== lastDayKey) {
+      html += `<div class="chat-day-divider">${d ? chatDayLabel(d) : 'Enviando...'}</div>`;
+      lastDayKey = dayKey;
+    }
+    const own = m.authorId === currentUser.uid;
+    const color = getUserColor(m.authorId);
+    const initial = (m.authorName || '?').charAt(0).toUpperCase();
+    const time = formatChatTime(m.createdAt);
+    const author = own ? 'Tu' : esc(m.authorName || 'Usuario');
+    html += `
+      <div class="chat-msg ${own ? 'own' : ''}">
+        <div class="chat-msg-avatar" style="background:${color}">${initial}</div>
+        <div class="chat-msg-body">
+          <div class="chat-msg-meta">
+            <span class="chat-msg-author" style="color:${color}">${author}</span>
+            <span>${time}</span>
+          </div>
+          <div class="chat-msg-text">${esc(m.text)}</div>
+        </div>
+      </div>`;
+  });
+  container.innerHTML = html;
+  container.scrollTop = container.scrollHeight;
+}
+
+function countUnreadChat() {
+  if (!chatLastReadAt && chatMessages.length === 0) return 0;
+  const lastReadMs = chatLastReadAt ? (chatLastReadAt.toDate ? chatLastReadAt.toDate().getTime() : new Date(chatLastReadAt).getTime()) : 0;
+  return chatMessages.filter(m => {
+    if (m.authorId === currentUser.uid) return false;
+    const ms = chatTimestampToDate(m.createdAt);
+    return ms && ms.getTime() > lastReadMs;
+  }).length;
+}
+
+function renderChatBadge() {
+  if (!el.chatUnreadBadge) return;
+  const n = countUnreadChat();
+  if (n <= 0 || chatOpen) {
+    el.chatUnreadBadge.style.display = 'none';
+    return;
+  }
+  el.chatUnreadBadge.textContent = n > 99 ? '99+' : String(n);
+  el.chatUnreadBadge.style.display = 'inline-flex';
+}
+
+async function markChatAsRead() {
+  if (!currentUser) return;
+  const now = firebase.firestore.Timestamp.now();
+  chatLastReadAt = now;
+  try {
+    await db.collection('users').doc(currentUser.uid).update({ chatLastReadAt: now });
+  } catch (e) { /* ignore */ }
+  renderChatBadge();
+}
+
+async function openChat() {
+  if (chatOpen) return;
+  chatOpen = true;
+  try { await window.api.chatExpandWindow(CHAT_EXTRA_WIDTH); } catch (e) { /* ignore */ }
+  el.chatPanel.classList.add('open');
+  el.chatToggleBtn.classList.add('active');
+  renderChatMessages();
+  markChatAsRead();
+  setTimeout(() => el.chatInput && el.chatInput.focus(), 200);
+}
+
+async function closeChat() {
+  if (!chatOpen) return;
+  chatOpen = false;
+  el.chatPanel.classList.remove('open');
+  el.chatToggleBtn.classList.remove('active');
+  try { await window.api.chatCollapseWindow(); } catch (e) { /* ignore */ }
+  renderChatBadge();
+}
+
+async function sendChatMessage() {
+  if (!el.chatInput) return;
+  const text = el.chatInput.value.trim();
+  if (!text) return;
+  el.chatInput.value = '';
+  try {
+    await db.collection('chatMessages').add({
+      text,
+      authorId: currentUser.uid,
+      authorName: currentUserData.name,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  } catch (e) {
+    console.error('Error enviando chat:', e);
+    el.chatInput.value = text;
+  }
+}
+
+if (el.chatToggleBtn) {
+  el.chatToggleBtn.addEventListener('click', () => {
+    if (chatOpen) closeChat(); else openChat();
+  });
+}
+if (el.chatClose) el.chatClose.addEventListener('click', closeChat);
+if (el.chatSendBtn) el.chatSendBtn.addEventListener('click', sendChatMessage);
+if (el.chatInput) {
+  el.chatInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendChatMessage();
+    }
+  });
+}

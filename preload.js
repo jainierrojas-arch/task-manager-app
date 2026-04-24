@@ -46,5 +46,9 @@ contextBridge.exposeInMainWorld('api', {
   // Auto-update
   onUpdateStatus: (callback) => ipcRenderer.on('update-status', (_, data) => callback(data)),
   installUpdate: () => ipcRenderer.invoke('install-update'),
-  getAppVersion: () => ipcRenderer.invoke('get-app-version')
+  getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+
+  // Chat lateral: expandir/colapsar ventana
+  chatExpandWindow: (extraWidth) => ipcRenderer.invoke('chat-expand-window', extraWidth),
+  chatCollapseWindow: () => ipcRenderer.invoke('chat-collapse-window')
 });

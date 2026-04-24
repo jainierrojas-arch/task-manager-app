@@ -358,6 +358,24 @@ function registerIpcHandlers() {
   ipcMain.handle('close-window', () => {
     if (mainWindow) mainWindow.hide();
   });
+
+  // Chat lateral: expande ventana al abrir, la colapsa al cerrar
+  let preChatWidth = null;
+  ipcMain.handle('chat-expand-window', (_, extraWidth) => {
+    if (!mainWindow) return false;
+    const add = Number(extraWidth) || 320;
+    const b = mainWindow.getBounds();
+    preChatWidth = b.width;
+    mainWindow.setBounds({ x: b.x, y: b.y, width: b.width + add, height: b.height }, true);
+    return true;
+  });
+  ipcMain.handle('chat-collapse-window', () => {
+    if (!mainWindow || preChatWidth == null) return false;
+    const b = mainWindow.getBounds();
+    mainWindow.setBounds({ x: b.x, y: b.y, width: preChatWidth, height: b.height }, true);
+    preChatWidth = null;
+    return true;
+  });
 }
 
 // ===== AUTO UPDATER =====
