@@ -111,11 +111,36 @@ const el = {
   chatUnreadBadge: document.getElementById('chatUnreadBadge'),
   trashList: document.getElementById('trashList'),
   trashBadge: document.getElementById('trashBadge'),
-  emptyTrashBtn: document.getElementById('emptyTrashBtn')
+  emptyTrashBtn: document.getElementById('emptyTrashBtn'),
+  rememberMe: document.getElementById('rememberMe')
 };
 
 // ===== AUTH =====
 let isRegistering = false;
+
+// Cargar preferencia de "Mantener sesion" desde localStorage
+const REMEMBER_KEY = 'rememberSession';
+try {
+  const stored = localStorage.getItem(REMEMBER_KEY);
+  if (stored !== null && el.rememberMe) el.rememberMe.checked = stored === '1';
+} catch (e) {}
+if (el.rememberMe) {
+  el.rememberMe.addEventListener('change', () => {
+    try { localStorage.setItem(REMEMBER_KEY, el.rememberMe.checked ? '1' : '0'); } catch (e) {}
+  });
+}
+
+// Aplicar persistencia LOCAL (default) o SESSION segun el checkbox.
+// LOCAL persiste entre cierres de la app; SESSION solo durante la sesion actual.
+async function applyAuthPersistence() {
+  if (!firebase.auth.Auth || !firebase.auth.Auth.Persistence) return;
+  const remember = el.rememberMe ? el.rememberMe.checked : true;
+  const target = remember
+    ? firebase.auth.Auth.Persistence.LOCAL
+    : firebase.auth.Auth.Persistence.SESSION;
+  try { await auth.setPersistence(target); } catch (e) { console.warn('persistence error:', e); }
+}
+applyAuthPersistence();
 
 el.loginToggle.addEventListener('click', () => {
   isRegistering = !isRegistering;
@@ -137,6 +162,9 @@ async function handleAuth() {
 
   if (!email || !password) { showError('Ingresa email y contrasena'); return; }
   if (isRegistering && !name) { showError('Ingresa tu nombre'); return; }
+
+  // Aplicar persistencia segun preferencia ANTES de hacer login
+  await applyAuthPersistence();
 
   el.loginBtn.disabled = true;
   el.loginBtn.innerHTML = '<span class="loading-spinner"></span>';
