@@ -257,6 +257,15 @@ document.getElementById('btnClose').addEventListener('click', () => {
   if (window.api && window.api.closeWindow) window.api.closeWindow();
 });
 
+const MEETING_ROOM_URL = 'https://meet.google.com/gbv-prvk-mfn';
+document.getElementById('btnMeetingRoom').addEventListener('click', () => {
+  if (window.api && window.api.openExternal) {
+    window.api.openExternal(MEETING_ROOM_URL);
+  } else {
+    window.open(MEETING_ROOM_URL, '_blank');
+  }
+});
+
 // Cleanup timers if window is closed
 window.addEventListener('beforeunload', () => {
   if (presenceRefreshTimer) clearInterval(presenceRefreshTimer);
