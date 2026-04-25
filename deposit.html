@@ -241,14 +241,23 @@
       border-left: 3px solid var(--success);
     }
 
+    /* Grilla de cards estilo Pinterest para los entries del deposito */
+    .entry-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 14px;
+      align-items: start;
+    }
+
     /* Card tipo ventana con cover image (preview tipo WhatsApp) */
     .entry-card {
       background: var(--bg-secondary);
       border: 1px solid var(--border);
       border-radius: 12px;
       overflow: hidden;
-      margin-bottom: 12px;
       transition: all 0.15s;
+      display: flex;
+      flex-direction: column;
     }
     .entry-card:hover { border-color: var(--accent); box-shadow: 0 4px 14px rgba(108,99,255,0.12); }
     .entry-card.converted {
@@ -257,10 +266,11 @@
     }
     .entry-cover {
       width: 100%;
-      height: 180px;
-      background-size: cover;
+      aspect-ratio: 4 / 5;
+      background-size: contain;
+      background-repeat: no-repeat;
       background-position: center;
-      background-color: var(--bg-card);
+      background-color: #0e0f1a;
       cursor: pointer;
       border-bottom: 1px solid var(--border);
       transition: opacity 0.15s;
@@ -276,10 +286,12 @@
       gap: 8px;
       color: white;
       text-shadow: 0 1px 4px rgba(0,0,0,0.3);
+      background-size: cover !important;
+      background-color: transparent !important;
     }
-    .entry-cover-icon { font-size: 56px; line-height: 1; }
+    .entry-cover-icon { font-size: 48px; line-height: 1; }
     .entry-cover-domain {
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 700;
       letter-spacing: 0.5px;
       text-transform: uppercase;
@@ -356,26 +368,57 @@
       letter-spacing: 0.3px;
     }
 
-    .entry-card-body { padding: 14px; }
+    .entry-card-body {
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      flex: 1;
+    }
     .entry-card-head {
       display: flex;
       align-items: center;
       gap: 8px;
       flex-wrap: wrap;
-      margin-bottom: 6px;
+    }
+    .entry-card-head .entry-title {
+      font-size: 14px;
+      font-weight: 600;
+      line-height: 1.3;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+    .entry-card-body .entry-desc {
+      font-size: 12px;
+      color: var(--text-secondary);
+      line-height: 1.35;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
     }
     .entry-card-foot {
       display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-top: 12px;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: auto;
       padding-top: 10px;
       border-top: 1px solid var(--border);
       font-size: 11px;
       color: var(--text-dim);
+    }
+    .entry-card-foot .entry-author { font-size: 11px; }
+    .entry-card-foot .entry-actions {
+      display: flex;
+      gap: 4px;
       flex-wrap: wrap;
     }
-    .entry-card-foot .entry-author { flex: 1; }
+    .entry-card-foot .entry-actions .btn {
+      padding: 5px 9px;
+      font-size: 11px;
+    }
 
     .entry-head {
       display: flex;

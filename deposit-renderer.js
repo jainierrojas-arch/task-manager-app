@@ -655,7 +655,7 @@ function renderEntries() {
         <div class="empty-state-sub">Click en "+ Nueva idea" para empezar</div>
       </div>`;
   } else {
-    area.innerHTML = subEntries.map(e => renderEntryHtml(e)).join('');
+    area.innerHTML = `<div class="entry-grid">${subEntries.map(e => renderEntryHtml(e)).join('')}</div>`;
     lazyFetchCovers(subEntries);
     area.querySelectorAll('[data-link-open]').forEach(chip => {
       chip.addEventListener('click', (ev) => {
