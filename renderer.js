@@ -213,6 +213,7 @@ function showApp() {
   renderPersonalChips();
   renderPersonalProjectSelect();
   setupProjectInteractionTracking();
+  ensureDefaultDepositCategories();
 
   subscribeToData();
   initTelegramHandlers();
@@ -1180,6 +1181,19 @@ function renderTaskList(container, taskList, mode) {
         }
       }
 
+      // Chip del trabajo entregado por el asignado
+      let submittedBadge = '';
+      if (task.submittedLink) {
+        submittedBadge = `<span class="task-tag" style="background:rgba(78,205,196,0.2);color:#4ecdc4;cursor:pointer;font-weight:600" onclick="window.api.openExternal('${esc(task.submittedLink)}')" title="${esc(task.submittedLink)}">📎 Ver entregado</span>`;
+      }
+
+      // Boton llamativo "Tarea completada" - solo para el asignado mientras este pendiente
+      let markDoneBtn = '';
+      if (!isPendingApproval && task.status !== 'completed' && task.assignedTo === currentUser.uid) {
+        const label = task.submittedLink ? '✏️ Cambiar entregado' : '✓ Tarea completada';
+        markDoneBtn = `<button class="btn-mark-done" onclick="completeTask('${task.id}')" title="Sube el resultado y manda a aprobacion">${label}</button>`;
+      }
+
       html += `
         <div class="task-item ${overdueClass}" data-id="${task.id}" data-project-id="${task.projectId || ''}" data-project-name="${esc(task.projectName || '')}" style="border-left-color:${group.color}">
           ${checkBtn}
@@ -1190,6 +1204,7 @@ function renderTaskList(container, taskList, mode) {
               ${statusBadge}
               ${deadlineBadge}
               ${blockedBadge}
+              ${submittedBadge}
               ${linkBadge}
               ${videoBadge}
               <span class="task-tag">${source}</span>
@@ -1197,6 +1212,7 @@ function renderTaskList(container, taskList, mode) {
               ${addNoteBtn}
               ${linkBtn}
               ${videoBtn}
+              ${markDoneBtn}
             </div>
             ${notesHtml}
             ${actionButtons}
@@ -1408,35 +1424,50 @@ async function addTask() {
   }
 }
 
+// Submit Task: el asignado entrega el trabajo. Abre modal pidiendo link entregado.
+let submittingTaskId = null;
 async function completeTask(taskId) {
+  const task = tasks.find(t => t.id === taskId);
+  if (!task) return;
+  submittingTaskId = taskId;
+  document.getElementById('submitTaskTitle').textContent = task.text;
+  document.getElementById('submitTaskLinkInput').value = '';
+  document.getElementById('submitTaskModal').classList.add('active');
+  setTimeout(() => document.getElementById('submitTaskLinkInput').focus(), 100);
+}
+
+async function finalizeSubmitTask(taskId, submittedLinkRaw) {
   const taskEl = document.querySelector(`.task-item[data-id="${taskId}"]`);
   if (taskEl) {
     taskEl.classList.add('completing');
     await new Promise(r => setTimeout(r, 300));
   }
-
   const task = tasks.find(t => t.id === taskId);
 
-  await db.collection('tasks').doc(taskId).update({
+  let submittedLink = (submittedLinkRaw || '').trim();
+  if (submittedLink && !/^https?:\/\//i.test(submittedLink)) submittedLink = 'https://' + submittedLink;
+
+  const update = {
     status: 'pending_approval',
     submittedAt: firebase.firestore.FieldValue.serverTimestamp(),
     submittedBy: currentUser.uid,
     submittedByName: currentUserData.name
-  });
+  };
+  if (submittedLink) update.submittedLink = submittedLink;
+  await db.collection('tasks').doc(taskId).update(update);
 
   if (task) {
-    // Notify creator and admins
     const notifyIds = teamMembers
       .filter(m => (m.role === 'admin' || m.id === task.createdBy) && m.telegramChatId && m.id !== currentUser.uid)
       .map(m => m.telegramChatId);
 
     if (notifyIds.length > 0) {
+      const linkLine = submittedLink ? `\nMaterial entregado: ${submittedLink}` : '';
       sendTelegramNotifToMany(notifyIds,
-        `*${currentUserData.name}* termino una tarea y espera aprobacion:\n${task.text}\nProyecto: *${task.projectName}*`
+        `*${currentUserData.name}* termino una tarea y espera aprobacion:\n${task.text}\nProyecto: *${task.projectName}*${linkLine}`
       );
     }
 
-    // Notify next in chain (heads-up — still needs admin approval)
     const dependents = tasks.filter(t => t.dependsOn === taskId && t.status !== 'completed');
     dependents.forEach(dep => {
       const depAssignee = teamMembers.find(m => m.id === dep.assignedTo);
@@ -1449,6 +1480,28 @@ async function completeTask(taskId) {
     });
   }
 }
+
+document.getElementById('submitTaskCancel').addEventListener('click', () => {
+  document.getElementById('submitTaskModal').classList.remove('active');
+  submittingTaskId = null;
+});
+document.getElementById('submitTaskConfirm').addEventListener('click', async () => {
+  if (!submittingTaskId) return;
+  const link = document.getElementById('submitTaskLinkInput').value;
+  const taskId = submittingTaskId;
+  submittingTaskId = null;
+  document.getElementById('submitTaskModal').classList.remove('active');
+  await finalizeSubmitTask(taskId, link);
+});
+document.getElementById('submitTaskLinkInput').addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') document.getElementById('submitTaskConfirm').click();
+});
+document.getElementById('submitTaskModal').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('submitTaskModal')) {
+    document.getElementById('submitTaskModal').classList.remove('active');
+    submittingTaskId = null;
+  }
+});
 
 async function approveTask(taskId) {
   const taskEl = document.querySelector(`.task-item[data-id="${taskId}"]`);
@@ -1485,8 +1538,129 @@ async function approveTask(taskId) {
         );
       }
     });
+
+    // Si la tarea tiene material entregado, ofrecer archivarla al Deposito
+    if (task.submittedLink) {
+      showArchiveDepositModal(task);
+    }
   }
 }
+
+// ===== DEPOSITO: SEED CATEGORIAS DEFAULT =====
+async function ensureDefaultDepositCategories() {
+  const defaults = [
+    { id: 'reels', name: 'Reels' },
+    { id: 'carruseles', name: 'Carruseles' },
+    { id: 'trabajos-finalizados', name: 'Trabajos Finalizados' }
+  ];
+  for (const d of defaults) {
+    try {
+      const ref = db.collection('depositCategories').doc(d.id);
+      const snap = await ref.get();
+      if (!snap.exists) {
+        await ref.set({
+          name: d.name,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          createdBy: currentUser.uid,
+          isDefault: true
+        });
+      }
+    } catch (e) { /* ignore */ }
+  }
+}
+
+// ===== ARCHIVE TO DEPOSIT (despues de aprobar) =====
+let archivingTask = null;
+let archiveCategoriesCache = [];
+
+async function showArchiveDepositModal(task) {
+  archivingTask = task;
+  document.getElementById('archiveTaskPreview').textContent = task.text;
+  // Cargar categorias del deposito
+  try {
+    const snap = await db.collection('depositCategories').orderBy('name').get();
+    archiveCategoriesCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (e) {
+    archiveCategoriesCache = [];
+  }
+  const catSel = document.getElementById('archiveCategorySelect');
+  const roots = archiveCategoriesCache.filter(c => !c.parentId);
+  catSel.innerHTML = '<option value="">-- Elige categoria --</option>' +
+    roots.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+  // Pre-seleccionar "Trabajos Finalizados" si existe (caso comun)
+  if (roots.some(c => c.id === 'trabajos-finalizados')) {
+    catSel.value = 'trabajos-finalizados';
+    // Cargar sus subcategorias
+    const subs = archiveCategoriesCache.filter(c => c.parentId === 'trabajos-finalizados');
+    const subSel = document.getElementById('archiveSubcategorySelect');
+    subSel.innerHTML = '<option value="">Sin clasificar</option>' +
+      subs.map(s => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('');
+    document.getElementById('archiveSubcategoryRow').style.display = 'block';
+  } else {
+    document.getElementById('archiveSubcategoryRow').style.display = 'none';
+    document.getElementById('archiveSubcategorySelect').innerHTML = '<option value="">Sin clasificar</option>';
+  }
+  document.getElementById('archiveDepositModal').classList.add('active');
+}
+
+document.getElementById('archiveCategorySelect').addEventListener('change', () => {
+  const catId = document.getElementById('archiveCategorySelect').value;
+  const subRow = document.getElementById('archiveSubcategoryRow');
+  if (!catId) { subRow.style.display = 'none'; return; }
+  const subs = archiveCategoriesCache.filter(c => c.parentId === catId);
+  const sel = document.getElementById('archiveSubcategorySelect');
+  sel.innerHTML = '<option value="">Sin clasificar</option>' +
+    subs.map(s => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('');
+  subRow.style.display = 'block';
+});
+
+document.getElementById('archiveSkip').addEventListener('click', () => {
+  document.getElementById('archiveDepositModal').classList.remove('active');
+  archivingTask = null;
+});
+document.getElementById('archiveDepositModal').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('archiveDepositModal')) {
+    document.getElementById('archiveDepositModal').classList.remove('active');
+    archivingTask = null;
+  }
+});
+
+document.getElementById('archiveConfirm').addEventListener('click', async () => {
+  if (!archivingTask) return;
+  const catId = document.getElementById('archiveCategorySelect').value;
+  if (!catId) {
+    document.getElementById('archiveDepositModal').classList.remove('active');
+    archivingTask = null;
+    return;
+  }
+  const cat = archiveCategoriesCache.find(c => c.id === catId);
+  const subId = document.getElementById('archiveSubcategorySelect').value;
+  const sub = subId ? archiveCategoriesCache.find(c => c.id === subId) : null;
+  const t = archivingTask;
+  const links = [];
+  if (t.submittedLink) links.push({ type: 'recurso', url: t.submittedLink, label: 'Trabajo finalizado' });
+  if (t.videoLink) links.push({ type: 'video', url: t.videoLink, label: 'Video de referencia' });
+  if (t.link) links.push({ type: 'material', url: t.link, label: 'Material original' });
+  const data = {
+    title: t.text,
+    description: `Tarea aprobada de ${t.assignedToName || ''}${t.projectName ? ' en ' + t.projectName : ''}.`,
+    links,
+    categoryId: catId,
+    categoryName: cat ? cat.name : '',
+    status: 'idea',
+    createdBy: currentUser.uid,
+    createdByName: currentUserData.name,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    archivedFromTaskId: t.id
+  };
+  if (sub) {
+    data.subcategoryId = sub.id;
+    data.subcategoryName = sub.name;
+  }
+  await db.collection('depositEntries').add(data);
+  document.getElementById('archiveDepositModal').classList.remove('active');
+  archivingTask = null;
+});
 
 async function rejectTask(taskId) {
   const task = tasks.find(t => t.id === taskId);
@@ -2395,6 +2569,10 @@ document.addEventListener('keydown', (e) => {
     noteModal.classList.remove('active');
     linkModal.classList.remove('active');
     videoModal.classList.remove('active');
+    document.getElementById('submitTaskModal').classList.remove('active');
+    document.getElementById('archiveDepositModal').classList.remove('active');
+    submittingTaskId = null;
+    archivingTask = null;
   }
 });
 

@@ -69,7 +69,7 @@ function parseUrl(u) {
 }
 
 // ===== AUTH =====
-let defaultCategoriesEnsured = false;
+const defaultCatsInFlight = new Set();
 
 auth.onAuthStateChanged((user) => {
   if (!user) {
@@ -89,20 +89,29 @@ auth.onAuthStateChanged((user) => {
 });
 
 async function ensureDefaultCategories() {
-  if (defaultCategoriesEnsured) return;
-  defaultCategoriesEnsured = true;
   const defaults = [
     { id: 'reels', name: 'Reels' },
-    { id: 'carruseles', name: 'Carruseles' }
+    { id: 'carruseles', name: 'Carruseles' },
+    { id: 'trabajos-finalizados', name: 'Trabajos Finalizados' }
   ];
   const existingIds = new Set(categories.map(c => c.id));
-  const toCreate = defaults.filter(d => !existingIds.has(d.id));
-  await Promise.all(toCreate.map(d => db.collection('depositCategories').doc(d.id).set({
-    name: d.name,
-    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-    createdBy: currentUser.uid,
-    isDefault: true
-  })));
+  const toCreate = defaults.filter(d => !existingIds.has(d.id) && !defaultCatsInFlight.has(d.id));
+  await Promise.all(toCreate.map(async d => {
+    defaultCatsInFlight.add(d.id);
+    try {
+      const ref = db.collection('depositCategories').doc(d.id);
+      const snap = await ref.get();
+      if (!snap.exists) {
+        await ref.set({
+          name: d.name,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          createdBy: currentUser.uid,
+          isDefault: true
+        });
+      }
+    } catch (e) { /* ignore */ }
+    // no borramos de in-flight para no re-intentar cada snapshot si ya lo hicimos una vez
+  }));
 }
 
 function subscribeAll() {
@@ -114,8 +123,8 @@ function subscribeAll() {
     if (!selectedCategoryId && categories.length > 0) selectedCategoryId = categories[0].id;
     renderCategories();
     renderEntries();
-    // Seed default categories if missing (fire-and-forget)
-    if (!defaultCategoriesEnsured) ensureDefaultCategories().catch(() => {});
+    // Seed default categories si falta alguna (idempotente)
+    ensureDefaultCategories().catch(() => {});
   }));
 
   unsubscribers.push(db.collection('depositEntries').orderBy('createdAt', 'desc').onSnapshot(snap => {
@@ -139,28 +148,92 @@ function subscribeAll() {
 function renderCategories() {
   const list = document.getElementById('categoryList');
   const roots = rootCategories();
-  if (roots.length === 0) {
-    list.innerHTML = '<div style="padding:10px;color:var(--text-dim);font-size:12px">Sin categorias</div>';
-    return;
+  const normalRoots = roots.filter(c => c.id !== 'trabajos-finalizados');
+  const tfRoot = roots.find(c => c.id === 'trabajos-finalizados');
+
+  let html = '';
+
+  // Item especial "Todos" para categorias normales
+  if (normalRoots.length > 0) {
+    const totalCount = entries.filter(e => e.categoryId !== 'trabajos-finalizados').length;
+    const active = selectedCategoryId === '__all_categories__' ? ' active' : '';
+    html += `
+      <div class="category-item${active}" data-all-cats="1">
+        <span class="cat-name">&#128230; Todos</span>
+        <span class="cat-count">${totalCount}</span>
+      </div>`;
   }
-  list.innerHTML = roots.map(c => {
-    // Cuenta todas las ideas en esta categoria (incluyendo subs)
+
+  // Seccion: Categorias normales
+  normalRoots.forEach(c => {
     const count = entries.filter(e => e.categoryId === c.id).length;
-    const active = c.id === selectedCategoryId ? ' active' : '';
+    const active = c.id === selectedCategoryId && !selectedSubcategoryId ? ' active' : '';
     const canDelete = !c.isDefault;
-    return `
+    html += `
       <div class="category-item${active}" data-id="${esc(c.id)}">
         <span class="cat-name">${esc(c.name)}</span>
         <span class="cat-count">${count}</span>
         ${canDelete ? `<button class="cat-delete" data-delete="${esc(c.id)}" title="Eliminar categoria">&#10005;</button>` : ''}
       </div>`;
-  }).join('');
+  });
 
-  list.querySelectorAll('.category-item').forEach(el => {
+  // Item "+ Nueva categoria" dentro del listado
+  html += `
+    <div class="category-item add-cat-inline" data-add-root-cat="1" style="opacity:0.7">
+      <span class="cat-name" style="color:var(--text-dim)">+ Nueva categoria</span>
+    </div>`;
+
+  // Seccion separada: Trabajos Finalizados con sus subcategorias como items
+  if (tfRoot) {
+    const tfSubs = subcategoriesOf('trabajos-finalizados');
+    const tfTotalCount = entries.filter(e => e.categoryId === 'trabajos-finalizados').length;
+    const tfActive = selectedCategoryId === 'trabajos-finalizados' && !selectedSubcategoryId ? ' active' : '';
+    html += `
+      <div class="category-section-header">TRABAJOS FINALIZADOS</div>
+      <div class="category-item${tfActive}" data-tf-root="1">
+        <span class="cat-name" style="opacity:0.85">&#128230; Todos</span>
+        <span class="cat-count">${tfTotalCount}</span>
+      </div>`;
+    tfSubs.forEach(s => {
+      const c = entries.filter(e => e.subcategoryId === s.id).length;
+      const sActive = selectedSubcategoryId === s.id ? ' active' : '';
+      html += `
+        <div class="category-item${sActive}" data-tf-sub="${esc(s.id)}" style="padding-left:18px">
+          <span class="cat-name">${esc(s.name)}</span>
+          <span class="cat-count">${c}</span>
+          <button class="cat-delete" data-delete-tf-sub="${esc(s.id)}" title="Eliminar categoria">&#10005;</button>
+        </div>`;
+    });
+    html += `
+      <div class="category-item add-tf-sub" data-add-tf-sub="1" style="padding-left:18px;opacity:0.7">
+        <span class="cat-name" style="color:var(--text-dim)">+ Nueva categoria</span>
+      </div>`;
+  }
+
+  list.innerHTML = html;
+
+  // Listener del item "Todos"
+  const allEl = list.querySelector('[data-all-cats]');
+  if (allEl) {
+    allEl.addEventListener('click', () => {
+      selectedCategoryId = '__all_categories__';
+      selectedSubcategoryId = null;
+      renderCategories();
+      renderEntries();
+    });
+  }
+
+  // Listener del "+ Nueva categoria" inline
+  const addRootEl = list.querySelector('[data-add-root-cat]');
+  if (addRootEl) {
+    addRootEl.addEventListener('click', showCategoryModal);
+  }
+
+  list.querySelectorAll('.category-item[data-id]').forEach(el => {
     el.addEventListener('click', (e) => {
       if (e.target.dataset.delete) return;
       selectedCategoryId = el.dataset.id;
-      selectedSubcategoryId = null; // al cambiar de categoria, volver a vista de subs
+      selectedSubcategoryId = null;
       renderCategories();
       renderEntries();
     });
@@ -171,6 +244,42 @@ function renderCategories() {
       deleteCategory(btn.dataset.delete);
     });
   });
+
+  // Trabajos Finalizados - raiz
+  const tfRootEl = list.querySelector('[data-tf-root]');
+  if (tfRootEl) {
+    tfRootEl.addEventListener('click', () => {
+      selectedCategoryId = 'trabajos-finalizados';
+      selectedSubcategoryId = null;
+      renderCategories();
+      renderEntries();
+    });
+  }
+  // Trabajos Finalizados - sub (listadas como categorias aqui)
+  list.querySelectorAll('[data-tf-sub]').forEach(el => {
+    el.addEventListener('click', (e) => {
+      if (e.target.dataset.deleteTfSub) return;
+      selectedCategoryId = 'trabajos-finalizados';
+      selectedSubcategoryId = el.dataset.tfSub;
+      renderCategories();
+      renderEntries();
+    });
+  });
+  list.querySelectorAll('[data-delete-tf-sub]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteSubcategory(btn.dataset.deleteTfSub);
+    });
+  });
+  const addTfSubEl = list.querySelector('[data-add-tf-sub]');
+  if (addTfSubEl) {
+    addTfSubEl.addEventListener('click', () => {
+      const prev = selectedCategoryId;
+      selectedCategoryId = 'trabajos-finalizados';
+      showSubcategoryModal();
+      // restauracion ocurre via onSnapshot
+    });
+  }
 }
 
 async function deleteCategory(catId) {
@@ -298,6 +407,51 @@ function renderEntries() {
         <div class="empty-state-text">El deposito esta vacio</div>
         <div class="empty-state-sub">Crea una categoria y empieza a agregar ideas</div>
       </div>`;
+    return;
+  }
+
+  // Vista "Todos": grid con tarjetas de cada categoria normal
+  if (selectedCategoryId === '__all_categories__') {
+    const normalRoots = rootCategories().filter(c => c.id !== 'trabajos-finalizados');
+    const allEntries = entries.filter(e => e.categoryId !== 'trabajos-finalizados');
+    title.textContent = 'Todas las categorias';
+    sub.textContent = `${normalRoots.length} categoria${normalRoots.length === 1 ? '' : 's'} - ${allEntries.length} idea${allEntries.length === 1 ? '' : 's'} en total`;
+    newBtn.style.display = 'none';
+    let cardsHtml = '';
+    normalRoots.forEach(c => {
+      const count = entries.filter(e => e.categoryId === c.id).length;
+      const canDelete = !c.isDefault;
+      cardsHtml += `
+        <div class="sub-card" data-cat-card="${esc(c.id)}">
+          ${canDelete ? `<button class="sub-card-delete" data-delete-root-cat="${esc(c.id)}" title="Eliminar categoria">&#10005;</button>` : ''}
+          <div class="sub-card-icon">&#128193;</div>
+          <div class="sub-card-name">${esc(c.name)}</div>
+          <div class="sub-card-count">${count} idea${count === 1 ? '' : 's'}</div>
+        </div>`;
+    });
+    cardsHtml += `
+      <div class="sub-card add-card" id="addRootCatCard">
+        <div class="sub-card-icon">&#10133;</div>
+        <div class="sub-card-name">Nueva categoria</div>
+      </div>`;
+    area.innerHTML = `<div class="sub-grid">${cardsHtml}</div>`;
+    area.querySelectorAll('[data-cat-card]').forEach(card => {
+      card.addEventListener('click', (e) => {
+        if (e.target.dataset.deleteRootCat) return;
+        selectedCategoryId = card.dataset.catCard;
+        selectedSubcategoryId = null;
+        renderCategories();
+        renderEntries();
+      });
+    });
+    area.querySelectorAll('[data-delete-root-cat]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteCategory(btn.dataset.deleteRootCat);
+      });
+    });
+    const addBtn = document.getElementById('addRootCatCard');
+    if (addBtn) addBtn.addEventListener('click', showCategoryModal);
     return;
   }
 
@@ -458,6 +612,29 @@ function renderEntryHtml(e) {
     </div>`;
 }
 
+// Attachea listeners comunes a los entry cards dentro de un contenedor
+function bindEntryHandlers(area) {
+  area.querySelectorAll('[data-link-open]').forEach(chip => {
+    chip.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const u = chip.dataset.linkOpen;
+      if (u) window.api.openExternal(u);
+    });
+  });
+  area.querySelectorAll('[data-edit]').forEach(btn => {
+    btn.addEventListener('click', () => showEntryModal(btn.dataset.edit));
+  });
+  area.querySelectorAll('[data-assign]').forEach(btn => {
+    btn.addEventListener('click', () => showAssignModal(btn.dataset.assign));
+  });
+  area.querySelectorAll('[data-take]').forEach(btn => {
+    btn.addEventListener('click', () => showAssignModal(btn.dataset.take, { takeForMe: true }));
+  });
+  area.querySelectorAll('[data-delete-entry]').forEach(btn => {
+    btn.addEventListener('click', () => deleteEntry(btn.dataset.deleteEntry));
+  });
+}
+
 // Tracking de fetches en curso para no repetir
 const ogFetchInFlight = new Set();
 
@@ -504,14 +681,32 @@ function showEntryModal(entryId) {
   editingEntryId = entryId || null;
   document.getElementById('entryModalTitle').textContent = entryId ? 'Editar idea' : 'Nueva idea';
   document.getElementById('entryLinksWrap').innerHTML = '';
-  if (entryId) {
-    const e = entries.find(x => x.id === entryId);
+
+  // Llenar selector de subcategoria segun la categoria de la idea (o la actualmente seleccionada)
+  const e = entryId ? entries.find(x => x.id === entryId) : null;
+  const contextCatId = e ? e.categoryId : selectedCategoryId;
+  const subSel = document.getElementById('entrySubcategorySelect');
+  const subs = (contextCatId && contextCatId !== '__all_categories__')
+    ? subcategoriesOf(contextCatId)
+    : [];
+  subSel.innerHTML = '<option value="">Sin clasificar</option>' +
+    subs.map(s => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('');
+  // Mostrar el row solo si hay subcategorias disponibles o la idea ya tiene una
+  const hasSubsAvailable = subs.length > 0;
+  document.getElementById('entrySubcategoryRow').style.display = hasSubsAvailable ? 'block' : 'none';
+
+  if (entryId && e) {
     document.getElementById('entryTitleInput').value = e.title || '';
     document.getElementById('entryDescInput').value = e.description || '';
+    if (e.subcategoryId) subSel.value = e.subcategoryId;
     (e.links || []).forEach(l => addLinkRow(l));
   } else {
     document.getElementById('entryTitleInput').value = '';
     document.getElementById('entryDescInput').value = '';
+    // Si estamos en una sub, pre-seleccionarla
+    if (selectedSubcategoryId && selectedSubcategoryId !== '__unsorted__') {
+      subSel.value = selectedSubcategoryId;
+    }
     addLinkRow({ type: 'video', url: '', label: '' });
   }
   document.getElementById('entryModal').classList.add('active');
@@ -560,23 +755,38 @@ async function saveEntry() {
   });
 
   if (editingEntryId) {
-    // Editar: solo cambia los campos editables, mantiene categoria/subcategoria original
-    await db.collection('depositEntries').doc(editingEntryId).update({
-      title, description, links
-    });
+    // Editar: cambia campos editables, permite mover entre subcategorias
+    const chosenSubId = document.getElementById('entrySubcategorySelect').value;
+    const updateData = { title, description, links };
+    if (chosenSubId) {
+      const subCat = categories.find(c => c.id === chosenSubId);
+      updateData.subcategoryId = chosenSubId;
+      updateData.subcategoryName = subCat ? subCat.name : '';
+    } else {
+      updateData.subcategoryId = firebase.firestore.FieldValue.delete();
+      updateData.subcategoryName = firebase.firestore.FieldValue.delete();
+    }
+    await db.collection('depositEntries').doc(editingEntryId).update(updateData);
     toast('Idea actualizada');
   } else {
-    // Crear: usar la categoria y subcategoria de donde estamos parados
+    // Crear: usar la categoria actual y la sub del selector (si hay)
+    const catId = selectedCategoryId === '__all_categories__' ? null : selectedCategoryId;
+    if (!catId) { toast('Entra a una categoria primero para crear la idea', 'error'); return; }
+    const chosenSubId = document.getElementById('entrySubcategorySelect').value;
     const data = {
       title, description, links,
-      categoryId: selectedCategoryId,
-      categoryName: categories.find(c => c.id === selectedCategoryId)?.name || '',
+      categoryId: catId,
+      categoryName: categories.find(c => c.id === catId)?.name || '',
       status: 'idea',
       createdBy: currentUser.uid,
       createdByName: currentUserData.name,
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     };
-    if (selectedSubcategoryId && selectedSubcategoryId !== '__unsorted__') {
+    if (chosenSubId) {
+      const subCat = categories.find(c => c.id === chosenSubId);
+      data.subcategoryId = chosenSubId;
+      data.subcategoryName = subCat ? subCat.name : '';
+    } else if (selectedSubcategoryId && selectedSubcategoryId !== '__unsorted__') {
       data.subcategoryId = selectedSubcategoryId;
       data.subcategoryName = categories.find(c => c.id === selectedSubcategoryId)?.name || '';
     }
@@ -807,6 +1017,67 @@ document.getElementById('confirmAssign').addEventListener('click', async () => {
   document.getElementById('assignModal').classList.remove('active');
   assigningEntry = null;
 });
+
+// Toggle vista sidebar vertical/horizontal (un solo boton que alterna)
+// Aplicamos estilos inline directamente para no depender del CSS (mas robusto)
+const SIDEBAR_MODE_KEY = 'deposit-sidebar-mode';
+let currentSidebarMode = 'vertical';
+
+function applySidebarMode(mode) {
+  currentSidebarMode = mode;
+  const app = document.querySelector('.app');
+  const sidebar = document.querySelector('.sidebar');
+  const catList = document.getElementById('categoryList');
+  if (!app || !sidebar) return;
+
+  if (mode === 'horizontal') {
+    app.classList.add('horizontal');
+    app.style.flexDirection = 'column';
+    sidebar.style.width = '100%';
+    sidebar.style.maxHeight = '210px';
+    sidebar.style.minHeight = '0';
+    sidebar.style.borderRight = 'none';
+    sidebar.style.borderBottom = '1px solid var(--border)';
+    if (catList) {
+      catList.style.display = 'flex';
+      catList.style.flexWrap = 'wrap';
+      catList.style.gap = '6px';
+      catList.style.overflowY = 'auto';
+      catList.style.alignContent = 'flex-start';
+    }
+  } else {
+    app.classList.remove('horizontal');
+    app.style.flexDirection = '';
+    sidebar.style.width = '';
+    sidebar.style.maxHeight = '';
+    sidebar.style.minHeight = '';
+    sidebar.style.borderRight = '';
+    sidebar.style.borderBottom = '';
+    if (catList) {
+      catList.style.display = '';
+      catList.style.flexWrap = '';
+      catList.style.gap = '';
+      catList.style.overflowY = '';
+      catList.style.alignContent = '';
+    }
+  }
+
+  // El boton muestra la opcion a la que cambiaria al clic
+  const icon = document.getElementById('viewToggleIcon');
+  const label = document.getElementById('viewToggleLabel');
+  if (icon && label) {
+    if (mode === 'horizontal') { icon.innerHTML = '&#8801;'; label.textContent = 'Vertical'; }
+    else { icon.innerHTML = '&#9776;'; label.textContent = 'Horizontal'; }
+  }
+  try { localStorage.setItem(SIDEBAR_MODE_KEY, mode); } catch (e) {}
+}
+
+window.toggleSidebarMode = function () {
+  console.log('[deposit] toggleSidebarMode antes:', currentSidebarMode);
+  applySidebarMode(currentSidebarMode === 'horizontal' ? 'vertical' : 'horizontal');
+  console.log('[deposit] toggleSidebarMode despues:', currentSidebarMode);
+};
+try { applySidebarMode(localStorage.getItem(SIDEBAR_MODE_KEY) || 'vertical'); } catch (e) {}
 
 // Window controls
 document.getElementById('btnMinimize').addEventListener('click', () => window.api.minimizeWindow());

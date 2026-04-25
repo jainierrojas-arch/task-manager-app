@@ -916,6 +916,26 @@
       border-color: var(--accent);
     }
 
+    /* Boton "Tarea completada" - compacto, inline al lado de + Video */
+    .btn-mark-done {
+      background: #ffd93d;
+      color: #1a1b2e;
+      font-weight: 700;
+      font-size: 9px;
+      padding: 1px 7px;
+      border-radius: 4px;
+      border: 1px solid #ffd93d;
+      cursor: pointer;
+      transition: all 0.15s;
+      line-height: 1.5;
+    }
+    .btn-mark-done:hover {
+      background: #ffe066;
+      transform: translateY(-1px);
+      box-shadow: 0 3px 8px rgba(255,217,61,0.4);
+    }
+    .btn-mark-done:active { transform: translateY(0); }
+
     .approval-buttons {
       display: flex;
       gap: 6px;
@@ -1359,6 +1379,45 @@
       <div class="modal-buttons">
         <button class="btn btn-ghost" id="calTaskCancel">Cancelar</button>
         <button class="btn btn-primary" id="calTaskConfirm">Crear</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Submit Task Modal: el asignado entrega el trabajo terminado -->
+  <div class="modal-overlay" id="submitTaskModal">
+    <div class="modal">
+      <div class="modal-title">Entregar trabajo terminado</div>
+      <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px">
+        Pega el link del material finalizado (Drive, Dropbox, video, etc.). El creador de la tarea recibira aviso para aprobarlo.
+      </div>
+      <div id="submitTaskTitle" style="font-size:13px;color:var(--text-secondary);background:var(--bg-card);padding:8px;border-radius:6px;margin-bottom:10px"></div>
+      <input type="url" id="submitTaskLinkInput" placeholder="https://...">
+      <div class="modal-buttons">
+        <button class="btn btn-ghost" id="submitTaskCancel">Cancelar</button>
+        <button class="btn btn-primary" id="submitTaskConfirm">Enviar para aprobacion</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Archive to Deposit Modal: tras aprobar, opcional archivar la tarea como idea -->
+  <div class="modal-overlay" id="archiveDepositModal">
+    <div class="modal">
+      <div class="modal-title">Tarea aprobada - Archivar al Deposito?</div>
+      <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px">
+        Puedes archivar esta tarea aprobada como idea/referencia en el Deposito para futuro uso del equipo.
+      </div>
+      <div id="archiveTaskPreview" style="font-size:13px;color:var(--text-primary);padding:8px;background:var(--bg-card);border-radius:6px;margin-bottom:10px"></div>
+      <div class="modal-row" style="margin-bottom:8px">
+        <label style="font-size:11px;color:var(--text-secondary);display:block;margin-bottom:4px">Categoria</label>
+        <select id="archiveCategorySelect"><option value="">Sin archivar (cerrar)</option></select>
+      </div>
+      <div class="modal-row" id="archiveSubcategoryRow" style="display:none;margin-bottom:8px">
+        <label style="font-size:11px;color:var(--text-secondary);display:block;margin-bottom:4px">Subcategoria (opcional)</label>
+        <select id="archiveSubcategorySelect"><option value="">Sin clasificar</option></select>
+      </div>
+      <div class="modal-buttons">
+        <button class="btn btn-ghost" id="archiveSkip">No archivar</button>
+        <button class="btn btn-success" id="archiveConfirm" style="background:#4ecdc4;color:#1a1b2e;font-weight:600">Archivar al Deposito</button>
       </div>
     </div>
   </div>
