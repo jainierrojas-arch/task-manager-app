@@ -895,6 +895,28 @@ function addLinkRow(link) {
   const previewEl = row.querySelector('.link-preview');
   let previewTimer = null;
   let lastFetchedUrl = '';
+  const renderPreviewCard = (url, og) => {
+    const svc = serviceFromUrl(url);
+    let domain = url;
+    try { domain = new URL(url).hostname.replace(/^www\./, ''); } catch (e) {}
+    const imgHtml = og && og.image
+      ? `<div class="link-preview-img" style="background-image:url('${esc(og.image)}')"></div>`
+      : `<div class="link-preview-img link-preview-img-placeholder" style="background:${svc.gradient}">${svc.icon}</div>`;
+    const title = (og && og.title) ? og.title : svc.name;
+    const descHtml = (og && og.description) ? `<div class="link-preview-desc">${esc(og.description)}</div>` : '';
+    previewEl.innerHTML = `
+      <div class="link-preview-card" data-preview-open="${esc(url)}">
+        ${imgHtml}
+        <div class="link-preview-body">
+          <div class="link-preview-title">${esc(title)}</div>
+          ${descHtml}
+          <div class="link-preview-domain">${esc(domain)}</div>
+        </div>
+      </div>`;
+    previewEl.style.display = 'block';
+    const card = previewEl.querySelector('[data-preview-open]');
+    if (card) card.addEventListener('click', () => window.api.openExternal(url));
+  };
   const updatePreview = async () => {
     const url = parseUrl(urlInput.value);
     if (!url || !/^https?:\/\//i.test(url)) {
@@ -903,38 +925,20 @@ function addLinkRow(link) {
       lastFetchedUrl = '';
       return;
     }
-    if (url === lastFetchedUrl) return; // ya cargada
+    if (url === lastFetchedUrl) return;
     lastFetchedUrl = url;
-    previewEl.innerHTML = '<div class="link-preview-loading">Cargando vista previa...</div>';
-    previewEl.style.display = 'block';
+    // Pintar INMEDIATAMENTE el placeholder con dominio/icono. El usuario nunca
+    // ve "Cargando..." colgado: ve la card al instante y se actualiza despues
+    // si el fetcher logra obtener la imagen real.
+    renderPreviewCard(url, null);
     try {
       const og = await window.api.fetchOgData(url);
       if (lastFetchedUrl !== url) return; // cambio mientras esperabamos
-      const svc = serviceFromUrl(url);
-      let domain = url;
-      try { domain = new URL(url).hostname.replace(/^www\./, ''); } catch (e) {}
-      // Si NO hay og:image (Instagram/etc bloquean scraping), pintar card con
-      // gradiente del servicio + icono. Asi siempre se ve algo, no se queda colgada.
-      const imgHtml = og && og.image
-        ? `<div class="link-preview-img" style="background-image:url('${esc(og.image)}')"></div>`
-        : `<div class="link-preview-img link-preview-img-placeholder" style="background:${svc.gradient}">${svc.icon}</div>`;
-      const titleHtml = og && og.title ? `<div class="link-preview-title">${esc(og.title)}</div>` : `<div class="link-preview-title">${esc(svc.name)}</div>`;
-      const descHtml = og && og.description ? `<div class="link-preview-desc">${esc(og.description)}</div>` : '';
-      previewEl.innerHTML = `
-        <div class="link-preview-card" data-preview-open="${esc(url)}">
-          ${imgHtml}
-          <div class="link-preview-body">
-            ${titleHtml}
-            ${descHtml}
-            <div class="link-preview-domain">${esc(domain)}</div>
-          </div>
-        </div>`;
-      const card = previewEl.querySelector('[data-preview-open]');
-      if (card) card.addEventListener('click', () => window.api.openExternal(url));
-    } catch (e) {
-      previewEl.style.display = 'none';
-      previewEl.innerHTML = '';
-    }
+      if (og && (og.image || og.title || og.description)) {
+        renderPreviewCard(url, og);
+      }
+      // Si og no trajo nada, dejamos el placeholder que ya esta pintado
+    } catch (e) { /* placeholder ya pintado */ }
   };
   urlInput.addEventListener('input', () => {
     if (previewTimer) clearTimeout(previewTimer);

@@ -815,7 +815,7 @@ function registerIpcHandlers() {
             partition: 'persist:og-fetcher'
           }
         });
-        const timeout = setTimeout(() => finish(null), 14000);
+        const timeout = setTimeout(() => finish(null), 7000);
         const extract = async () => {
           try {
             const data = await win.webContents.executeJavaScript(`
@@ -855,19 +855,21 @@ function registerIpcHandlers() {
     if (!url || typeof url !== 'string' || !/^https?:\/\//i.test(url)) {
       return { image: null, title: null, description: null };
     }
-    // Paso 1: HTTP simple con UA de bot
-    let result = await fetchOgViaHttp(url);
-    if (result && result.image) return result;
-    // Paso 2: Instagram - probar embed publico
+    // Para Instagram: ir DIRECTO al embed publico (HTTP simple no devuelve nada util)
     const igMatch = url.match(/instagram\.com\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
     if (igMatch) {
       const embedUrl = `https://www.instagram.com/p/${igMatch[1]}/embed/captioned/`;
       const embedResult = await fetchOgViaHttp(embedUrl);
-      if (embedResult && embedResult.image) {
-        return { ...result, ...embedResult };
-      }
+      if (embedResult && embedResult.image) return embedResult;
+      // Si embed fallo, intentar BrowserWindow al embed (no al original que redirige a login)
+      const browserEmbed = await fetchOgViaBrowser(embedUrl);
+      if (browserEmbed && browserEmbed.image) return browserEmbed;
+      return embedResult || { image: null, title: null, description: null };
     }
-    // Paso 3: BrowserWindow oculto con Chromium real
+    // Sitios normales: HTTP simple con UA de bot funciona en ~95% de los casos
+    let result = await fetchOgViaHttp(url);
+    if (result && result.image) return result;
+    // Ultimo recurso: BrowserWindow con Chromium real (para sitios JS-heavy)
     try {
       const browserResult = await fetchOgViaBrowser(url);
       if (browserResult && browserResult.image) {
