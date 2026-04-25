@@ -276,6 +276,8 @@
       transition: opacity 0.15s;
     }
     .entry-cover:hover { opacity: 0.92; }
+    /* Cards con tipo Carrusel usan aspect-ratio mas horizontal (4:3) */
+    .entry-card.is-carrusel .entry-cover { aspect-ratio: 4 / 3; }
 
     /* Placeholder de portada cuando no hay og:image (ej. Instagram bloquea scraping) */
     .entry-cover-placeholder {
@@ -473,6 +475,12 @@
       border-color: rgba(255,90,90,0.3);
     }
     .entry-link-chip.video:hover { background: rgba(255,90,90,0.3); }
+    .entry-link-chip.carrusel {
+      background: rgba(255,217,61,0.16);
+      color: #ffd93d;
+      border-color: rgba(255,217,61,0.3);
+    }
+    .entry-link-chip.carrusel:hover { background: rgba(255,217,61,0.28); }
 
     .entry-meta {
       display: flex;

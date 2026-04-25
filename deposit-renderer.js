@@ -704,14 +704,21 @@ function renderEntryHtml(e) {
   const author = e.createdByName || 'Anonimo';
   const color = getUserColor(e.createdBy);
   const links = (e.links || []);
+  // Si la entry tiene un Carrusel, la card usa aspect-ratio 4:3 (no 4:5 vertical)
+  const hasCarrusel = links.some(l => l.type === 'carrusel');
   // Chips compactos sin URL larga
   const linkChips = links.map(l => {
     const isVideo = l.type === 'video';
-    const cls = isVideo ? 'entry-link-chip video' : 'entry-link-chip';
-    const icon = isVideo ? '&#127916;' : '&#128279;';
+    const isCarrusel = l.type === 'carrusel';
+    let cls = 'entry-link-chip';
+    if (isVideo) cls += ' video';
+    if (isCarrusel) cls += ' carrusel';
+    let icon = '&#128279;'; // link
+    if (isVideo) icon = '&#127916;'; // film
+    if (isCarrusel) icon = '&#127912;'; // framed picture
     const label = l.label && l.label.length > 0
       ? l.label
-      : (isVideo ? 'Video' : (l.type === 'recurso' ? 'Recurso' : 'Link'));
+      : (isVideo ? 'Video' : (isCarrusel ? 'Carrusel' : (l.type === 'recurso' ? 'Recurso' : 'Link')));
     return `<span class="${cls}" data-link-open="${esc(l.url)}" title="${esc(l.url)}">${icon} ${esc(label)}</span>`;
   }).join('');
   const convertedBadge = e.status === 'converted'
@@ -739,7 +746,7 @@ function renderEntryHtml(e) {
     }
   }
   return `
-    <div class="entry-card ${e.status === 'converted' ? 'converted' : ''}" data-entry-id="${esc(e.id)}">
+    <div class="entry-card ${e.status === 'converted' ? 'converted' : ''} ${hasCarrusel ? 'is-carrusel' : ''}" data-entry-id="${esc(e.id)}">
       ${coverHtml}
       <div class="entry-card-body">
         <div class="entry-card-head">
@@ -880,6 +887,7 @@ function addLinkRow(link) {
     <div class="link-row-top">
       <select class="link-type">
         <option value="video"${link.type === 'video' ? ' selected' : ''}>Video</option>
+        <option value="carrusel"${link.type === 'carrusel' ? ' selected' : ''}>Carrusel</option>
         <option value="material"${link.type === 'material' ? ' selected' : ''}>Material</option>
         <option value="recurso"${link.type === 'recurso' ? ' selected' : ''}>Recurso</option>
       </select>
