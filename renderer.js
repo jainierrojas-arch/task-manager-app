@@ -1112,12 +1112,14 @@ function renderTaskList(container, taskList, mode) {
         }
       }
 
-      // Check button
+      // Check button: solo asignado/creador/admin pueden marcar terminada
       let checkBtn = '';
       if (isPendingApproval) {
-        checkBtn = '<div class="task-check" style="border-color:var(--warning);background:rgba(255,217,61,0.15)"></div>';
-      } else {
+        checkBtn = '<div class="task-check" style="border-color:var(--warning);background:rgba(255,217,61,0.15)" title="Esperando aprobacion"></div>';
+      } else if (canComplete(task)) {
         checkBtn = `<div class="task-check" onclick="completeTask('${task.id}')" title="Marcar como terminada"></div>`;
+      } else {
+        checkBtn = `<div class="task-check" style="cursor:not-allowed;opacity:0.5" title="Solo el asignado o el creador puede marcar terminada"></div>`;
       }
 
       // Edit and delete buttons (only creator and admin)
@@ -1187,9 +1189,9 @@ function renderTaskList(container, taskList, mode) {
         submittedBadge = `<span class="task-tag" style="background:rgba(78,205,196,0.2);color:#4ecdc4;cursor:pointer;font-weight:600" onclick="window.api.openExternal('${esc(task.submittedLink)}')" title="${esc(task.submittedLink)}">📎 Ver entregado</span>`;
       }
 
-      // Boton llamativo "Tarea completada" - solo para el asignado mientras este pendiente
+      // Boton llamativo "Tarea completada" - asignado, creador o admin pueden marcar
       let markDoneBtn = '';
-      if (!isPendingApproval && task.status !== 'completed' && task.assignedTo === currentUser.uid) {
+      if (!isPendingApproval && task.status !== 'completed' && canComplete(task)) {
         const label = task.submittedLink ? '✏️ Cambiar entregado' : '✓ Tarea completada';
         markDoneBtn = `<button class="btn-mark-done" onclick="completeTask('${task.id}')" title="Sube el resultado y manda a aprobacion">${label}</button>`;
       }
@@ -1429,6 +1431,10 @@ let submittingTaskId = null;
 async function completeTask(taskId) {
   const task = tasks.find(t => t.id === taskId);
   if (!task) return;
+  if (!canComplete(task)) {
+    alert('Solo el asignado, el creador de la tarea o el admin pueden marcarla como terminada.');
+    return;
+  }
   submittingTaskId = taskId;
   document.getElementById('submitTaskTitle').textContent = task.text;
   document.getElementById('submitTaskLinkInput').value = '';
@@ -1789,6 +1795,14 @@ function canDelete(task) {
   if (!currentUserData) return false;
   if (currentUserData.role === 'admin') return true;
   if (task.createdBy === currentUser.uid) return true;
+  return false;
+}
+
+function canComplete(task) {
+  if (!currentUserData) return false;
+  if (currentUserData.role === 'admin') return true;
+  if (task.createdBy === currentUser.uid) return true;
+  if (task.assignedTo === currentUser.uid) return true;
   return false;
 }
 
