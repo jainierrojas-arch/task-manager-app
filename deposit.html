@@ -267,6 +267,24 @@
     }
     .entry-cover:hover { opacity: 0.92; }
 
+    /* Placeholder de portada cuando no hay og:image (ej. Instagram bloquea scraping) */
+    .entry-cover-placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      color: white;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    }
+    .entry-cover-icon { font-size: 56px; line-height: 1; }
+    .entry-cover-domain {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+
     /* Vista previa Open Graph al pegar links en el modal de entrada */
     .link-preview { margin-top: 8px; }
     .link-preview-loading {
@@ -295,6 +313,14 @@
       background-size: cover;
       background-position: center;
       background-color: var(--bg-secondary);
+    }
+    .link-preview-img-placeholder {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 32px;
+      color: white;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.4);
     }
     .link-preview-body {
       flex: 1;

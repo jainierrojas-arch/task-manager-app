@@ -685,6 +685,21 @@ function renderEntries() {
   });
 }
 
+// Helpers para servicios conocidos cuando no hay og:image
+function serviceFromUrl(url) {
+  if (!url) return null;
+  let host = '';
+  try { host = new URL(url).hostname.replace(/^www\./, ''); } catch (e) { return null; }
+  if (host.includes('instagram.com')) return { name: 'Instagram', icon: '&#128247;', gradient: 'linear-gradient(135deg,#f58529,#dd2a7b,#8134af,#515bd4)' };
+  if (host.includes('tiktok.com')) return { name: 'TikTok', icon: '&#127908;', gradient: 'linear-gradient(135deg,#25f4ee,#000000,#fe2c55)' };
+  if (host.includes('youtube.com') || host.includes('youtu.be')) return { name: 'YouTube', icon: '&#9654;&#65039;', gradient: 'linear-gradient(135deg,#ff0000,#cc0000)' };
+  if (host.includes('twitter.com') || host.includes('x.com')) return { name: 'X / Twitter', icon: '&#119813;', gradient: 'linear-gradient(135deg,#000000,#1da1f2)' };
+  if (host.includes('facebook.com') || host.includes('fb.com')) return { name: 'Facebook', icon: '&#119819;', gradient: 'linear-gradient(135deg,#1877f2,#0d47a1)' };
+  if (host.includes('drive.google.com')) return { name: 'Google Drive', icon: '&#128190;', gradient: 'linear-gradient(135deg,#4285f4,#0f9d58,#f4b400,#db4437)' };
+  if (host.includes('vimeo.com')) return { name: 'Vimeo', icon: '&#127916;', gradient: 'linear-gradient(135deg,#1ab7ea,#0f7fa3)' };
+  return { name: host, icon: '&#128279;', gradient: 'linear-gradient(135deg,#6c63ff,#4a52e0)' };
+}
+
 function renderEntryHtml(e) {
   const author = e.createdByName || 'Anonimo';
   const color = getUserColor(e.createdBy);
@@ -703,12 +718,26 @@ function renderEntryHtml(e) {
     ? `<span class="entry-badge success">&#10003; Convertida en tarea</span>`
     : '';
   const descHtml = e.description ? `<div class="entry-desc">${esc(e.description)}</div>` : '';
-  // Cover: imagen Open Graph del primer link (cacheada en e.coverImage)
+  // Cover: imagen Open Graph del primer link (cacheada en e.coverImage).
+  // Si no hay og:image (ej. Instagram bloquea scraping), pintar placeholder con
+  // gradiente del servicio + icono + dominio para que SIEMPRE haya portada.
   const cover = e.coverImage;
   const firstUrl = links[0]?.url || '';
-  const coverHtml = cover
-    ? `<div class="entry-cover" data-link-open="${esc(firstUrl)}" style="background-image:url('${esc(cover)}')"></div>`
-    : '';
+  let coverHtml = '';
+  if (firstUrl) {
+    if (cover) {
+      coverHtml = `<div class="entry-cover" data-link-open="${esc(firstUrl)}" style="background-image:url('${esc(cover)}')"></div>`;
+    } else {
+      const svc = serviceFromUrl(firstUrl);
+      let domain = firstUrl;
+      try { domain = new URL(firstUrl).hostname.replace(/^www\./, ''); } catch (_) {}
+      coverHtml = `
+        <div class="entry-cover entry-cover-placeholder" data-link-open="${esc(firstUrl)}" style="background:${svc.gradient}">
+          <div class="entry-cover-icon">${svc.icon}</div>
+          <div class="entry-cover-domain">${esc(svc.name)}</div>
+        </div>`;
+    }
+  }
   return `
     <div class="entry-card ${e.status === 'converted' ? 'converted' : ''}" data-entry-id="${esc(e.id)}">
       ${coverHtml}
@@ -877,19 +906,22 @@ function addLinkRow(link) {
     try {
       const og = await window.api.fetchOgData(url);
       if (lastFetchedUrl !== url) return; // cambio mientras esperabamos
-      if (!og || (!og.image && !og.title && !og.description)) {
-        previewEl.style.display = 'none';
-        previewEl.innerHTML = '';
-        return;
-      }
+      const svc = serviceFromUrl(url);
       let domain = url;
       try { domain = new URL(url).hostname.replace(/^www\./, ''); } catch (e) {}
+      // Si NO hay og:image (Instagram/etc bloquean scraping), pintar card con
+      // gradiente del servicio + icono. Asi siempre se ve algo, no se queda colgada.
+      const imgHtml = og && og.image
+        ? `<div class="link-preview-img" style="background-image:url('${esc(og.image)}')"></div>`
+        : `<div class="link-preview-img link-preview-img-placeholder" style="background:${svc.gradient}">${svc.icon}</div>`;
+      const titleHtml = og && og.title ? `<div class="link-preview-title">${esc(og.title)}</div>` : `<div class="link-preview-title">${esc(svc.name)}</div>`;
+      const descHtml = og && og.description ? `<div class="link-preview-desc">${esc(og.description)}</div>` : '';
       previewEl.innerHTML = `
         <div class="link-preview-card" data-preview-open="${esc(url)}">
-          ${og.image ? `<div class="link-preview-img" style="background-image:url('${esc(og.image)}')"></div>` : ''}
+          ${imgHtml}
           <div class="link-preview-body">
-            ${og.title ? `<div class="link-preview-title">${esc(og.title)}</div>` : ''}
-            ${og.description ? `<div class="link-preview-desc">${esc(og.description)}</div>` : ''}
+            ${titleHtml}
+            ${descHtml}
             <div class="link-preview-domain">${esc(domain)}</div>
           </div>
         </div>`;
