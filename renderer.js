@@ -277,17 +277,9 @@ if (cloudBtn) {
 const depositBtn = document.getElementById('depositBtn');
 if (depositBtn) {
   depositBtn.addEventListener('click', async () => {
-    const isVisible = await window.api.toggleDeposit();
-    // Solo actualizar la marca de "ultima visita" cuando se CIERRA el deposito.
-    // Asi los globos de "nueva idea" se mantienen visibles mientras estas dentro,
-    // y solo se reinician cuando sales y vuelves a entrar.
-    if (!isVisible && currentUser) {
-      depositLastViewedAt = firebase.firestore.Timestamp.now();
-      renderDepositBadge();
-      db.collection('users').doc(currentUser.uid).update({
-        depositLastViewedAt: depositLastViewedAt
-      }).catch(() => {});
-    }
+    await window.api.toggleDeposit();
+    // El badge ya NO se reinicia al cerrar el deposito. Es persistente y cuenta
+    // los items pendientes (status !== 'converted') hasta que se asignen como tareas.
   });
 }
 
@@ -351,15 +343,10 @@ function subscribeToData() {
 function renderDepositBadge() {
   const badge = document.getElementById('depositUnreadBadge');
   if (!badge) return;
-  const lastMs = depositLastViewedAt
-    ? (depositLastViewedAt.toDate ? depositLastViewedAt.toDate().getTime() : new Date(depositLastViewedAt).getTime())
-    : 0;
-  const count = depositEntries.filter(e => {
-    if (e.createdBy === currentUser.uid) return false;
-    if (!e.createdAt) return false;
-    const ms = e.createdAt.toDate ? e.createdAt.toDate().getTime() : new Date(e.createdAt).getTime();
-    return ms > lastMs;
-  }).length;
+  // Badge persistente: cuenta TODOS los items pendientes (status !== 'converted'),
+  // no entries "nuevos desde la ultima visita". Se queda fijo hasta que alguien
+  // los asigne como tarea (status pasa a 'converted').
+  const count = depositEntries.filter(e => e.status !== 'converted').length;
   if (count <= 0) {
     badge.style.display = 'none';
     return;
