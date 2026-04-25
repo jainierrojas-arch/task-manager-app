@@ -523,19 +523,19 @@ function renderEntries() {
 
   // Vista "Todos": grid con tarjetas de cada categoria normal
   if (selectedCategoryId === '__all_categories__') {
-    const normalRoots = rootCategories().filter(c => c.id !== 'trabajos-finalizados');
-    const allEntries = entries.filter(e => e.categoryId !== 'trabajos-finalizados');
+    const normalRoots = rootCategories().filter(c => c.id !== 'trabajos-finalizados' && c.id !== 'referencias');
+    const allEntries = entries.filter(e => e.categoryId !== 'trabajos-finalizados' && e.categoryId !== 'referencias');
     title.textContent = 'Todas las categorias';
     sub.textContent = `${normalRoots.length} categoria${normalRoots.length === 1 ? '' : 's'} - ${allEntries.length} idea${allEntries.length === 1 ? '' : 's'} en total`;
     newBtn.style.display = 'none';
     let cardsHtml = '';
     normalRoots.forEach(c => {
       const count = entries.filter(e => e.categoryId === c.id).length;
-      const newCount = entries.filter(e => e.categoryId === c.id && isNewEntry(e)).length;
+      const pending = entries.filter(e => e.categoryId === c.id && e.status !== 'converted').length;
       const canDelete = !c.isDefault;
       cardsHtml += `
         <div class="sub-card" data-cat-card="${esc(c.id)}">
-          ${newCount > 0 ? `<span class="sub-card-new">${newCount} nueva${newCount === 1 ? '' : 's'}</span>` : ''}
+          ${pending > 0 ? `<span class="sub-card-new" title="${pending} pendiente${pending === 1 ? '' : 's'} por asignar">${pending > 99 ? '99+' : pending}</span>` : ''}
           ${canDelete ? `<button class="sub-card-delete" data-delete-root-cat="${esc(c.id)}" title="Eliminar categoria">&#10005;</button>` : ''}
           <div class="sub-card-icon">&#128193;</div>
           <div class="sub-card-name">${esc(c.name)}</div>
@@ -580,13 +580,16 @@ function renderEntries() {
     sub.textContent = `${subs.length} subcategoria${subs.length === 1 ? '' : 's'} - ${totalIdeas} idea${totalIdeas === 1 ? '' : 's'} en total`;
     newBtn.style.display = 'none';
 
+    // REFERENCIAS es banco de contenido — no muestra badges rojos en las cards
+    const showPendingBadge = selectedCategoryId !== 'referencias';
+
     let cardsHtml = '';
     // Tarjeta "Sin clasificar" siempre visible si hay ideas sin sub o si no hay subs aun
     if (unsortedCount > 0 || subs.length === 0) {
-      const unsortedNew = newCountIn(selectedCategoryId, '__unsorted__');
+      const unsortedPending = showPendingBadge ? pendingCountIn(selectedCategoryId, '__unsorted__') : 0;
       cardsHtml += `
         <div class="sub-card" data-sub-id="__unsorted__">
-          ${unsortedNew > 0 ? `<span class="sub-card-new">${unsortedNew} nueva${unsortedNew === 1 ? '' : 's'}</span>` : ''}
+          ${unsortedPending > 0 ? `<span class="sub-card-new" title="${unsortedPending} pendiente${unsortedPending === 1 ? '' : 's'} por asignar">${unsortedPending > 99 ? '99+' : unsortedPending}</span>` : ''}
           <div class="sub-card-icon">&#128196;</div>
           <div class="sub-card-name">Sin clasificar</div>
           <div class="sub-card-count">${unsortedCount} idea${unsortedCount === 1 ? '' : 's'}</div>
@@ -594,10 +597,10 @@ function renderEntries() {
     }
     subs.forEach(s => {
       const count = entriesIn(selectedCategoryId, s.id).length;
-      const newCount = newCountIn(selectedCategoryId, s.id);
+      const pending = showPendingBadge ? pendingCountIn(selectedCategoryId, s.id) : 0;
       cardsHtml += `
         <div class="sub-card" data-sub-id="${esc(s.id)}">
-          ${newCount > 0 ? `<span class="sub-card-new">${newCount} nueva${newCount === 1 ? '' : 's'}</span>` : ''}
+          ${pending > 0 ? `<span class="sub-card-new" title="${pending} pendiente${pending === 1 ? '' : 's'} por asignar">${pending > 99 ? '99+' : pending}</span>` : ''}
           <button class="sub-card-edit" data-edit-sub="${esc(s.id)}" title="Renombrar subcategoria">&#9998;</button>
           <button class="sub-card-delete" data-delete-sub="${esc(s.id)}" title="Eliminar subcategoria">&#10005;</button>
           <div class="sub-card-icon">&#128193;</div>

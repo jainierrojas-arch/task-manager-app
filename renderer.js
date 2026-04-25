@@ -3372,13 +3372,22 @@ if (el.chatToggleBtn) {
 
 const proModeBtn = document.getElementById('proModeBtn');
 if (proModeBtn) {
+  // El estado se cicla con cada click: off -> full (3 ventanas) -> no-chat (2 ventanas) -> off
   proModeBtn.addEventListener('click', async () => {
     try {
-      const active = await window.api.toggleProMode();
-      proModeBtn.style.background = active
-        ? 'linear-gradient(135deg,#2ed573,#1aaf4a)'
-        : 'linear-gradient(135deg,#ff6b6b,#ee5a6f)';
-      proModeBtn.innerHTML = active ? '&#10006; SALIR PRO' : '&#128640; MODO PRO';
+      const state = await window.api.toggleProMode();
+      // Soporta retorno como string (nuevo) o boolean (viejo, por si rollback)
+      const s = typeof state === 'string' ? state : (state ? 'full' : 'off');
+      if (s === 'full') {
+        proModeBtn.style.background = 'linear-gradient(135deg,#2ed573,#1aaf4a)';
+        proModeBtn.innerHTML = '&#128202; PRO 3 VENTANAS';
+      } else if (s === 'no-chat') {
+        proModeBtn.style.background = 'linear-gradient(135deg,#1e90ff,#4a6cf7)';
+        proModeBtn.innerHTML = '&#128203; PRO SIN CHAT';
+      } else {
+        proModeBtn.style.background = 'linear-gradient(135deg,#ff6b6b,#ee5a6f)';
+        proModeBtn.innerHTML = '&#128640; MODO PRO';
+      }
     } catch (e) { console.error(e); }
   });
 }

@@ -59,9 +59,10 @@ let telegramBot;
 let TelegramBotLib;
 let anthropic;
 
-// Modo PRO: las 3 ventanas en mosaico ocupando toda la pantalla
-let proModeActive = false;
+// Modo PRO ciclico: 'off' -> 'full' (deposito+main+chat) -> 'no-chat' (deposito+main) -> 'off'
+let proModeState = 'off';
 let proModePrevBounds = null;
+function isProActive() { return proModeState !== 'off'; }
 
 function computeDepositBounds(width, height) {
   // Deposito siempre prefiere lado IZQUIERDO (matching layout de modo PRO).
@@ -95,7 +96,7 @@ function computeDepositBounds(width, height) {
 
 function positionDepositWindow() {
   if (!depositWindow || depositWindow.isDestroyed()) return;
-  if (proModeActive) return; // En modo PRO el layout es fijo
+  if (isProActive()) return; // En modo PRO el layout es fijo
   const cur = depositWindow.getBounds();
   const b = computeDepositBounds(cur.width, cur.height);
   depositWindow.setBounds(b);
@@ -192,7 +193,7 @@ function computeChatBounds(width, height) {
 
 function positionChatWindow() {
   if (!chatWindow || chatWindow.isDestroyed()) return;
-  if (proModeActive) return; // En modo PRO el layout es fijo
+  if (isProActive()) return; // En modo PRO el layout es fijo
   const cur = chatWindow.getBounds();
   const b = computeChatBounds(cur.width, cur.height);
   chatWindow.setBounds(b);
@@ -296,10 +297,32 @@ function sendDepositViewMode(mode, persist) {
   }
 }
 
-function enterProMode() {
-  if (proModeActive) return;
+function applyProModeNoChatLayout() {
+  // Layout 2 ventanas: deposito a la izquierda, main ocupa el resto. Chat oculto.
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  // Guardar bounds previos de las 3 ventanas
+  const display = screen.getDisplayMatching(mainWindow.getBounds()) || screen.getPrimaryDisplay();
+  const wa = display.workArea;
+  const totalW = wa.width;
+  const totalH = wa.height;
+  const depositW = Math.floor(totalW * 0.30);
+  const mainW = totalW - depositW;
+  const depositX = wa.x;
+  const mainX = wa.x + depositW;
+  // Bajar minimos temporalmente para evitar clamping en pantallas pequenas
+  if (depositWindow && !depositWindow.isDestroyed()) depositWindow.setMinimumSize(200, 200);
+  mainWindow.setMinimumSize(200, 200);
+  if (depositWindow && !depositWindow.isDestroyed()) {
+    depositWindow.setBounds({ x: depositX, y: wa.y, width: depositW, height: totalH });
+    if (!depositWindow.isVisible()) depositWindow.show();
+  }
+  mainWindow.setBounds({ x: mainX, y: wa.y, width: mainW, height: totalH });
+  if (chatWindow && !chatWindow.isDestroyed() && chatWindow.isVisible()) {
+    chatWindow.hide();
+  }
+}
+
+function snapshotPrevBoundsIfNeeded() {
+  if (proModePrevBounds) return;
   proModePrevBounds = {
     main: mainWindow.getBounds(),
     deposit: depositWindow && !depositWindow.isDestroyed() ? depositWindow.getBounds() : null,
@@ -307,12 +330,14 @@ function enterProMode() {
     depositWasOpen: !!(depositWindow && !depositWindow.isDestroyed() && depositWindow.isVisible()),
     chatWasOpen: !!(chatWindow && !chatWindow.isDestroyed() && chatWindow.isVisible())
   };
-  // Marcar el flag ANTES de abrir ventanas (las funciones positionXxx lo respetan)
-  proModeActive = true;
-  // Asegurar que ambas ventanas existan
+}
+
+function enterProModeFull() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  snapshotPrevBoundsIfNeeded();
+  proModeState = 'full';
   if (!depositWindow || depositWindow.isDestroyed()) toggleDepositWindow();
   if (!chatWindow || chatWindow.isDestroyed()) toggleChatWindow();
-  // Aplicar layout (con un pequeno delay para que ventanas recien creadas terminen de arrancar)
   setTimeout(() => applyProModeLayout(), 200);
   applyProModeLayout();
   // En modo PRO el deposito siempre se muestra en horizontal (sin sobrescribir la preferencia guardada del usuario)
@@ -320,9 +345,21 @@ function enterProMode() {
   setTimeout(() => sendDepositViewMode('horizontal', false), 250);
 }
 
+function enterProModeNoChat() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  snapshotPrevBoundsIfNeeded();
+  proModeState = 'no-chat';
+  if (!depositWindow || depositWindow.isDestroyed()) toggleDepositWindow();
+  setTimeout(() => applyProModeNoChatLayout(), 200);
+  applyProModeNoChatLayout();
+  // En modo PRO el deposito sigue en horizontal aunque no este el chat
+  sendDepositViewMode('horizontal', false);
+  setTimeout(() => sendDepositViewMode('horizontal', false), 250);
+}
+
 function exitProMode() {
-  if (!proModeActive) return;
-  proModeActive = false;
+  if (proModeState === 'off') return;
+  proModeState = 'off';
   if (!proModePrevBounds) return;
   // Restaurar minimos originales antes de reposicionar (mismos valores que en createWindow / toggleXxxWindow)
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setMinimumSize(420, 600);
@@ -340,13 +377,21 @@ function exitProMode() {
     if (!proModePrevBounds.chatWasOpen) chatWindow.hide();
   }
   proModePrevBounds = null;
-  // Restaurar la preferencia guardada del usuario en el deposito
   sendDepositViewMode('restore', false);
 }
 
+// Ciclo: off -> full (3 ventanas) -> no-chat (2 ventanas) -> off
 function toggleProMode() {
-  if (proModeActive) exitProMode(); else enterProMode();
-  return proModeActive;
+  if (proModeState === 'off') {
+    enterProModeFull();
+  } else if (proModeState === 'full') {
+    // Pasar a no-chat: ocultar chat y reacomodar deposito+main
+    proModeState = 'no-chat';
+    applyProModeNoChatLayout();
+  } else {
+    exitProMode();
+  }
+  return proModeState;
 }
 
 function initAnthropic() {
@@ -382,12 +427,12 @@ function createWindow() {
   mainWindow.loadFile('index.html');
 
   mainWindow.on('resize', () => {
-    if (proModeActive) return;
+    if (isProActive()) return;
     store.set('windowBounds', mainWindow.getBounds());
   });
 
   mainWindow.on('move', () => {
-    if (proModeActive) return;
+    if (isProActive()) return;
     store.set('windowBounds', mainWindow.getBounds());
   });
 
