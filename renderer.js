@@ -343,10 +343,12 @@ function subscribeToData() {
 function renderDepositBadge() {
   const badge = document.getElementById('depositUnreadBadge');
   if (!badge) return;
-  // Badge persistente: cuenta TODOS los items pendientes (status !== 'converted'),
-  // no entries "nuevos desde la ultima visita". Se queda fijo hasta que alguien
-  // los asigne como tarea (status pasa a 'converted').
-  const count = depositEntries.filter(e => e.status !== 'converted').length;
+  // Badge persistente: cuenta items pendientes (status !== 'converted').
+  // EXCLUYE la categoria 'referencias' — es un banco de contenido, no tareas
+  // por hacer, asi que sus items no suman al total ni disparan el aviso rojo.
+  const count = depositEntries.filter(e =>
+    e.status !== 'converted' && e.categoryId !== 'referencias'
+  ).length;
   if (count <= 0) {
     badge.style.display = 'none';
     return;

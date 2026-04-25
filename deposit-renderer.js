@@ -32,6 +32,12 @@ function newCountIn(catId, subId) {
   return arr.filter(isNewEntry).length;
 }
 
+// Cuenta items pendientes (no asignados a tarea) en una categoria/subcategoria.
+// Esta es la cifra que va al badge rojo persistente del sidebar.
+function pendingCountIn(catId, subId) {
+  return entriesIn(catId, subId).filter(e => e.status !== 'converted').length;
+}
+
 function rootCategories() { return categories.filter(c => !c.parentId); }
 function subcategoriesOf(parentId) { return categories.filter(c => c.parentId === parentId); }
 function entriesIn(catId, subId) {
@@ -118,7 +124,8 @@ async function ensureDefaultCategories() {
   const defaults = [
     { id: 'reels', name: 'Reels' },
     { id: 'carruseles', name: 'Carruseles' },
-    { id: 'trabajos-finalizados', name: 'Trabajos Finalizados' }
+    { id: 'trabajos-finalizados', name: 'Trabajos Finalizados' },
+    { id: 'referencias', name: 'Referencias' }
   ];
   const existingIds = new Set(categories.map(c => c.id));
   const toCreate = defaults.filter(d => !existingIds.has(d.id) && !defaultCatsInFlight.has(d.id));
@@ -174,39 +181,41 @@ function subscribeAll() {
 function renderCategories() {
   const list = document.getElementById('categoryList');
   const roots = rootCategories();
-  const normalRoots = roots.filter(c => c.id !== 'trabajos-finalizados');
+  const normalRoots = roots.filter(c => c.id !== 'trabajos-finalizados' && c.id !== 'referencias');
   const tfRoot = roots.find(c => c.id === 'trabajos-finalizados');
+  const refRoot = roots.find(c => c.id === 'referencias');
 
   let html = '';
 
-  // Helper para badge rojo de "nuevas"
-  const newBadge = (n) => n > 0
-    ? `<span class="new-badge" title="${n} idea${n === 1 ? '' : 's'} nueva${n === 1 ? '' : 's'}">${n > 99 ? '99+' : n}</span>`
+  // Badge rojo PERSISTENTE: cuenta items pendientes (status !== 'converted')
+  // y se queda fijo hasta que alguien los asigne como tarea.
+  const pendingBadge = (n) => n > 0
+    ? `<span class="new-badge" title="${n} pendiente${n === 1 ? '' : 's'} por asignar">${n > 99 ? '99+' : n}</span>`
     : '';
 
-  // Item especial "Todos" para categorias normales
+  // Item especial "Todos" — excluye Trabajos Finalizados y REFERENCIAS del conteo
   if (normalRoots.length > 0) {
-    const totalCount = entries.filter(e => e.categoryId !== 'trabajos-finalizados').length;
-    const totalNew = entries.filter(e => e.categoryId !== 'trabajos-finalizados' && isNewEntry(e)).length;
+    const totalCount = entries.filter(e => e.categoryId !== 'trabajos-finalizados' && e.categoryId !== 'referencias').length;
+    const totalPending = entries.filter(e => e.categoryId !== 'trabajos-finalizados' && e.categoryId !== 'referencias' && e.status !== 'converted').length;
     const active = selectedCategoryId === '__all_categories__' ? ' active' : '';
     html += `
       <div class="category-item${active}" data-all-cats="1">
         <span class="cat-name">&#128230; Todos</span>
-        ${newBadge(totalNew)}
+        ${pendingBadge(totalPending)}
         <span class="cat-count">${totalCount}</span>
       </div>`;
   }
 
-  // Seccion: Categorias normales
+  // Seccion: Categorias normales (badge rojo de pendientes en cada una)
   normalRoots.forEach(c => {
     const count = entries.filter(e => e.categoryId === c.id).length;
-    const newCount = entries.filter(e => e.categoryId === c.id && isNewEntry(e)).length;
+    const pending = entries.filter(e => e.categoryId === c.id && e.status !== 'converted').length;
     const active = c.id === selectedCategoryId && !selectedSubcategoryId ? ' active' : '';
     const canDelete = !c.isDefault;
     html += `
       <div class="category-item${active}" data-id="${esc(c.id)}">
         <span class="cat-name">${esc(c.name)}</span>
-        ${newBadge(newCount)}
+        ${pendingBadge(pending)}
         <span class="cat-count">${count}</span>
         ${canDelete ? `<button class="cat-delete" data-delete="${esc(c.id)}" title="Eliminar categoria">&#10005;</button>` : ''}
       </div>`;
@@ -222,29 +231,56 @@ function renderCategories() {
   if (tfRoot) {
     const tfSubs = subcategoriesOf('trabajos-finalizados');
     const tfTotalCount = entries.filter(e => e.categoryId === 'trabajos-finalizados').length;
-    const tfTotalNew = entries.filter(e => e.categoryId === 'trabajos-finalizados' && isNewEntry(e)).length;
+    const tfTotalPending = entries.filter(e => e.categoryId === 'trabajos-finalizados' && e.status !== 'converted').length;
     const tfActive = selectedCategoryId === 'trabajos-finalizados' && !selectedSubcategoryId ? ' active' : '';
     html += `
       <div class="category-section-header">TRABAJOS FINALIZADOS</div>
       <div class="category-item${tfActive}" data-tf-root="1">
         <span class="cat-name" style="opacity:0.85">&#128230; Todos</span>
-        ${newBadge(tfTotalNew)}
+        ${pendingBadge(tfTotalPending)}
         <span class="cat-count">${tfTotalCount}</span>
       </div>`;
     tfSubs.forEach(s => {
       const c = entries.filter(e => e.subcategoryId === s.id).length;
-      const cNew = entries.filter(e => e.subcategoryId === s.id && isNewEntry(e)).length;
+      const cPending = entries.filter(e => e.subcategoryId === s.id && e.status !== 'converted').length;
       const sActive = selectedSubcategoryId === s.id ? ' active' : '';
       html += `
         <div class="category-item${sActive}" data-tf-sub="${esc(s.id)}" style="padding-left:18px">
           <span class="cat-name">${esc(s.name)}</span>
-          ${newBadge(cNew)}
+          ${pendingBadge(cPending)}
           <span class="cat-count">${c}</span>
           <button class="cat-delete" data-delete-tf-sub="${esc(s.id)}" title="Eliminar categoria">&#10005;</button>
         </div>`;
     });
     html += `
       <div class="category-item add-tf-sub" data-add-tf-sub="1" style="padding-left:18px;opacity:0.7">
+        <span class="cat-name" style="color:var(--text-dim)">+ Nueva categoria</span>
+      </div>`;
+  }
+
+  // Seccion separada: REFERENCIAS (banco de contenido — SIN badge rojo, SIN sumar al total)
+  if (refRoot) {
+    const refSubs = subcategoriesOf('referencias');
+    const refTotalCount = entries.filter(e => e.categoryId === 'referencias').length;
+    const refActive = selectedCategoryId === 'referencias' && !selectedSubcategoryId ? ' active' : '';
+    html += `
+      <div class="category-section-header">REFERENCIAS</div>
+      <div class="category-item${refActive}" data-ref-root="1">
+        <span class="cat-name" style="opacity:0.85">&#128230; Todos</span>
+        <span class="cat-count">${refTotalCount}</span>
+      </div>`;
+    refSubs.forEach(s => {
+      const c = entries.filter(e => e.subcategoryId === s.id).length;
+      const sActive = selectedSubcategoryId === s.id ? ' active' : '';
+      html += `
+        <div class="category-item${sActive}" data-ref-sub="${esc(s.id)}" style="padding-left:18px">
+          <span class="cat-name">${esc(s.name)}</span>
+          <span class="cat-count">${c}</span>
+          <button class="cat-delete" data-delete-ref-sub="${esc(s.id)}" title="Eliminar categoria">&#10005;</button>
+        </div>`;
+    });
+    html += `
+      <div class="category-item add-ref-sub" data-add-ref-sub="1" style="padding-left:18px;opacity:0.7">
         <span class="cat-name" style="color:var(--text-dim)">+ Nueva categoria</span>
       </div>`;
   }
@@ -317,6 +353,40 @@ function renderCategories() {
       selectedCategoryId = 'trabajos-finalizados';
       showSubcategoryModal();
       // restauracion ocurre via onSnapshot
+    });
+  }
+
+  // REFERENCIAS - raiz
+  const refRootEl = list.querySelector('[data-ref-root]');
+  if (refRootEl) {
+    refRootEl.addEventListener('click', () => {
+      selectedCategoryId = 'referencias';
+      selectedSubcategoryId = null;
+      renderCategories();
+      renderEntries();
+    });
+  }
+  // REFERENCIAS - subcategorias
+  list.querySelectorAll('[data-ref-sub]').forEach(el => {
+    el.addEventListener('click', (e) => {
+      if (e.target.dataset.deleteRefSub) return;
+      selectedCategoryId = 'referencias';
+      selectedSubcategoryId = el.dataset.refSub;
+      renderCategories();
+      renderEntries();
+    });
+  });
+  list.querySelectorAll('[data-delete-ref-sub]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteSubcategory(btn.dataset.deleteRefSub);
+    });
+  });
+  const addRefSubEl = list.querySelector('[data-add-ref-sub]');
+  if (addRefSubEl) {
+    addRefSubEl.addEventListener('click', () => {
+      selectedCategoryId = 'referencias';
+      showSubcategoryModal();
     });
   }
 }
