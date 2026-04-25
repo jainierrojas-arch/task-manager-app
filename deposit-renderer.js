@@ -853,8 +853,64 @@ function addLinkRow(link) {
       <button class="remove-link" title="Quitar este link">&times;</button>
     </div>
     <input type="url" class="link-url" placeholder="https://..." value="${esc(link.url || '')}">
-    <input type="text" class="link-label" placeholder="Etiqueta o descripcion (opcional)" value="${esc(link.label || '')}">`;
+    <input type="text" class="link-label" placeholder="Etiqueta o descripcion (opcional)" value="${esc(link.label || '')}">
+    <div class="link-preview" style="display:none"></div>`;
   row.querySelector('.remove-link').addEventListener('click', () => row.remove());
+
+  // Vista previa Open Graph (estilo WhatsApp) — se actualiza al pegar/escribir el URL
+  const urlInput = row.querySelector('.link-url');
+  const previewEl = row.querySelector('.link-preview');
+  let previewTimer = null;
+  let lastFetchedUrl = '';
+  const updatePreview = async () => {
+    const url = parseUrl(urlInput.value);
+    if (!url || !/^https?:\/\//i.test(url)) {
+      previewEl.style.display = 'none';
+      previewEl.innerHTML = '';
+      lastFetchedUrl = '';
+      return;
+    }
+    if (url === lastFetchedUrl) return; // ya cargada
+    lastFetchedUrl = url;
+    previewEl.innerHTML = '<div class="link-preview-loading">Cargando vista previa...</div>';
+    previewEl.style.display = 'block';
+    try {
+      const og = await window.api.fetchOgData(url);
+      if (lastFetchedUrl !== url) return; // cambio mientras esperabamos
+      if (!og || (!og.image && !og.title && !og.description)) {
+        previewEl.style.display = 'none';
+        previewEl.innerHTML = '';
+        return;
+      }
+      let domain = url;
+      try { domain = new URL(url).hostname.replace(/^www\./, ''); } catch (e) {}
+      previewEl.innerHTML = `
+        <div class="link-preview-card" data-preview-open="${esc(url)}">
+          ${og.image ? `<div class="link-preview-img" style="background-image:url('${esc(og.image)}')"></div>` : ''}
+          <div class="link-preview-body">
+            ${og.title ? `<div class="link-preview-title">${esc(og.title)}</div>` : ''}
+            ${og.description ? `<div class="link-preview-desc">${esc(og.description)}</div>` : ''}
+            <div class="link-preview-domain">${esc(domain)}</div>
+          </div>
+        </div>`;
+      const card = previewEl.querySelector('[data-preview-open]');
+      if (card) card.addEventListener('click', () => window.api.openExternal(url));
+    } catch (e) {
+      previewEl.style.display = 'none';
+      previewEl.innerHTML = '';
+    }
+  };
+  urlInput.addEventListener('input', () => {
+    if (previewTimer) clearTimeout(previewTimer);
+    previewTimer = setTimeout(updatePreview, 700);
+  });
+  urlInput.addEventListener('paste', () => {
+    if (previewTimer) clearTimeout(previewTimer);
+    previewTimer = setTimeout(updatePreview, 100); // mas rapido al pegar
+  });
+  // Si la fila se carga ya con un URL (modo edicion), disparar preview inmediato
+  if (link.url) setTimeout(updatePreview, 50);
+
   wrap.appendChild(row);
 }
 
