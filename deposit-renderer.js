@@ -297,7 +297,9 @@ async function deleteCategory(catId) {
   if (selectedCategoryId === catId) selectedCategoryId = categories.find(c => c.id !== catId)?.id || null;
 }
 
-document.getElementById('newCategoryBtn').addEventListener('click', () => showCategoryModal());
+// Boton "newCategoryBtn" del footer ya no existe; ahora es item inline en la lista.
+const newCategoryBtnEl = document.getElementById('newCategoryBtn');
+if (newCategoryBtnEl) newCategoryBtnEl.addEventListener('click', () => showCategoryModal());
 document.getElementById('cancelCategory').addEventListener('click', () => hideCategoryModal());
 document.getElementById('confirmCategory').addEventListener('click', async () => {
   const name = document.getElementById('categoryNameInput').value.trim();
