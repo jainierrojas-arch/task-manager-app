@@ -1470,11 +1470,52 @@ async function completeTask(taskId) {
     alert('Solo el asignado, el creador de la tarea o el admin pueden marcarla como terminada.');
     return;
   }
+  // Publicador: no requiere aprobacion ni material entregado.
+  // Marca directamente como completed y notifica/desbloquea siguientes en cadena.
+  if (task.assignmentType === 'publicador') {
+    if (!confirm(`Marcar la tarea como publicada y completada?\n\n"${task.text}"\n\nAl ser tipo "Publicador", se cerrara directamente sin pasar por aprobacion.`)) return;
+    await finalizeCompletedDirect(task);
+    return;
+  }
   submittingTaskId = taskId;
   document.getElementById('submitTaskTitle').textContent = task.text;
   document.getElementById('submitTaskLinkInput').value = '';
   document.getElementById('submitTaskModal').classList.add('active');
   setTimeout(() => document.getElementById('submitTaskLinkInput').focus(), 100);
+}
+
+// Marca la tarea como completed directamente (caso publicador o flujos sin aprobacion)
+async function finalizeCompletedDirect(task) {
+  const taskEl = document.querySelector(`.task-item[data-id="${task.id}"]`);
+  if (taskEl) {
+    taskEl.classList.add('completing');
+    await new Promise(r => setTimeout(r, 300));
+  }
+  await db.collection('tasks').doc(task.id).update({
+    status: 'completed',
+    completedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    completedBy: currentUser.uid,
+    completedByName: currentUserData.name
+  });
+
+  // Notificar creador
+  const creator = teamMembers.find(m => m.id === task.createdBy);
+  if (creator && creator.telegramChatId && creator.id !== currentUser.uid) {
+    sendTelegramNotif(creator.telegramChatId,
+      `*${currentUserData.name}* publico la tarea (cerrada sin aprobacion):\n${task.text}\nProyecto: *${task.projectName}*`
+    );
+  }
+  // Desbloquear siguientes en cadena
+  const dependents = tasks.filter(t => t.dependsOn === task.id && t.status !== 'completed');
+  dependents.forEach(dep => {
+    const depAssignee = teamMembers.find(m => m.id === dep.assignedTo);
+    if (depAssignee && depAssignee.telegramChatId && depAssignee.id !== currentUser.uid) {
+      const linkMsg = task.link ? `\n\nMaterial: ${task.link}` : '';
+      sendTelegramNotif(depAssignee.telegramChatId,
+        `*${task.assignedToName || 'Un miembro'}* publico: ${task.text}\n\nYa puedes empezar tu tarea:\n*${dep.text}*\nProyecto: *${dep.projectName}*${linkMsg}`
+      );
+    }
+  });
 }
 
 async function finalizeSubmitTask(taskId, submittedLinkRaw) {
@@ -2411,7 +2452,14 @@ function addChainStepRow() {
       </select>
       <button class="btn btn-ghost btn-small chain-step-remove" title="Quitar paso" style="color:var(--danger);padding:4px 8px">&times;</button>
     </div>
-    <div style="display:flex;gap:8px;align-items:center;margin-left:30px">
+    <div style="display:flex;gap:8px;align-items:center;margin-left:30px;flex-wrap:wrap">
+      <span style="color:var(--text-dim);font-size:11px">Tipo:</span>
+      <select class="chain-step-type" style="flex:0 0 130px;margin:0" title="Publicador no requiere aprobacion">
+        <option value="editor">Editor</option>
+        <option value="publicador">Publicador</option>
+        <option value="investigador">Investigador</option>
+        <option value="corrector">Corrector</option>
+      </select>
       <span style="color:var(--text-dim);font-size:11px">Plazo:</span>
       <input type="number" class="chain-step-amount" placeholder="Cantidad" min="1" style="width:90px;padding:8px 12px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none;margin:0">
       <select class="chain-step-unit" style="flex:0 0 110px;margin:0">
@@ -2453,6 +2501,7 @@ async function confirmChain() {
     const userId = row.querySelector('.chain-step-user').value;
     const amount = parseInt(row.querySelector('.chain-step-amount').value);
     const unit = row.querySelector('.chain-step-unit').value;
+    const type = row.querySelector('.chain-step-type')?.value || 'editor';
     if (!text || !userId) continue;
     let deadlineDate = null;
     if (amount && amount > 0 && unit) {
@@ -2461,7 +2510,7 @@ async function confirmChain() {
       else if (unit === 'hours') deadlineDate.setHours(deadlineDate.getHours() + amount);
       else deadlineDate.setDate(deadlineDate.getDate() + amount);
     }
-    steps.push({ text, userId, deadlineDate });
+    steps.push({ text, userId, deadlineDate, type });
   }
   if (steps.length < 2) {
     alert('Agrega al menos 2 pasos con texto y miembro asignado.');
@@ -2487,6 +2536,7 @@ async function confirmChain() {
       createdByName: currentUserData.name,
       status: 'pending',
       source: 'app',
+      assignmentType: step.type || 'editor',
       notes: [],
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     };
