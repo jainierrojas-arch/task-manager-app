@@ -657,6 +657,7 @@ function renderEntries() {
   } else {
     area.innerHTML = `<div class="entry-grid">${subEntries.map(e => renderEntryHtml(e)).join('')}</div>`;
     lazyFetchCovers(subEntries);
+    ensureCoverDimensions(subEntries);
     area.querySelectorAll('[data-link-open]').forEach(chip => {
       chip.addEventListener('click', (ev) => {
         ev.stopPropagation();
@@ -733,7 +734,14 @@ function renderEntryHtml(e) {
   let coverHtml = '';
   if (firstUrl) {
     if (cover) {
-      coverHtml = `<div class="entry-cover" data-link-open="${esc(firstUrl)}" style="background-image:url('${esc(cover)}')"></div>`;
+      // Si tenemos las dimensiones reales de la imagen (Microlink las devuelve),
+      // forzamos el aspect-ratio del card a las dimensiones reales para que la
+      // imagen llene 100% sin recortar ni dejar barras grandes.
+      let arStyle = '';
+      if (e.coverWidth && e.coverHeight) {
+        arStyle = `aspect-ratio:${e.coverWidth} / ${e.coverHeight};`;
+      }
+      coverHtml = `<div class="entry-cover" data-link-open="${esc(firstUrl)}" style="background-image:url('${esc(cover)}');${arStyle}"></div>`;
     } else {
       const svc = serviceFromUrl(firstUrl);
       let domain = firstUrl;
@@ -796,6 +804,33 @@ function bindEntryHandlers(area) {
 // fetcher (asi entries viejas de Instagram pueden recuperar su thumbnail).
 const ogFetchInFlight = new Set();
 const ogFetchedThisSession = new Set();
+const dimensionsFetchInFlight = new Set();
+
+// Para entries que tienen coverImage pero les faltan las dimensiones (porque
+// se guardaron antes de v2.47), las detectamos del lado del cliente cargando
+// la imagen y leyendo naturalWidth/naturalHeight.
+async function ensureCoverDimensions(entries) {
+  for (const entry of entries) {
+    if (!entry.coverImage) continue;
+    if (entry.coverWidth && entry.coverHeight) continue;
+    if (dimensionsFetchInFlight.has(entry.id)) continue;
+    dimensionsFetchInFlight.add(entry.id);
+    const img = new Image();
+    img.onload = async () => {
+      try {
+        if (img.naturalWidth && img.naturalHeight) {
+          await db.collection('depositEntries').doc(entry.id).update({
+            coverWidth: img.naturalWidth,
+            coverHeight: img.naturalHeight
+          });
+        }
+      } catch (e) { /* ignore */ }
+      dimensionsFetchInFlight.delete(entry.id);
+    };
+    img.onerror = () => dimensionsFetchInFlight.delete(entry.id);
+    img.src = entry.coverImage;
+  }
+}
 
 async function lazyFetchCovers(visibleEntries) {
   for (const entry of visibleEntries) {
@@ -808,6 +843,11 @@ async function lazyFetchCovers(visibleEntries) {
     try {
       const og = await window.api.fetchOgData(url);
       const update = { coverImage: og.image || null };
+      // Guardar dimensiones para que la card use aspect-ratio real (no cortar imagen)
+      if (og.imageWidth && og.imageHeight) {
+        update.coverWidth = og.imageWidth;
+        update.coverHeight = og.imageHeight;
+      }
       await db.collection('depositEntries').doc(entry.id).update(update);
     } catch (e) { /* ignore */ }
     ogFetchInFlight.delete(entry.id);

@@ -819,8 +819,11 @@ function registerIpcHandlers() {
               const json = JSON.parse(body);
               if (json && json.status === 'success' && json.data) {
                 const d = json.data;
+                const imgObj = d.image || d.logo || null;
                 resolve({
-                  image: (d.image && d.image.url) || (d.logo && d.logo.url) || null,
+                  image: (imgObj && imgObj.url) || null,
+                  imageWidth: (imgObj && imgObj.width) || null,
+                  imageHeight: (imgObj && imgObj.height) || null,
                   title: d.title || null,
                   description: d.description || null
                 });
