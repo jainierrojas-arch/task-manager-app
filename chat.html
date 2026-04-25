@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chat - Task Manager</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg-primary: #1a1b2e;
+      --bg-secondary: #232442;
+      --bg-card: #2a2b4a;
+      --bg-hover: #33345a;
+      --text-primary: #e8e8f0;
+      --text-secondary: #9d9db5;
+      --text-dim: #6d6d8a;
+      --accent: #6c63ff;
+      --accent-hover: #5a52e0;
+      --success: #4ecdc4;
+      --danger: #ff6b6b;
+      --warning: #ffd93d;
+      --border: #3a3b5c;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      height: 100vh;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    .titlebar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 38px;
+      background: var(--bg-secondary);
+      padding: 0 12px;
+      -webkit-app-region: drag;
+      border-bottom: 1px solid var(--border);
+    }
+    .titlebar-title { font-size: 13px; font-weight: 600; color: var(--text-secondary); letter-spacing: 0.5px; }
+    .titlebar-buttons { display: flex; gap: 8px; -webkit-app-region: no-drag; }
+    .titlebar-btn { width: 14px; height: 14px; border-radius: 50%; border: none; cursor: pointer; transition: opacity 0.2s; }
+    .titlebar-btn:hover { opacity: 0.8; }
+    .btn-minimize { background: var(--warning); }
+    .btn-close { background: var(--danger); }
+
+    .app { display: flex; height: calc(100vh - 38px); min-height: 0; }
+
+    /* Lista lateral de miembros */
+    .members {
+      width: 180px;
+      flex-shrink: 0;
+      background: var(--bg-secondary);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+    }
+    .members-title {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-secondary);
+      padding: 10px 12px 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .members-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 6px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+    .members-list::-webkit-scrollbar { width: 6px; }
+    .members-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    .member-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 8px;
+      border-radius: 6px;
+    }
+    .member-item:hover { background: var(--bg-card); }
+    .member-avatar {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+      color: white;
+      position: relative;
+      flex-shrink: 0;
+    }
+    .member-name {
+      font-size: 12px;
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .member-name.offline { color: var(--text-secondary); }
+    .online-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--success);
+      position: absolute;
+      bottom: -1px;
+      right: -1px;
+      border: 2px solid var(--bg-secondary);
+      box-sizing: content-box;
+    }
+    .online-dot.offline { background: #6b7280; }
+
+    /* Columna principal de mensajes */
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+    .messages::-webkit-scrollbar { width: 6px; }
+    .messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    .chat-msg {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .chat-msg.own { flex-direction: row-reverse; }
+    .chat-msg-avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+      color: white;
+    }
+    .chat-msg-body {
+      max-width: 75%;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .chat-msg.own .chat-msg-body { align-items: flex-end; }
+    .chat-msg-meta {
+      display: flex;
+      gap: 6px;
+      font-size: 10px;
+      color: var(--text-secondary);
+    }
+    .chat-msg-author { font-weight: 600; }
+    .chat-msg-text {
+      background: var(--bg-card);
+      padding: 8px 12px;
+      border-radius: 12px;
+      font-size: 13px;
+      line-height: 1.4;
+      word-wrap: break-word;
+      white-space: pre-wrap;
+      user-select: text;
+    }
+    .chat-msg.own .chat-msg-text {
+      background: var(--accent);
+      color: white;
+    }
+    .chat-day-divider {
+      text-align: center;
+      font-size: 10px;
+      color: var(--text-secondary);
+      margin: 14px 0 10px;
+      text-transform: capitalize;
+    }
+
+    .input-area {
+      display: flex;
+      gap: 8px;
+      align-items: flex-end;
+      padding: 10px 12px;
+      border-top: 1px solid var(--border);
+      background: var(--bg-secondary);
+    }
+    .input-area textarea {
+      flex: 1;
+      resize: none;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text-primary);
+      padding: 8px 10px;
+      font-size: 13px;
+      font-family: inherit;
+      max-height: 120px;
+      user-select: text;
+    }
+    .input-area textarea:focus { outline: none; border-color: var(--accent); }
+    .input-area button {
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 8px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .input-area button:hover { background: var(--accent-hover); }
+
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--text-secondary);
+    }
+    .empty-state-icon { font-size: 48px; margin-bottom: 12px; }
+    .empty-state-text { font-size: 14px; margin-bottom: 4px; }
+    .empty-state-sub { font-size: 12px; opacity: 0.6; }
+  </style>
+</head>
+<body>
+  <div class="titlebar">
+    <span class="titlebar-title">&#128172; CHAT DEL EQUIPO</span>
+    <div class="titlebar-buttons">
+      <button class="titlebar-btn btn-minimize" id="btnMinimize" title="Minimizar"></button>
+      <button class="titlebar-btn btn-close" id="btnClose" title="Cerrar"></button>
+    </div>
+  </div>
+
+  <div class="app">
+    <div class="members">
+      <div class="members-title">Miembros</div>
+      <div class="members-list" id="membersList"></div>
+    </div>
+    <div class="main">
+      <div class="messages" id="messagesArea">
+        <div class="empty-state">
+          <div class="empty-state-icon">&#128172;</div>
+          <div class="empty-state-text">Sin mensajes todavia</div>
+          <div class="empty-state-sub">Se el primero en escribir</div>
+        </div>
+      </div>
+      <div class="input-area">
+        <textarea id="chatInput" placeholder="Escribe un mensaje... (Enter para enviar)" rows="2"></textarea>
+        <button id="chatSendBtn">Enviar</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="vendor/firebase-app-compat.js"></script>
+  <script src="vendor/firebase-auth-compat.js"></script>
+  <script src="vendor/firebase-firestore-compat.js"></script>
+  <script>
+    firebase.initializeApp({
+      apiKey: "AIzaSyDiLAvhCsJOtHYOtH8x7P8aN3NB6fhvaf0",
+      authDomain: "app-de-tareas-e4209.firebaseapp.com",
+      projectId: "app-de-tareas-e4209",
+      storageBucket: "app-de-tareas-e4209.firebasestorage.app",
+      messagingSenderId: "1189986545334",
+      appId: "1:1189986545334:web:0b5d29b7affa2fecc0d017"
+    });
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+  </script>
+  <script src="chat-renderer.js"></script>
+</body>
+</html>

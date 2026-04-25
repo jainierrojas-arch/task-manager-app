@@ -48,10 +48,12 @@ contextBridge.exposeInMainWorld('api', {
   installUpdate: () => ipcRenderer.invoke('install-update'),
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
 
-  // Chat lateral: expandir/colapsar ventana
-  chatExpandWindow: (extraWidth) => ipcRenderer.invoke('chat-expand-window', extraWidth),
-  chatCollapseWindow: () => ipcRenderer.invoke('chat-collapse-window'),
+  // Chat externo (ventana separada)
+  toggleChat: () => ipcRenderer.invoke('toggle-chat-window'),
 
   // Deposito de ideas
-  toggleDeposit: () => ipcRenderer.invoke('toggle-deposit-window')
+  toggleDeposit: () => ipcRenderer.invoke('toggle-deposit-window'),
+
+  // Modo PRO: las 3 ventanas en mosaico
+  toggleProMode: () => ipcRenderer.invoke('toggle-pro-mode')
 });

@@ -1070,7 +1070,7 @@ document.getElementById('confirmAssign').addEventListener('click', async () => {
 const SIDEBAR_MODE_KEY = 'deposit-sidebar-mode';
 let currentSidebarMode = 'vertical';
 
-function applySidebarMode(mode) {
+function applySidebarMode(mode, persist = true) {
   currentSidebarMode = mode;
   const app = document.querySelector('.app');
   const sidebar = document.querySelector('.sidebar');
@@ -1116,7 +1116,9 @@ function applySidebarMode(mode) {
     if (mode === 'horizontal') { icon.innerHTML = '&#8801;'; label.textContent = 'Vertical'; }
     else { icon.innerHTML = '&#9776;'; label.textContent = 'Horizontal'; }
   }
-  try { localStorage.setItem(SIDEBAR_MODE_KEY, mode); } catch (e) {}
+  if (persist) {
+    try { localStorage.setItem(SIDEBAR_MODE_KEY, mode); } catch (e) {}
+  }
 }
 
 window.toggleSidebarMode = function () {
@@ -1125,6 +1127,22 @@ window.toggleSidebarMode = function () {
   console.log('[deposit] toggleSidebarMode despues:', currentSidebarMode);
 };
 try { applySidebarMode(localStorage.getItem(SIDEBAR_MODE_KEY) || 'vertical'); } catch (e) {}
+
+// Escuchar cambios de modo enviados desde el proceso principal (modo PRO).
+// payload: { mode: 'horizontal' | 'vertical' | 'restore', persist: boolean }
+if (window.api && window.api.onSetViewMode) {
+  window.api.onSetViewMode((payload) => {
+    if (!payload || typeof payload !== 'object') return;
+    const persist = payload.persist !== false;
+    if (payload.mode === 'restore') {
+      let saved = 'vertical';
+      try { saved = localStorage.getItem(SIDEBAR_MODE_KEY) || 'vertical'; } catch (e) {}
+      applySidebarMode(saved, false);
+    } else if (payload.mode === 'horizontal' || payload.mode === 'vertical') {
+      applySidebarMode(payload.mode, persist);
+    }
+  });
+}
 
 // Window controls
 document.getElementById('btnMinimize').addEventListener('click', () => window.api.minimizeWindow());

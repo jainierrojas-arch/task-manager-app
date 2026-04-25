@@ -54,38 +54,48 @@ const store = new JsonStore({
 
 let mainWindow;
 let depositWindow;
+let chatWindow;
 let telegramBot;
 let TelegramBotLib;
 let anthropic;
 
+// Modo PRO: las 3 ventanas en mosaico ocupando toda la pantalla
+let proModeActive = false;
+let proModePrevBounds = null;
+
 function computeDepositBounds(width, height) {
-  // Devuelve {x, y, width, height} eligiendo la mejor ubicacion dentro del
-  // monitor donde esta la ventana principal. Prueba: lado derecho, lado
-  // izquierdo, y como fallback centra dentro del area visible.
+  // Deposito siempre prefiere lado IZQUIERDO (matching layout de modo PRO).
+  // Si no cabe a la izquierda, intenta derecha. Si tampoco cabe, reposiciona
+  // la ventana principal para hacer espacio en lugar de superponer.
   let bounds = { x: 100, y: 100, width, height };
   if (!mainWindow || mainWindow.isDestroyed()) return bounds;
   const mb = mainWindow.getBounds();
   const display = screen.getDisplayMatching(mb) || screen.getPrimaryDisplay();
-  const wa = display.workArea; // area visible (excluye taskbar/menubar)
+  const wa = display.workArea;
   const maxH = Math.min(Math.max(600, mb.height), wa.height - 20);
   bounds.height = maxH;
   bounds.width = Math.min(width, wa.width - 40);
   bounds.y = Math.max(wa.y + 10, Math.min(mb.y, wa.y + wa.height - maxH - 10));
-  const rightX = mb.x + mb.width + 4;
   const leftX = mb.x - bounds.width - 4;
-  if (rightX + bounds.width <= wa.x + wa.width) {
-    bounds.x = rightX;
-  } else if (leftX >= wa.x) {
+  const rightX = mb.x + mb.width + 4;
+  if (leftX >= wa.x) {
     bounds.x = leftX;
+  } else if (rightX + bounds.width <= wa.x + wa.width) {
+    bounds.x = rightX;
   } else {
-    // No cabe a los lados: centra dentro del area visible
-    bounds.x = wa.x + Math.max(0, Math.floor((wa.width - bounds.width) / 2));
+    // No cabe en ningun lado: anclar deposito a la izquierda del area visible
+    // y empujar la ventana principal a la derecha para que no se superpongan.
+    bounds.x = wa.x;
+    const newMainX = wa.x + bounds.width + 4;
+    const maxMainX = wa.x + wa.width - mb.width;
+    mainWindow.setBounds({ x: Math.min(newMainX, maxMainX), y: mb.y, width: mb.width, height: mb.height });
   }
   return bounds;
 }
 
 function positionDepositWindow() {
   if (!depositWindow || depositWindow.isDestroyed()) return;
+  if (proModeActive) return; // En modo PRO el layout es fijo
   const cur = depositWindow.getBounds();
   const b = computeDepositBounds(cur.width, cur.height);
   depositWindow.setBounds(b);
@@ -153,6 +163,192 @@ function toggleDepositWindow() {
   }
 }
 
+function computeChatBounds(width, height) {
+  // Chat siempre prefiere lado DERECHO (matching layout de modo PRO).
+  let bounds = { x: 100, y: 100, width, height };
+  if (!mainWindow || mainWindow.isDestroyed()) return bounds;
+  const mb = mainWindow.getBounds();
+  const display = screen.getDisplayMatching(mb) || screen.getPrimaryDisplay();
+  const wa = display.workArea;
+  const maxH = Math.min(Math.max(500, mb.height), wa.height - 20);
+  bounds.height = maxH;
+  bounds.width = Math.min(width, wa.width - 40);
+  bounds.y = Math.max(wa.y + 10, Math.min(mb.y, wa.y + wa.height - maxH - 10));
+  const rightX = mb.x + mb.width + 4;
+  const leftX = mb.x - bounds.width - 4;
+  if (rightX + bounds.width <= wa.x + wa.width) {
+    bounds.x = rightX;
+  } else if (leftX >= wa.x) {
+    bounds.x = leftX;
+  } else {
+    // No cabe a los lados: anclar chat a la derecha y empujar la ventana
+    // principal a la izquierda para evitar superposicion.
+    bounds.x = wa.x + wa.width - bounds.width;
+    const newMainX = bounds.x - mb.width - 4;
+    mainWindow.setBounds({ x: Math.max(wa.x, newMainX), y: mb.y, width: mb.width, height: mb.height });
+  }
+  return bounds;
+}
+
+function positionChatWindow() {
+  if (!chatWindow || chatWindow.isDestroyed()) return;
+  if (proModeActive) return; // En modo PRO el layout es fijo
+  const cur = chatWindow.getBounds();
+  const b = computeChatBounds(cur.width, cur.height);
+  chatWindow.setBounds(b);
+}
+
+function toggleChatWindow() {
+  if (chatWindow && !chatWindow.isDestroyed()) {
+    if (chatWindow.isVisible()) {
+      chatWindow.hide();
+    } else {
+      positionChatWindow();
+      chatWindow.show();
+      chatWindow.focus();
+    }
+    return;
+  }
+  const b = computeChatBounds(560, 680);
+  chatWindow = new BrowserWindow({
+    width: b.width, height: b.height, x: b.x, y: b.y,
+    minWidth: 460, minHeight: 480,
+    frame: false, resizable: true, skipTaskbar: false,
+    show: false,
+    parent: mainWindow || undefined,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'chat-preload.js')
+    },
+    titleBarStyle: 'hidden',
+    trafficLightPosition: { x: -100, y: -100 },
+    backgroundColor: '#1a1b2e'
+  });
+  chatWindow.loadFile('chat.html');
+
+  let shown = false;
+  const showOnce = () => {
+    if (shown || !chatWindow || chatWindow.isDestroyed()) return;
+    shown = true;
+    chatWindow.show();
+    chatWindow.focus();
+  };
+  chatWindow.once('ready-to-show', showOnce);
+  setTimeout(showOnce, 3000);
+
+  chatWindow.webContents.on('did-fail-load', (_, errCode, errDesc, url) => {
+    console.error('[chat] did-fail-load:', errCode, errDesc, url);
+  });
+  chatWindow.on('closed', () => { chatWindow = null; });
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    const follow = () => positionChatWindow();
+    mainWindow.on('move', follow);
+    mainWindow.on('resize', follow);
+    chatWindow.on('closed', () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.removeListener('move', follow);
+        mainWindow.removeListener('resize', follow);
+      }
+    });
+  }
+}
+
+function applyProModeLayout() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const display = screen.getDisplayMatching(mainWindow.getBounds()) || screen.getPrimaryDisplay();
+  const wa = display.workArea;
+  const totalW = wa.width;
+  const totalH = wa.height;
+  const depositW = Math.floor(totalW * 0.30);
+  const chatW = Math.floor(totalW * 0.30);
+  const mainW = totalW - depositW - chatW;
+  const depositX = wa.x;
+  const mainX = wa.x + depositW;
+  const chatX = wa.x + depositW + mainW;
+  // Bajar minimos temporalmente para que setBounds no sea clampado por minWidth/minHeight
+  // (deposit tiene minWidth 700, chat 460, main 420 — en pantallas <2400px se desbordan)
+  if (depositWindow && !depositWindow.isDestroyed()) depositWindow.setMinimumSize(200, 200);
+  if (chatWindow && !chatWindow.isDestroyed()) chatWindow.setMinimumSize(200, 200);
+  mainWindow.setMinimumSize(200, 200);
+  if (depositWindow && !depositWindow.isDestroyed()) {
+    depositWindow.setBounds({ x: depositX, y: wa.y, width: depositW, height: totalH });
+    if (!depositWindow.isVisible()) depositWindow.show();
+  }
+  mainWindow.setBounds({ x: mainX, y: wa.y, width: mainW, height: totalH });
+  if (chatWindow && !chatWindow.isDestroyed()) {
+    chatWindow.setBounds({ x: chatX, y: wa.y, width: chatW, height: totalH });
+    if (!chatWindow.isVisible()) chatWindow.show();
+  }
+}
+
+function sendDepositViewMode(mode, persist) {
+  if (!depositWindow || depositWindow.isDestroyed()) return;
+  const send = () => {
+    if (!depositWindow || depositWindow.isDestroyed()) return;
+    depositWindow.webContents.send('deposit-set-view-mode', { mode, persist });
+  };
+  if (depositWindow.webContents.isLoading()) {
+    depositWindow.webContents.once('did-finish-load', send);
+  } else {
+    send();
+  }
+}
+
+function enterProMode() {
+  if (proModeActive) return;
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  // Guardar bounds previos de las 3 ventanas
+  proModePrevBounds = {
+    main: mainWindow.getBounds(),
+    deposit: depositWindow && !depositWindow.isDestroyed() ? depositWindow.getBounds() : null,
+    chat: chatWindow && !chatWindow.isDestroyed() ? chatWindow.getBounds() : null,
+    depositWasOpen: !!(depositWindow && !depositWindow.isDestroyed() && depositWindow.isVisible()),
+    chatWasOpen: !!(chatWindow && !chatWindow.isDestroyed() && chatWindow.isVisible())
+  };
+  // Marcar el flag ANTES de abrir ventanas (las funciones positionXxx lo respetan)
+  proModeActive = true;
+  // Asegurar que ambas ventanas existan
+  if (!depositWindow || depositWindow.isDestroyed()) toggleDepositWindow();
+  if (!chatWindow || chatWindow.isDestroyed()) toggleChatWindow();
+  // Aplicar layout (con un pequeno delay para que ventanas recien creadas terminen de arrancar)
+  setTimeout(() => applyProModeLayout(), 200);
+  applyProModeLayout();
+  // En modo PRO el deposito siempre se muestra en horizontal (sin sobrescribir la preferencia guardada del usuario)
+  sendDepositViewMode('horizontal', false);
+  setTimeout(() => sendDepositViewMode('horizontal', false), 250);
+}
+
+function exitProMode() {
+  if (!proModeActive) return;
+  proModeActive = false;
+  if (!proModePrevBounds) return;
+  // Restaurar minimos originales antes de reposicionar (mismos valores que en createWindow / toggleXxxWindow)
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setMinimumSize(420, 600);
+  if (depositWindow && !depositWindow.isDestroyed()) depositWindow.setMinimumSize(700, 500);
+  if (chatWindow && !chatWindow.isDestroyed()) chatWindow.setMinimumSize(460, 480);
+  if (mainWindow && !mainWindow.isDestroyed() && proModePrevBounds.main) {
+    mainWindow.setBounds(proModePrevBounds.main);
+  }
+  if (depositWindow && !depositWindow.isDestroyed()) {
+    if (proModePrevBounds.deposit) depositWindow.setBounds(proModePrevBounds.deposit);
+    if (!proModePrevBounds.depositWasOpen) depositWindow.hide();
+  }
+  if (chatWindow && !chatWindow.isDestroyed()) {
+    if (proModePrevBounds.chat) chatWindow.setBounds(proModePrevBounds.chat);
+    if (!proModePrevBounds.chatWasOpen) chatWindow.hide();
+  }
+  proModePrevBounds = null;
+  // Restaurar la preferencia guardada del usuario en el deposito
+  sendDepositViewMode('restore', false);
+}
+
+function toggleProMode() {
+  if (proModeActive) exitProMode(); else enterProMode();
+  return proModeActive;
+}
+
 function initAnthropic() {
   const key = store.get('claudeApiKey');
   anthropic = key ? new Anthropic({ apiKey: key }) : null;
@@ -186,10 +382,12 @@ function createWindow() {
   mainWindow.loadFile('index.html');
 
   mainWindow.on('resize', () => {
+    if (proModeActive) return;
     store.set('windowBounds', mainWindow.getBounds());
   });
 
   mainWindow.on('move', () => {
+    if (proModeActive) return;
     store.set('windowBounds', mainWindow.getBounds());
   });
 
@@ -548,6 +746,23 @@ function registerIpcHandlers() {
   });
   ipcMain.handle('deposit-close', () => {
     if (depositWindow) depositWindow.close();
+  });
+
+  // Chat: ventana externa
+  ipcMain.handle('toggle-chat-window', () => {
+    toggleChatWindow();
+    return !!(chatWindow && !chatWindow.isDestroyed() && chatWindow.isVisible());
+  });
+  ipcMain.handle('chat-minimize', () => {
+    if (chatWindow) chatWindow.minimize();
+  });
+  ipcMain.handle('chat-close', () => {
+    if (chatWindow) chatWindow.close();
+  });
+
+  // Modo PRO: las 3 ventanas en mosaico ocupando la pantalla
+  ipcMain.handle('toggle-pro-mode', () => {
+    return toggleProMode();
   });
 }
 

@@ -314,198 +314,6 @@
       justify-content: center;
     }
 
-    .chat-panel {
-      position: fixed;
-      top: 38px;
-      right: 0;
-      bottom: 0;
-      width: 460px;
-      background: var(--bg-secondary);
-      border-left: 1px solid var(--border);
-      display: flex;
-      flex-direction: column;
-      transform: translateX(100%);
-      transition: transform 0.22s ease;
-      z-index: 50;
-    }
-    .chat-panel.open { transform: translateX(0); }
-
-    .chat-body {
-      flex: 1;
-      display: flex;
-      min-height: 0;
-    }
-    .chat-members {
-      width: 140px;
-      flex-shrink: 0;
-      border-right: 1px solid var(--border);
-      display: flex;
-      flex-direction: column;
-      background: var(--bg-secondary);
-    }
-    .chat-members-title {
-      font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: var(--text-secondary);
-      padding: 8px 10px 6px;
-      border-bottom: 1px solid var(--border);
-    }
-    .chat-members-list {
-      flex: 1;
-      overflow-y: auto;
-      padding: 4px;
-      scrollbar-width: thin;
-      scrollbar-color: var(--border) transparent;
-    }
-    .chat-members-list::-webkit-scrollbar { width: 6px; }
-    .chat-members-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-    .chat-member-item {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 6px 8px;
-      border-radius: 6px;
-      cursor: default;
-    }
-    .chat-member-item:hover { background: var(--bg-card); }
-    .chat-member-item .team-avatar {
-      width: 24px;
-      height: 24px;
-      font-size: 11px;
-    }
-    .chat-member-name {
-      font-size: 11px;
-      flex: 1;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .chat-member-name.offline { color: var(--text-secondary); }
-    .chat-main {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      min-width: 0;
-    }
-
-    .chat-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 10px 12px;
-      border-bottom: 1px solid var(--border);
-      background: var(--bg-card);
-    }
-    .chat-title { font-size: 13px; font-weight: 600; }
-    .chat-close {
-      background: none;
-      border: none;
-      color: var(--text-secondary);
-      font-size: 20px;
-      cursor: pointer;
-      padding: 0 6px;
-      line-height: 1;
-    }
-    .chat-close:hover { color: var(--danger); }
-
-    .chat-messages {
-      flex: 1;
-      overflow-y: auto;
-      padding: 10px;
-      scrollbar-width: thin;
-      scrollbar-color: var(--border) transparent;
-    }
-    .chat-messages::-webkit-scrollbar { width: 6px; }
-    .chat-messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-
-    .chat-msg {
-      display: flex;
-      gap: 8px;
-      margin-bottom: 10px;
-      animation: slideIn 0.2s ease;
-    }
-    .chat-msg.own { flex-direction: row-reverse; }
-    .chat-msg-avatar {
-      width: 26px;
-      height: 26px;
-      border-radius: 50%;
-      flex-shrink: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 11px;
-      font-weight: 700;
-      color: white;
-    }
-    .chat-msg-body {
-      max-width: 230px;
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-    }
-    .chat-msg.own .chat-msg-body { align-items: flex-end; }
-    .chat-msg-meta {
-      display: flex;
-      gap: 6px;
-      font-size: 10px;
-      color: var(--text-secondary);
-    }
-    .chat-msg-author { font-weight: 600; }
-    .chat-msg-text {
-      background: var(--bg-card);
-      padding: 7px 10px;
-      border-radius: 10px;
-      font-size: 12px;
-      line-height: 1.35;
-      word-wrap: break-word;
-      white-space: pre-wrap;
-    }
-    .chat-msg.own .chat-msg-text {
-      background: var(--accent);
-      color: white;
-    }
-    .chat-day-divider {
-      text-align: center;
-      font-size: 10px;
-      color: var(--text-secondary);
-      margin: 12px 0 8px;
-      position: relative;
-    }
-    .chat-day-divider::before,
-    .chat-day-divider::after {
-      content: '';
-      position: absolute;
-      top: 50%;
-      width: 35%;
-      height: 1px;
-      background: var(--border);
-    }
-    .chat-day-divider::before { left: 0; }
-    .chat-day-divider::after { right: 0; }
-
-    .chat-input-area {
-      display: flex;
-      gap: 6px;
-      padding: 10px;
-      border-top: 1px solid var(--border);
-      background: var(--bg-secondary);
-    }
-    .chat-input-area textarea {
-      flex: 1;
-      padding: 6px 10px;
-      background: var(--bg-card);
-      color: var(--text-primary);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      font-size: 12px;
-      outline: none;
-      resize: none;
-      font-family: inherit;
-      line-height: 1.35;
-    }
-    .chat-input-area textarea:focus { border-color: var(--accent); }
-
     .nav-tab {
       padding: 10px 14px;
       font-size: 12px;
@@ -762,26 +570,12 @@
       font-size: 13px;
       font-weight: 700;
       color: white;
-      position: relative;
     }
 
     .team-info { flex: 1; }
     .team-name { font-size: 13px; font-weight: 500; }
     .team-email { font-size: 11px; color: var(--text-secondary); }
     .team-tasks { font-size: 11px; color: var(--accent); }
-
-    .online-dot {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      background: var(--success);
-      position: absolute;
-      bottom: -1px;
-      right: -1px;
-      border: 2px solid var(--bg-card);
-      box-sizing: content-box;
-    }
-    .online-dot.offline { background: #6b7280; }
 
     /* Settings */
     .settings-panel { padding: 16px; }
@@ -1094,7 +888,8 @@
       <div class="user-avatar" id="userAvatar">J</div>
       <span class="user-name" id="userName">Usuario</span>
       <span class="user-role" id="userRole">miembro</span>
-      <button class="chat-toggle-btn" id="chatToggleBtn" title="Abrir chat del equipo" style="margin-left:auto;background:linear-gradient(135deg,#4ecdc4,#3aafa9);color:white;border:none;font-weight:700;font-size:11px;padding:6px 12px">
+      <button class="btn btn-ghost btn-small" id="proModeBtn" title="Modo PRO: tareas + deposito + chat en una sola pantalla" style="margin-left:auto;background:linear-gradient(135deg,#ff6b6b,#ee5a6f);color:white;border:none;font-weight:700;font-size:11px;padding:6px 12px">&#128640; MODO PRO</button>
+      <button class="chat-toggle-btn" id="chatToggleBtn" title="Abrir chat del equipo" style="background:linear-gradient(135deg,#4ecdc4,#3aafa9);color:white;border:none;font-weight:700;font-size:11px;padding:6px 12px">
         &#128172; CHAT
         <span class="tab-badge chat-unread-badge" id="chatUnreadBadge" style="display:none">0</span>
       </button>
@@ -1358,32 +1153,6 @@
       </div>
     </div>
 
-    <!-- Chat lateral del equipo -->
-    <aside class="chat-panel" id="chatPanel">
-      <div class="chat-header">
-        <span class="chat-title">&#128172; Chat del equipo</span>
-        <button class="chat-close" id="chatClose" title="Cerrar chat">&times;</button>
-      </div>
-      <div class="chat-body">
-        <div class="chat-members">
-          <div class="chat-members-title">Miembros</div>
-          <div class="chat-members-list" id="chatMembersList"></div>
-        </div>
-        <div class="chat-main">
-          <div class="chat-messages" id="chatMessages">
-            <div class="empty-state" style="padding:24px 12px">
-              <div class="empty-state-icon" style="font-size:32px">&#128172;</div>
-              <div class="empty-state-text" style="font-size:12px">Sin mensajes todavia</div>
-              <div class="empty-state-sub" style="font-size:11px">Se el primero en escribir</div>
-            </div>
-          </div>
-          <div class="chat-input-area">
-            <textarea id="chatInput" placeholder="Escribe un mensaje... (Enter para enviar)" rows="2"></textarea>
-            <button class="btn btn-primary btn-small" id="chatSendBtn">Enviar</button>
-          </div>
-        </div>
-      </div>
-    </aside>
   </div>
 
   <!-- New Project Modal -->

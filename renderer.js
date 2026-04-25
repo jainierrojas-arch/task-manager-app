@@ -23,12 +23,8 @@ let depositEntries = [];
 let depositLastViewedAt = null;
 let reminderTimer = null;
 let presenceTimer = null;
-let presenceRefreshTimer = null;
 const HEARTBEAT_INTERVAL_MS = 60 * 1000; // 60s
-const ONLINE_THRESHOLD_MS = 90 * 1000;   // 90s sin heartbeat = offline
-const PRESENCE_REFRESH_MS = 30 * 1000;   // re-render local cada 30s para reflejar transición a offline
 let chatMessages = [];
-let chatOpen = false;
 let chatLastReadAt = null; // Firestore Timestamp
 const CHAT_MESSAGE_LIMIT = 100;
 const CHAT_EXTRA_WIDTH = 320;
@@ -108,13 +104,7 @@ const el = {
   confirmPersonalProject: document.getElementById('confirmPersonalProject'),
   cancelPersonalProject: document.getElementById('cancelPersonalProject'),
   chatToggleBtn: document.getElementById('chatToggleBtn'),
-  chatPanel: document.getElementById('chatPanel'),
-  chatMessagesEl: document.getElementById('chatMessages'),
-  chatInput: document.getElementById('chatInput'),
-  chatSendBtn: document.getElementById('chatSendBtn'),
-  chatClose: document.getElementById('chatClose'),
   chatUnreadBadge: document.getElementById('chatUnreadBadge'),
-  chatMembersList: document.getElementById('chatMembersList'),
   trashList: document.getElementById('trashList'),
   trashBadge: document.getElementById('trashBadge'),
   emptyTrashBtn: document.getElementById('emptyTrashBtn'),
@@ -273,8 +263,6 @@ function showLogin() {
   if (unsubscribeChat) { unsubscribeChat(); unsubscribeChat = null; }
   if (unsubscribeDeposit) { unsubscribeDeposit(); unsubscribeDeposit = null; }
   if (presenceTimer) { clearInterval(presenceTimer); presenceTimer = null; }
-  if (presenceRefreshTimer) { clearInterval(presenceRefreshTimer); presenceRefreshTimer = null; }
-  if (chatOpen) closeChat();
 }
 
 el.logoutBtn.addEventListener('click', () => auth.signOut());
@@ -321,13 +309,12 @@ function subscribeToData() {
 
   unsubscribeUsers = db.collection('users').onSnapshot((snapshot) => {
     teamMembers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const me = teamMembers.find(m => m.id === currentUser.uid);
+    if (me) chatLastReadAt = me.chatLastReadAt || null;
     renderAssignSelect();
     renderTeam();
-    renderChatMembers();
-    // Re-renderizar tareas y chat para que los colores asignados por miembro
-    // se actualicen cuando teamMembers termina de cargar despues de las tareas
     if (tasks.length > 0) renderAll();
-    if (chatOpen) renderChatMessages();
+    renderChatBadge();
   });
 
   unsubscribePersonal = db.collection('personalTasks')
@@ -345,10 +332,6 @@ function subscribeToData() {
     .limit(CHAT_MESSAGE_LIMIT)
     .onSnapshot((snapshot) => {
       chatMessages = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).reverse();
-      if (chatOpen) {
-        renderChatMessages();
-        markChatAsRead();
-      }
       renderChatBadge();
     });
 
@@ -1652,10 +1635,6 @@ function startPresenceHeartbeat() {
   pulsePresence();
   if (presenceTimer) clearInterval(presenceTimer);
   presenceTimer = setInterval(pulsePresence, HEARTBEAT_INTERVAL_MS);
-  if (presenceRefreshTimer) clearInterval(presenceRefreshTimer);
-  presenceRefreshTimer = setInterval(() => {
-    try { renderChatMembers(); } catch (e) {}
-  }, PRESENCE_REFRESH_MS);
   // Best-effort: marcar offline al cerrar la ventana
   window.addEventListener('beforeunload', () => {
     if (!currentUser) return;
@@ -1665,42 +1644,6 @@ function startPresenceHeartbeat() {
       });
     } catch (e) {}
   });
-}
-
-function isOnline(member) {
-  if (!member || !member.lastSeen) return false;
-  const last = member.lastSeen.toDate ? member.lastSeen.toDate().getTime() : new Date(member.lastSeen).getTime();
-  return (Date.now() - last) < ONLINE_THRESHOLD_MS;
-}
-
-function renderChatMembers() {
-  if (!el.chatMembersList) return;
-  if (!teamMembers.length) {
-    el.chatMembersList.innerHTML = '<div style="font-size:11px;color:var(--text-secondary);padding:8px;text-align:center">Sin miembros</div>';
-    return;
-  }
-  // Orden: yo primero, despues online primero, despues alfabetico
-  const sorted = [...teamMembers].sort((a, b) => {
-    if (a.id === currentUser.uid) return -1;
-    if (b.id === currentUser.uid) return 1;
-    const ao = isOnline(a) ? 0 : 1;
-    const bo = isOnline(b) ? 0 : 1;
-    if (ao !== bo) return ao - bo;
-    return (a.name || '').localeCompare(b.name || '');
-  });
-  let html = '';
-  sorted.forEach((m) => {
-    const color = getUserColor(m.id);
-    const online = isOnline(m);
-    const isMe = m.id === currentUser.uid;
-    const titleTxt = online ? 'En linea' : 'Desconectado';
-    html += `
-      <div class="chat-member-item" title="${esc(m.name)} - ${titleTxt}">
-        <div class="team-avatar" style="background:${color}">${(m.name || '?').charAt(0).toUpperCase()}<span class="online-dot${online ? '' : ' offline'}"></span></div>
-        <span class="chat-member-name${online ? '' : ' offline'}">${esc(m.name || '')}${isMe ? ' (tu)' : ''}</span>
-      </div>`;
-  });
-  el.chatMembersList.innerHTML = html;
 }
 
 // ===== DEPOSITO: SEED CATEGORIAS DEFAULT =====
@@ -3403,109 +3346,12 @@ document.getElementById('calTaskConfirm').addEventListener('click', async () => 
   document.getElementById('calendarTaskModal').classList.remove('active');
 });
 
-// ===== CHAT GRUPAL =====
+// ===== CHAT BADGE (mensajes no leidos en boton de barra superior) =====
 function chatTimestampToDate(ts) {
   if (!ts) return null;
   if (ts.toDate) return ts.toDate();
   if (ts.seconds) return new Date(ts.seconds * 1000);
   return new Date(ts);
-}
-
-function formatChatTime(ts) {
-  const d = chatTimestampToDate(ts);
-  if (!d) return '';
-  const hh = d.getHours().toString().padStart(2, '0');
-  const mm = d.getMinutes().toString().padStart(2, '0');
-  return `${hh}:${mm}`;
-}
-
-function chatDayLabel(date) {
-  if (!date) return '';
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const d = new Date(date); d.setHours(0, 0, 0, 0);
-  const diffDays = Math.round((today - d) / (24 * 3600 * 1000));
-  if (diffDays === 0) return 'Hoy';
-  if (diffDays === 1) return 'Ayer';
-  return d.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
-}
-
-// Trackeo de mensajes ya renderizados en el DOM para append-only y evitar flicker
-const renderedChatIds = new Set();
-let lastChatDayKey = null;
-
-function chatMessageHtml(m) {
-  const own = m.authorId === currentUser.uid;
-  const color = getUserColor(m.authorId);
-  const initial = (m.authorName || '?').charAt(0).toUpperCase();
-  const time = formatChatTime(m.createdAt);
-  const author = own ? 'Tu' : esc(m.authorName || 'Usuario');
-  return `
-    <div class="chat-msg ${own ? 'own' : ''}" data-msg-id="${esc(m.id)}">
-      <div class="chat-msg-avatar" style="background:${color}">${initial}</div>
-      <div class="chat-msg-body">
-        <div class="chat-msg-meta">
-          <span class="chat-msg-author" style="color:${color}">${author}</span>
-          <span>${time}</span>
-        </div>
-        <div class="chat-msg-text">${esc(m.text)}</div>
-      </div>
-    </div>`;
-}
-
-function renderChatMessages() {
-  const container = el.chatMessagesEl;
-  if (!container) return;
-  if (chatMessages.length === 0) {
-    container.innerHTML = `
-      <div class="empty-state" style="padding:24px 12px">
-        <div class="empty-state-icon" style="font-size:32px">&#128172;</div>
-        <div class="empty-state-text" style="font-size:12px">Sin mensajes todavia</div>
-        <div class="empty-state-sub" style="font-size:11px">Se el primero en escribir</div>
-      </div>`;
-    renderedChatIds.clear();
-    lastChatDayKey = null;
-    return;
-  }
-
-  // Append-only: si todos los mensajes existentes ya estan en el DOM,
-  // solo agregamos los nuevos al final (evita flicker del re-render completo)
-  const newMessages = chatMessages.filter(m => !renderedChatIds.has(m.id));
-  const existingMessages = chatMessages.filter(m => renderedChatIds.has(m.id));
-  const allExistingStillThere = existingMessages.length === renderedChatIds.size;
-
-  if (renderedChatIds.size > 0 && newMessages.length > 0 && allExistingStillThere) {
-    let html = '';
-    newMessages.forEach(m => {
-      const d = chatTimestampToDate(m.createdAt);
-      const dayKey = d ? d.toDateString() : 'pending';
-      if (dayKey !== lastChatDayKey) {
-        html += `<div class="chat-day-divider">${d ? chatDayLabel(d) : 'Enviando...'}</div>`;
-        lastChatDayKey = dayKey;
-      }
-      html += chatMessageHtml(m);
-      renderedChatIds.add(m.id);
-    });
-    container.insertAdjacentHTML('beforeend', html);
-    container.scrollTop = container.scrollHeight;
-    return;
-  }
-
-  // Re-render completo (primer render o cambios en mensajes existentes)
-  renderedChatIds.clear();
-  lastChatDayKey = null;
-  let html = '';
-  chatMessages.forEach(m => {
-    const d = chatTimestampToDate(m.createdAt);
-    const dayKey = d ? d.toDateString() : 'pending';
-    if (dayKey !== lastChatDayKey) {
-      html += `<div class="chat-day-divider">${d ? chatDayLabel(d) : 'Enviando...'}</div>`;
-      lastChatDayKey = dayKey;
-    }
-    html += chatMessageHtml(m);
-    renderedChatIds.add(m.id);
-  });
-  container.innerHTML = html;
-  container.scrollTop = container.scrollHeight;
 }
 
 function countUnreadChat() {
@@ -3521,7 +3367,7 @@ function countUnreadChat() {
 function renderChatBadge() {
   if (!el.chatUnreadBadge) return;
   const n = countUnreadChat();
-  if (n <= 0 || chatOpen) {
+  if (n <= 0) {
     el.chatUnreadBadge.style.display = 'none';
     return;
   }
@@ -3529,69 +3375,21 @@ function renderChatBadge() {
   el.chatUnreadBadge.style.display = 'inline-flex';
 }
 
-async function markChatAsRead() {
-  if (!currentUser) return;
-  const now = firebase.firestore.Timestamp.now();
-  chatLastReadAt = now;
-  try {
-    await db.collection('users').doc(currentUser.uid).update({ chatLastReadAt: now });
-  } catch (e) { /* ignore */ }
-  renderChatBadge();
-}
-
-async function openChat() {
-  if (chatOpen) return;
-  chatOpen = true;
-  try { await window.api.chatExpandWindow(CHAT_EXTRA_WIDTH); } catch (e) { /* ignore */ }
-  el.chatPanel.classList.add('open');
-  el.chatToggleBtn.classList.add('active');
-  // Forzar re-render limpio al abrir (asegura dia divisores correctos y scroll al final)
-  renderedChatIds.clear();
-  lastChatDayKey = null;
-  renderChatMessages();
-  markChatAsRead();
-  setTimeout(() => el.chatInput && el.chatInput.focus(), 200);
-}
-
-async function closeChat() {
-  if (!chatOpen) return;
-  chatOpen = false;
-  el.chatPanel.classList.remove('open');
-  el.chatToggleBtn.classList.remove('active');
-  try { await window.api.chatCollapseWindow(); } catch (e) { /* ignore */ }
-  renderChatBadge();
-}
-
-async function sendChatMessage() {
-  if (!el.chatInput) return;
-  const text = el.chatInput.value.trim();
-  if (!text) return;
-  el.chatInput.value = '';
-  try {
-    await db.collection('chatMessages').add({
-      text,
-      authorId: currentUser.uid,
-      authorName: currentUserData.name,
-      createdAt: firebase.firestore.FieldValue.serverTimestamp()
-    });
-  } catch (e) {
-    console.error('Error enviando chat:', e);
-    el.chatInput.value = text;
-  }
-}
-
 if (el.chatToggleBtn) {
-  el.chatToggleBtn.addEventListener('click', () => {
-    if (chatOpen) closeChat(); else openChat();
+  el.chatToggleBtn.addEventListener('click', async () => {
+    try { await window.api.toggleChat(); } catch (e) { console.error(e); }
   });
 }
-if (el.chatClose) el.chatClose.addEventListener('click', closeChat);
-if (el.chatSendBtn) el.chatSendBtn.addEventListener('click', sendChatMessage);
-if (el.chatInput) {
-  el.chatInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendChatMessage();
-    }
+
+const proModeBtn = document.getElementById('proModeBtn');
+if (proModeBtn) {
+  proModeBtn.addEventListener('click', async () => {
+    try {
+      const active = await window.api.toggleProMode();
+      proModeBtn.style.background = active
+        ? 'linear-gradient(135deg,#2ed573,#1aaf4a)'
+        : 'linear-gradient(135deg,#ff6b6b,#ee5a6f)';
+      proModeBtn.innerHTML = active ? '&#10006; SALIR PRO' : '&#128640; MODO PRO';
+    } catch (e) { console.error(e); }
   });
 }

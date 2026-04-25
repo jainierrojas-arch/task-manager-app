@@ -4,5 +4,6 @@ contextBridge.exposeInMainWorld('api', {
   minimizeWindow: () => ipcRenderer.invoke('deposit-minimize'),
   closeWindow: () => ipcRenderer.invoke('deposit-close'),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
-  fetchOgData: (url) => ipcRenderer.invoke('fetch-og-data', url)
+  fetchOgData: (url) => ipcRenderer.invoke('fetch-og-data', url),
+  onSetViewMode: (callback) => ipcRenderer.on('deposit-set-view-mode', (_, payload) => callback(payload))
 });
