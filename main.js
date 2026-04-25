@@ -722,14 +722,15 @@ function registerIpcHandlers() {
     return !!(depositWindow && !depositWindow.isDestroyed() && depositWindow.isVisible());
   });
 
-  // Fetch Open Graph image / metadata para preview tipo WhatsApp en el deposito
-  ipcMain.handle('fetch-og-data', async (_, url) => {
-    if (!url || typeof url !== 'string' || !/^https?:\/\//i.test(url)) {
-      return { image: null, title: null, description: null };
-    }
+  // ===== Open Graph fetcher =====
+  // Estrategia en cascada para extraer imagen real del primer frame de un link:
+  //   1) HTTP simple con User-Agent de Facebook bot (rapido, ~95% de sitios)
+  //   2) Para Instagram: probar /embed/captioned/ que es publico y NO requiere login
+  //   3) BrowserWindow oculto con Chromium real (carga JS, maneja redirecciones de login)
+  function fetchOgViaHttp(url, userAgent) {
     return new Promise((resolve) => {
-      const httpLib = require(url.startsWith('https') ? 'https' : 'http');
       let redirectsLeft = 5;
+      const ua = userAgent || 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)';
       const fetchUrl = (u) => {
         try {
           const parsed = new URL(u);
@@ -739,12 +740,11 @@ function registerIpcHandlers() {
             port: parsed.port,
             path: parsed.pathname + parsed.search,
             headers: {
-              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'User-Agent': ua,
               'Accept': 'text/html,application/xhtml+xml',
               'Accept-Language': 'es,en;q=0.9'
             }
           }, (res) => {
-            // Redireccion
             if ((res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 303 || res.statusCode === 307) && res.headers.location && redirectsLeft > 0) {
               redirectsLeft--;
               const next = new URL(res.headers.location, u).href;
@@ -756,7 +756,7 @@ function registerIpcHandlers() {
               return resolve({ image: null, title: null, description: null });
             }
             let html = '';
-            const maxBytes = 250 * 1024;
+            const maxBytes = 400 * 1024;
             res.setEncoding('utf8');
             res.on('data', chunk => {
               html += chunk;
@@ -766,11 +766,16 @@ function registerIpcHandlers() {
               const findMeta = (prop) => {
                 const re1 = new RegExp(`<meta\\s+(?:property|name)=["']${prop}["']\\s+content=["']([^"']+)["']`, 'i');
                 const re2 = new RegExp(`<meta\\s+content=["']([^"']+)["']\\s+(?:property|name)=["']${prop}["']`, 'i');
-                const m1 = html.match(re1) || html.match(re2);
-                return m1 ? m1[1] : null;
+                const m = html.match(re1) || html.match(re2);
+                return m ? m[1] : null;
               };
+              // Para Instagram embed: el thumbnail viene como <img class="EmbeddedMediaImage" src="...">
+              let embedImg = null;
+              const embedMatch = html.match(/<img[^>]+class=["'][^"']*EmbeddedMediaImage[^"']*["'][^>]+src=["']([^"']+)["']/i)
+                || html.match(/<img[^>]+src=["']([^"']+)["'][^>]+class=["'][^"']*EmbeddedMediaImage[^"']*["']/i);
+              if (embedMatch) embedImg = embedMatch[1];
               resolve({
-                image: findMeta('og:image') || findMeta('twitter:image'),
+                image: findMeta('og:image') || findMeta('twitter:image') || embedImg,
                 title: findMeta('og:title') || findMeta('twitter:title'),
                 description: findMeta('og:description') || findMeta('twitter:description')
               });
@@ -778,13 +783,98 @@ function registerIpcHandlers() {
             res.on('error', () => resolve({ image: null, title: null, description: null }));
           });
           req.on('error', () => resolve({ image: null, title: null, description: null }));
-          req.setTimeout(6000, () => { try { req.destroy(); } catch (_) {} resolve({ image: null, title: null, description: null }); });
+          req.setTimeout(7000, () => { try { req.destroy(); } catch (_) {} resolve({ image: null, title: null, description: null }); });
         } catch (e) {
           resolve({ image: null, title: null, description: null });
         }
       };
       fetchUrl(url);
     });
+  }
+
+  function fetchOgViaBrowser(url) {
+    // Carga la pagina en un BrowserWindow oculto y extrae meta tags despues de que JS haya corrido.
+    return new Promise((resolve) => {
+      let win = null;
+      let done = false;
+      const cleanup = () => { try { if (win && !win.isDestroyed()) win.close(); } catch (_) {} };
+      const finish = (data) => {
+        if (done) return; done = true;
+        cleanup();
+        resolve(data || { image: null, title: null, description: null });
+      };
+      try {
+        win = new BrowserWindow({
+          show: false,
+          width: 1280,
+          height: 900,
+          webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true,
+            sandbox: true,
+            partition: 'persist:og-fetcher'
+          }
+        });
+        const timeout = setTimeout(() => finish(null), 14000);
+        const extract = async () => {
+          try {
+            const data = await win.webContents.executeJavaScript(`
+              (() => {
+                const get = (sel) => { const el = document.querySelector(sel); return el ? el.getAttribute('content') : null; };
+                let img = get('meta[property="og:image"]') || get('meta[name="twitter:image"]');
+                if (!img) {
+                  const embedded = document.querySelector('img.EmbeddedMediaImage, img[src*="cdninstagram"], video[poster]');
+                  if (embedded) img = embedded.getAttribute('src') || embedded.getAttribute('poster');
+                }
+                return {
+                  image: img,
+                  title: get('meta[property="og:title"]') || get('meta[name="twitter:title"]') || document.title,
+                  description: get('meta[property="og:description"]') || get('meta[name="twitter:description"]')
+                };
+              })()
+            `, true);
+            clearTimeout(timeout);
+            finish(data);
+          } catch (e) {
+            clearTimeout(timeout);
+            finish(null);
+          }
+        };
+        win.webContents.once('did-finish-load', () => setTimeout(extract, 800));
+        win.webContents.once('did-fail-load', () => { clearTimeout(timeout); finish(null); });
+        win.loadURL(url, {
+          userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }).catch(() => { finish(null); });
+      } catch (e) {
+        finish(null);
+      }
+    });
+  }
+
+  ipcMain.handle('fetch-og-data', async (_, url) => {
+    if (!url || typeof url !== 'string' || !/^https?:\/\//i.test(url)) {
+      return { image: null, title: null, description: null };
+    }
+    // Paso 1: HTTP simple con UA de bot
+    let result = await fetchOgViaHttp(url);
+    if (result && result.image) return result;
+    // Paso 2: Instagram - probar embed publico
+    const igMatch = url.match(/instagram\.com\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
+    if (igMatch) {
+      const embedUrl = `https://www.instagram.com/p/${igMatch[1]}/embed/captioned/`;
+      const embedResult = await fetchOgViaHttp(embedUrl);
+      if (embedResult && embedResult.image) {
+        return { ...result, ...embedResult };
+      }
+    }
+    // Paso 3: BrowserWindow oculto con Chromium real
+    try {
+      const browserResult = await fetchOgViaBrowser(url);
+      if (browserResult && browserResult.image) {
+        return { ...result, ...browserResult };
+      }
+    } catch (_) {}
+    return result;
   });
   ipcMain.handle('deposit-minimize', () => {
     if (depositWindow) depositWindow.minimize();

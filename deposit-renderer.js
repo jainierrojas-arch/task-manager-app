@@ -784,15 +784,18 @@ function bindEntryHandlers(area) {
   });
 }
 
-// Tracking de fetches en curso para no repetir
+// Tracking de fetches en curso para no repetir DENTRO de esta sesion.
+// Reintenta entries con coverImage=null en cada arranque por si mejoramos el
+// fetcher (asi entries viejas de Instagram pueden recuperar su thumbnail).
 const ogFetchInFlight = new Set();
+const ogFetchedThisSession = new Set();
 
 async function lazyFetchCovers(visibleEntries) {
   for (const entry of visibleEntries) {
-    if (entry.coverImage !== undefined) continue; // ya intentado (incluso si es null)
+    if (entry.coverImage) continue; // ya tiene imagen real, no reintentamos
     const links = entry.links || [];
     if (links.length === 0) continue;
-    if (ogFetchInFlight.has(entry.id)) continue;
+    if (ogFetchInFlight.has(entry.id) || ogFetchedThisSession.has(entry.id)) continue;
     ogFetchInFlight.add(entry.id);
     const url = links[0].url;
     try {
@@ -801,6 +804,7 @@ async function lazyFetchCovers(visibleEntries) {
       await db.collection('depositEntries').doc(entry.id).update(update);
     } catch (e) { /* ignore */ }
     ogFetchInFlight.delete(entry.id);
+    ogFetchedThisSession.add(entry.id);
   }
 }
 
