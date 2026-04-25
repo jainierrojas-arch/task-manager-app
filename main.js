@@ -792,6 +792,53 @@ function registerIpcHandlers() {
     });
   }
 
+  function fetchOgViaMicrolink(url) {
+    // microlink.io renderiza la pagina con un navegador real server-side.
+    // Free tier: 100 requests/dia por IP. Maneja Instagram/TikTok/sitios JS-heavy
+    // que bloquean scraping desde el cliente. Es el truco que usan apps tipo
+    // WhatsApp/Slack/Discord (con sus propios servicios o el mismo microlink).
+    return new Promise((resolve) => {
+      try {
+        const https = require('https');
+        const apiUrl = `https://api.microlink.io/?url=${encodeURIComponent(url)}&audio=false&video=false&iframe=false`;
+        const parsed = new URL(apiUrl);
+        const req = https.get({
+          host: parsed.hostname,
+          path: parsed.pathname + parsed.search,
+          headers: { 'User-Agent': 'TaskManager/1.0' }
+        }, (res) => {
+          if (res.statusCode !== 200) {
+            res.resume();
+            return resolve({ image: null, title: null, description: null });
+          }
+          let body = '';
+          res.setEncoding('utf8');
+          res.on('data', c => { body += c; if (body.length > 500 * 1024) res.destroy(); });
+          res.on('end', () => {
+            try {
+              const json = JSON.parse(body);
+              if (json && json.status === 'success' && json.data) {
+                const d = json.data;
+                resolve({
+                  image: (d.image && d.image.url) || (d.logo && d.logo.url) || null,
+                  title: d.title || null,
+                  description: d.description || null
+                });
+              } else {
+                resolve({ image: null, title: null, description: null });
+              }
+            } catch (e) { resolve({ image: null, title: null, description: null }); }
+          });
+          res.on('error', () => resolve({ image: null, title: null, description: null }));
+        });
+        req.on('error', () => resolve({ image: null, title: null, description: null }));
+        req.setTimeout(10000, () => { try { req.destroy(); } catch (_) {} resolve({ image: null, title: null, description: null }); });
+      } catch (e) {
+        resolve({ image: null, title: null, description: null });
+      }
+    });
+  }
+
   function fetchOgViaBrowser(url) {
     // Carga la pagina en un BrowserWindow oculto y extrae meta tags despues de que JS haya corrido.
     return new Promise((resolve) => {
@@ -855,27 +902,45 @@ function registerIpcHandlers() {
     if (!url || typeof url !== 'string' || !/^https?:\/\//i.test(url)) {
       return { image: null, title: null, description: null };
     }
-    // Para Instagram: ir DIRECTO al embed publico (HTTP simple no devuelve nada util)
+    // Detectar redes sociales que bloquean scraping (necesitan render server-side)
+    const isInstagram = /instagram\.com\/(?:p|reel|reels|tv)\//.test(url);
+    const isTiktok = /tiktok\.com\//.test(url);
+    const isFacebook = /facebook\.com\//.test(url) || /fb\.com\//.test(url);
+    const needsMicrolink = isInstagram || isTiktok || isFacebook;
+
+    // Para redes sociales: Microlink primero (renderiza server-side, mismo
+    // truco que usan WhatsApp/Slack/Discord internamente)
+    if (needsMicrolink) {
+      const ml = await fetchOgViaMicrolink(url);
+      if (ml && ml.image) return ml;
+    }
+
+    // HTTP simple con UA de Facebook bot (sirve para ~95% de sitios normales)
+    let result = await fetchOgViaHttp(url);
+    if (result && result.image) return result;
+
+    // Para Instagram, probar embed publico como respaldo
     const igMatch = url.match(/instagram\.com\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
     if (igMatch) {
       const embedUrl = `https://www.instagram.com/p/${igMatch[1]}/embed/captioned/`;
       const embedResult = await fetchOgViaHttp(embedUrl);
       if (embedResult && embedResult.image) return embedResult;
-      // Si embed fallo, intentar BrowserWindow al embed (no al original que redirige a login)
-      const browserEmbed = await fetchOgViaBrowser(embedUrl);
-      if (browserEmbed && browserEmbed.image) return browserEmbed;
-      return embedResult || { image: null, title: null, description: null };
     }
-    // Sitios normales: HTTP simple con UA de bot funciona en ~95% de los casos
-    let result = await fetchOgViaHttp(url);
-    if (result && result.image) return result;
-    // Ultimo recurso: BrowserWindow con Chromium real (para sitios JS-heavy)
+
+    // Ultimo recurso: BrowserWindow oculto con Chromium real
     try {
       const browserResult = await fetchOgViaBrowser(url);
       if (browserResult && browserResult.image) {
         return { ...result, ...browserResult };
       }
     } catch (_) {}
+
+    // Ultimo intento: Microlink para sitios no-sociales (raro que llegue aqui)
+    if (!needsMicrolink) {
+      const ml = await fetchOgViaMicrolink(url);
+      if (ml && ml.image) return ml;
+    }
+
     return result;
   });
   ipcMain.handle('deposit-minimize', () => {
