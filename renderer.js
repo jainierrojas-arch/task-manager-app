@@ -22,6 +22,11 @@ let unsubscribeDeposit = null;
 let depositEntries = [];
 let depositLastViewedAt = null;
 let reminderTimer = null;
+let presenceTimer = null;
+let presenceRefreshTimer = null;
+const HEARTBEAT_INTERVAL_MS = 60 * 1000; // 60s
+const ONLINE_THRESHOLD_MS = 90 * 1000;   // 90s sin heartbeat = offline
+const PRESENCE_REFRESH_MS = 30 * 1000;   // re-render local cada 30s para reflejar transición a offline
 let chatMessages = [];
 let chatOpen = false;
 let chatLastReadAt = null; // Firestore Timestamp
@@ -109,6 +114,7 @@ const el = {
   chatSendBtn: document.getElementById('chatSendBtn'),
   chatClose: document.getElementById('chatClose'),
   chatUnreadBadge: document.getElementById('chatUnreadBadge'),
+  chatMembersList: document.getElementById('chatMembersList'),
   trashList: document.getElementById('trashList'),
   trashBadge: document.getElementById('trashBadge'),
   emptyTrashBtn: document.getElementById('emptyTrashBtn'),
@@ -247,6 +253,7 @@ function showApp() {
   renderPersonalProjectSelect();
   setupProjectInteractionTracking();
   ensureDefaultDepositCategories();
+  startPresenceHeartbeat();
 
   subscribeToData();
   initTelegramHandlers();
@@ -265,6 +272,8 @@ function showLogin() {
   if (unsubscribeUsers) unsubscribeUsers();
   if (unsubscribeChat) { unsubscribeChat(); unsubscribeChat = null; }
   if (unsubscribeDeposit) { unsubscribeDeposit(); unsubscribeDeposit = null; }
+  if (presenceTimer) { clearInterval(presenceTimer); presenceTimer = null; }
+  if (presenceRefreshTimer) { clearInterval(presenceRefreshTimer); presenceRefreshTimer = null; }
   if (chatOpen) closeChat();
 }
 
@@ -314,6 +323,7 @@ function subscribeToData() {
     teamMembers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     renderAssignSelect();
     renderTeam();
+    renderChatMembers();
     // Re-renderizar tareas y chat para que los colores asignados por miembro
     // se actualicen cuando teamMembers termina de cargar despues de las tareas
     if (tasks.length > 0) renderAll();
@@ -1626,6 +1636,71 @@ async function approveTask(taskId) {
       showArchiveDepositModal(task);
     }
   }
+}
+
+// ===== PRESENCIA (online/offline) =====
+async function pulsePresence() {
+  if (!currentUser) return;
+  try {
+    await db.collection('users').doc(currentUser.uid).update({
+      lastSeen: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  } catch (e) { /* ignore */ }
+}
+
+function startPresenceHeartbeat() {
+  pulsePresence();
+  if (presenceTimer) clearInterval(presenceTimer);
+  presenceTimer = setInterval(pulsePresence, HEARTBEAT_INTERVAL_MS);
+  if (presenceRefreshTimer) clearInterval(presenceRefreshTimer);
+  presenceRefreshTimer = setInterval(() => {
+    try { renderChatMembers(); } catch (e) {}
+  }, PRESENCE_REFRESH_MS);
+  // Best-effort: marcar offline al cerrar la ventana
+  window.addEventListener('beforeunload', () => {
+    if (!currentUser) return;
+    try {
+      db.collection('users').doc(currentUser.uid).update({
+        lastSeen: new Date(0) // timestamp viejo => offline
+      });
+    } catch (e) {}
+  });
+}
+
+function isOnline(member) {
+  if (!member || !member.lastSeen) return false;
+  const last = member.lastSeen.toDate ? member.lastSeen.toDate().getTime() : new Date(member.lastSeen).getTime();
+  return (Date.now() - last) < ONLINE_THRESHOLD_MS;
+}
+
+function renderChatMembers() {
+  if (!el.chatMembersList) return;
+  if (!teamMembers.length) {
+    el.chatMembersList.innerHTML = '<div style="font-size:11px;color:var(--text-secondary);padding:8px;text-align:center">Sin miembros</div>';
+    return;
+  }
+  // Orden: yo primero, despues online primero, despues alfabetico
+  const sorted = [...teamMembers].sort((a, b) => {
+    if (a.id === currentUser.uid) return -1;
+    if (b.id === currentUser.uid) return 1;
+    const ao = isOnline(a) ? 0 : 1;
+    const bo = isOnline(b) ? 0 : 1;
+    if (ao !== bo) return ao - bo;
+    return (a.name || '').localeCompare(b.name || '');
+  });
+  let html = '';
+  sorted.forEach((m) => {
+    const color = getUserColor(m.id);
+    const online = isOnline(m);
+    const isMe = m.id === currentUser.uid;
+    const titleTxt = online ? 'En linea' : 'Desconectado';
+    html += `
+      <div class="chat-member-item" title="${esc(m.name)} - ${titleTxt}">
+        <div class="team-avatar" style="background:${color}">${(m.name || '?').charAt(0).toUpperCase()}<span class="online-dot${online ? '' : ' offline'}"></span></div>
+        <span class="chat-member-name${online ? '' : ' offline'}">${esc(m.name || '')}${isMe ? ' (tu)' : ''}</span>
+      </div>`;
+  });
+  el.chatMembersList.innerHTML = html;
 }
 
 // ===== DEPOSITO: SEED CATEGORIAS DEFAULT =====

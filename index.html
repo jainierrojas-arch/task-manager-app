@@ -319,7 +319,7 @@
       top: 38px;
       right: 0;
       bottom: 0;
-      width: 320px;
+      width: 460px;
       background: var(--bg-secondary);
       border-left: 1px solid var(--border);
       display: flex;
@@ -329,6 +329,65 @@
       z-index: 50;
     }
     .chat-panel.open { transform: translateX(0); }
+
+    .chat-body {
+      flex: 1;
+      display: flex;
+      min-height: 0;
+    }
+    .chat-members {
+      width: 140px;
+      flex-shrink: 0;
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-secondary);
+    }
+    .chat-members-title {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-secondary);
+      padding: 8px 10px 6px;
+      border-bottom: 1px solid var(--border);
+    }
+    .chat-members-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 4px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+    .chat-members-list::-webkit-scrollbar { width: 6px; }
+    .chat-members-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    .chat-member-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 8px;
+      border-radius: 6px;
+      cursor: default;
+    }
+    .chat-member-item:hover { background: var(--bg-card); }
+    .chat-member-item .team-avatar {
+      width: 24px;
+      height: 24px;
+      font-size: 11px;
+    }
+    .chat-member-name {
+      font-size: 11px;
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .chat-member-name.offline { color: var(--text-secondary); }
+    .chat-main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
 
     .chat-header {
       display: flex;
@@ -703,6 +762,7 @@
       font-size: 13px;
       font-weight: 700;
       color: white;
+      position: relative;
     }
 
     .team-info { flex: 1; }
@@ -711,11 +771,17 @@
     .team-tasks { font-size: 11px; color: var(--accent); }
 
     .online-dot {
-      width: 8px;
-      height: 8px;
+      width: 10px;
+      height: 10px;
       border-radius: 50%;
       background: var(--success);
+      position: absolute;
+      bottom: -1px;
+      right: -1px;
+      border: 2px solid var(--bg-card);
+      box-sizing: content-box;
     }
+    .online-dot.offline { background: #6b7280; }
 
     /* Settings */
     .settings-panel { padding: 16px; }
@@ -1028,7 +1094,11 @@
       <div class="user-avatar" id="userAvatar">J</div>
       <span class="user-name" id="userName">Usuario</span>
       <span class="user-role" id="userRole">miembro</span>
-      <button class="btn btn-ghost btn-small" id="cloudBtn" title="Abrir la nube de proyectos en el navegador" style="margin-left:auto;background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-weight:600;font-size:11px;padding:6px 12px">&#9729; NUBE DE PROYECTO</button>
+      <button class="chat-toggle-btn" id="chatToggleBtn" title="Abrir chat del equipo" style="margin-left:auto;background:linear-gradient(135deg,#4ecdc4,#3aafa9);color:white;border:none;font-weight:700;font-size:11px;padding:6px 12px">
+        &#128172; CHAT
+        <span class="tab-badge chat-unread-badge" id="chatUnreadBadge" style="display:none">0</span>
+      </button>
+      <button class="btn btn-ghost btn-small" id="cloudBtn" title="Abrir la nube de proyectos en el navegador" style="background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-weight:600;font-size:11px;padding:6px 12px">&#9729; NUBE DE PROYECTO</button>
       <button class="btn btn-ghost btn-small" id="depositBtn" title="Deposito de ideas y referencias del equipo" style="background:linear-gradient(135deg,#ffd93d,#ffb84d);color:#1a1b2e;font-weight:700;font-size:11px;padding:6px 12px;position:relative;border:1px solid #ffd93d">&#128230; DEPOSITO <span id="depositUnreadBadge" style="display:none;background:#ff4757;color:#fff;font-size:10px;font-weight:700;padding:0 6px;border-radius:10px;margin-left:4px;min-width:18px;text-align:center;box-shadow:0 0 6px rgba(255,71,87,0.6)"></span></button>
       <button class="logout-btn" id="logoutBtn" title="Cerrar sesion">&#x2716;</button>
     </div>
@@ -1075,10 +1145,6 @@
       <button class="pin-toggle-btn" id="btnPin" title="Fijar ventana siempre visible">
         <span class="pin-dot"></span>
         FIJAR Ventana
-      </button>
-      <button class="chat-toggle-btn" id="chatToggleBtn" title="Abrir chat del equipo">
-        &#128172; Chat
-        <span class="tab-badge chat-unread-badge" id="chatUnreadBadge" style="display:none">0</span>
       </button>
       <div class="nav-tab" data-tab="settings">
         &#9881; Config
@@ -1298,16 +1364,24 @@
         <span class="chat-title">&#128172; Chat del equipo</span>
         <button class="chat-close" id="chatClose" title="Cerrar chat">&times;</button>
       </div>
-      <div class="chat-messages" id="chatMessages">
-        <div class="empty-state" style="padding:24px 12px">
-          <div class="empty-state-icon" style="font-size:32px">&#128172;</div>
-          <div class="empty-state-text" style="font-size:12px">Sin mensajes todavia</div>
-          <div class="empty-state-sub" style="font-size:11px">Se el primero en escribir</div>
+      <div class="chat-body">
+        <div class="chat-members">
+          <div class="chat-members-title">Miembros</div>
+          <div class="chat-members-list" id="chatMembersList"></div>
         </div>
-      </div>
-      <div class="chat-input-area">
-        <textarea id="chatInput" placeholder="Escribe un mensaje... (Enter para enviar)" rows="2"></textarea>
-        <button class="btn btn-primary btn-small" id="chatSendBtn">Enviar</button>
+        <div class="chat-main">
+          <div class="chat-messages" id="chatMessages">
+            <div class="empty-state" style="padding:24px 12px">
+              <div class="empty-state-icon" style="font-size:32px">&#128172;</div>
+              <div class="empty-state-text" style="font-size:12px">Sin mensajes todavia</div>
+              <div class="empty-state-sub" style="font-size:11px">Se el primero en escribir</div>
+            </div>
+          </div>
+          <div class="chat-input-area">
+            <textarea id="chatInput" placeholder="Escribe un mensaje... (Enter para enviar)" rows="2"></textarea>
+            <button class="btn btn-primary btn-small" id="chatSendBtn">Enviar</button>
+          </div>
+        </div>
       </div>
     </aside>
   </div>
