@@ -473,10 +473,10 @@ function registerIpcHandlers() {
     return true;
   });
 
-  // Deposito: ventana pegada al lado con toggle
+  // Deposito: toggle. Devuelve true si quedo visible, false si se oculto/cerro.
   ipcMain.handle('toggle-deposit-window', () => {
     toggleDepositWindow();
-    return true;
+    return !!(depositWindow && !depositWindow.isDestroyed() && depositWindow.isVisible());
   });
 
   // Fetch Open Graph image / metadata para preview tipo WhatsApp en el deposito

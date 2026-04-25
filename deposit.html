@@ -152,6 +152,35 @@
       padding: 1px 7px;
       border-radius: 8px;
     }
+    /* Globo rojo de "ideas nuevas" */
+    .new-badge {
+      background: #ff4757;
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 9px;
+      min-width: 18px;
+      text-align: center;
+      box-shadow: 0 0 6px rgba(255,71,87,0.6);
+      animation: pulseRed 2s ease-in-out infinite;
+    }
+    @keyframes pulseRed {
+      0%, 100% { box-shadow: 0 0 4px rgba(255,71,87,0.5); }
+      50% { box-shadow: 0 0 10px rgba(255,71,87,0.9); }
+    }
+    .sub-card-new {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      background: #ff4757;
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 10px;
+      box-shadow: 0 0 6px rgba(255,71,87,0.6);
+    }
     .category-item .cat-delete {
       background: none;
       border: none;

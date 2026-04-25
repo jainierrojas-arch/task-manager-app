@@ -11,6 +11,26 @@ let editingEntryId = null;
 let assigningEntry = null;
 let assignMode = 'single';
 let unsubscribers = [];
+// Snapshot del timestamp "depositLastViewedAt" al cargar la sesion. Se usa para
+// marcar entries como "nuevas" en globos rojos. Solo se actualiza la marca al
+// cerrar el deposito (manejado en renderer.js de la app principal).
+let sessionLastViewedAt = null;
+
+function isNewEntry(e) {
+  if (!e || !e.createdAt) return false;
+  if (e.createdBy === (currentUser && currentUser.uid)) return false;
+  if (!sessionLastViewedAt) return true; // primera vez: todas las de otros son nuevas
+  const lastMs = sessionLastViewedAt.toDate
+    ? sessionLastViewedAt.toDate().getTime()
+    : new Date(sessionLastViewedAt).getTime();
+  const ms = e.createdAt.toDate ? e.createdAt.toDate().getTime() : new Date(e.createdAt).getTime();
+  return ms > lastMs;
+}
+
+function newCountIn(catId, subId) {
+  const arr = entriesIn(catId, subId);
+  return arr.filter(isNewEntry).length;
+}
 
 function rootCategories() { return categories.filter(c => !c.parentId); }
 function subcategoriesOf(parentId) { return categories.filter(c => c.parentId === parentId); }
@@ -82,9 +102,15 @@ auth.onAuthStateChanged((user) => {
   // Arranque no-bloqueante: datos minimos y suscripciones en paralelo
   currentUserData = { id: user.uid, name: user.email.split('@')[0], email: user.email };
   subscribeAll();
-  // Fetch completo del user doc en background (no bloquea el render)
+  // Fetch completo del user doc en background y congelar el timestamp de "ultima visita"
+  // para marcar globos de "nueva" durante esta sesion del deposito.
   db.collection('users').doc(user.uid).get().then(snap => {
-    if (snap.exists) currentUserData = { id: user.uid, ...snap.data() };
+    if (snap.exists) {
+      currentUserData = { id: user.uid, ...snap.data() };
+      sessionLastViewedAt = currentUserData.depositLastViewedAt || null;
+      renderCategories();
+      renderEntries();
+    }
   }).catch(() => {});
 });
 
@@ -153,13 +179,20 @@ function renderCategories() {
 
   let html = '';
 
+  // Helper para badge rojo de "nuevas"
+  const newBadge = (n) => n > 0
+    ? `<span class="new-badge" title="${n} idea${n === 1 ? '' : 's'} nueva${n === 1 ? '' : 's'}">${n > 99 ? '99+' : n}</span>`
+    : '';
+
   // Item especial "Todos" para categorias normales
   if (normalRoots.length > 0) {
     const totalCount = entries.filter(e => e.categoryId !== 'trabajos-finalizados').length;
+    const totalNew = entries.filter(e => e.categoryId !== 'trabajos-finalizados' && isNewEntry(e)).length;
     const active = selectedCategoryId === '__all_categories__' ? ' active' : '';
     html += `
       <div class="category-item${active}" data-all-cats="1">
         <span class="cat-name">&#128230; Todos</span>
+        ${newBadge(totalNew)}
         <span class="cat-count">${totalCount}</span>
       </div>`;
   }
@@ -167,11 +200,13 @@ function renderCategories() {
   // Seccion: Categorias normales
   normalRoots.forEach(c => {
     const count = entries.filter(e => e.categoryId === c.id).length;
+    const newCount = entries.filter(e => e.categoryId === c.id && isNewEntry(e)).length;
     const active = c.id === selectedCategoryId && !selectedSubcategoryId ? ' active' : '';
     const canDelete = !c.isDefault;
     html += `
       <div class="category-item${active}" data-id="${esc(c.id)}">
         <span class="cat-name">${esc(c.name)}</span>
+        ${newBadge(newCount)}
         <span class="cat-count">${count}</span>
         ${canDelete ? `<button class="cat-delete" data-delete="${esc(c.id)}" title="Eliminar categoria">&#10005;</button>` : ''}
       </div>`;
@@ -187,19 +222,23 @@ function renderCategories() {
   if (tfRoot) {
     const tfSubs = subcategoriesOf('trabajos-finalizados');
     const tfTotalCount = entries.filter(e => e.categoryId === 'trabajos-finalizados').length;
+    const tfTotalNew = entries.filter(e => e.categoryId === 'trabajos-finalizados' && isNewEntry(e)).length;
     const tfActive = selectedCategoryId === 'trabajos-finalizados' && !selectedSubcategoryId ? ' active' : '';
     html += `
       <div class="category-section-header">TRABAJOS FINALIZADOS</div>
       <div class="category-item${tfActive}" data-tf-root="1">
         <span class="cat-name" style="opacity:0.85">&#128230; Todos</span>
+        ${newBadge(tfTotalNew)}
         <span class="cat-count">${tfTotalCount}</span>
       </div>`;
     tfSubs.forEach(s => {
       const c = entries.filter(e => e.subcategoryId === s.id).length;
+      const cNew = entries.filter(e => e.subcategoryId === s.id && isNewEntry(e)).length;
       const sActive = selectedSubcategoryId === s.id ? ' active' : '';
       html += `
         <div class="category-item${sActive}" data-tf-sub="${esc(s.id)}" style="padding-left:18px">
           <span class="cat-name">${esc(s.name)}</span>
+          ${newBadge(cNew)}
           <span class="cat-count">${c}</span>
           <button class="cat-delete" data-delete-tf-sub="${esc(s.id)}" title="Eliminar categoria">&#10005;</button>
         </div>`;
@@ -422,9 +461,11 @@ function renderEntries() {
     let cardsHtml = '';
     normalRoots.forEach(c => {
       const count = entries.filter(e => e.categoryId === c.id).length;
+      const newCount = entries.filter(e => e.categoryId === c.id && isNewEntry(e)).length;
       const canDelete = !c.isDefault;
       cardsHtml += `
         <div class="sub-card" data-cat-card="${esc(c.id)}">
+          ${newCount > 0 ? `<span class="sub-card-new">${newCount} nueva${newCount === 1 ? '' : 's'}</span>` : ''}
           ${canDelete ? `<button class="sub-card-delete" data-delete-root-cat="${esc(c.id)}" title="Eliminar categoria">&#10005;</button>` : ''}
           <div class="sub-card-icon">&#128193;</div>
           <div class="sub-card-name">${esc(c.name)}</div>
@@ -472,8 +513,10 @@ function renderEntries() {
     let cardsHtml = '';
     // Tarjeta "Sin clasificar" siempre visible si hay ideas sin sub o si no hay subs aun
     if (unsortedCount > 0 || subs.length === 0) {
+      const unsortedNew = newCountIn(selectedCategoryId, '__unsorted__');
       cardsHtml += `
         <div class="sub-card" data-sub-id="__unsorted__">
+          ${unsortedNew > 0 ? `<span class="sub-card-new">${unsortedNew} nueva${unsortedNew === 1 ? '' : 's'}</span>` : ''}
           <div class="sub-card-icon">&#128196;</div>
           <div class="sub-card-name">Sin clasificar</div>
           <div class="sub-card-count">${unsortedCount} idea${unsortedCount === 1 ? '' : 's'}</div>
@@ -481,8 +524,10 @@ function renderEntries() {
     }
     subs.forEach(s => {
       const count = entriesIn(selectedCategoryId, s.id).length;
+      const newCount = newCountIn(selectedCategoryId, s.id);
       cardsHtml += `
         <div class="sub-card" data-sub-id="${esc(s.id)}">
+          ${newCount > 0 ? `<span class="sub-card-new">${newCount} nueva${newCount === 1 ? '' : 's'}</span>` : ''}
           <button class="sub-card-edit" data-edit-sub="${esc(s.id)}" title="Renombrar subcategoria">&#9998;</button>
           <button class="sub-card-delete" data-delete-sub="${esc(s.id)}" title="Eliminar subcategoria">&#10005;</button>
           <div class="sub-card-icon">&#128193;</div>

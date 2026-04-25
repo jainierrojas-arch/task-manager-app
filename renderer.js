@@ -247,9 +247,11 @@ if (cloudBtn) {
 const depositBtn = document.getElementById('depositBtn');
 if (depositBtn) {
   depositBtn.addEventListener('click', async () => {
-    await window.api.toggleDeposit();
-    // Marcar como visto (reset badge)
-    if (currentUser) {
+    const isVisible = await window.api.toggleDeposit();
+    // Solo actualizar la marca de "ultima visita" cuando se CIERRA el deposito.
+    // Asi los globos de "nueva idea" se mantienen visibles mientras estas dentro,
+    // y solo se reinician cuando sales y vuelves a entrar.
+    if (!isVisible && currentUser) {
       depositLastViewedAt = firebase.firestore.Timestamp.now();
       renderDepositBadge();
       db.collection('users').doc(currentUser.uid).update({
