@@ -130,18 +130,9 @@ if (el.rememberMe) {
   });
 }
 
-// Aplicar persistencia LOCAL (default) o SESSION segun el checkbox.
-// IMPORTANTE: NO se llama al iniciar la app, porque puede interferir con la
-// sesion ya persistida que Firebase intenta restaurar. Solo se aplica antes
-// del signIn cuando el user hace login manual.
-async function applyAuthPersistence() {
-  if (!firebase.auth.Auth || !firebase.auth.Auth.Persistence) return;
-  const remember = el.rememberMe ? el.rememberMe.checked : true;
-  const target = remember
-    ? firebase.auth.Auth.Persistence.LOCAL
-    : firebase.auth.Auth.Persistence.SESSION;
-  try { await auth.setPersistence(target); } catch (e) { console.warn('persistence error:', e); }
-}
+// Firebase usa LOCAL persistence por default (sesion sobrevive cierres de app).
+// No llamamos setPersistence: causaba que Firebase rechazara el signIn en algunos casos.
+// El checkbox "Mantener sesion" sirve solo para guardar el email auto-relleno.
 
 // Auto-rellenar email si lo guardamos en sesiones anteriores
 const SAVED_EMAIL_KEY = 'lastLoginEmail';
@@ -171,8 +162,6 @@ async function handleAuth() {
   if (!email || !password) { showError('Ingresa email y contrasena'); return; }
   if (isRegistering && !name) { showError('Ingresa tu nombre'); return; }
 
-  // Aplicar persistencia segun preferencia ANTES de hacer login
-  await applyAuthPersistence();
   // Guardar email para auto-rellenar la proxima vez (si la sesion se pierde)
   try {
     if (el.rememberMe && el.rememberMe.checked) {
