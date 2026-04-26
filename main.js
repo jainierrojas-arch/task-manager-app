@@ -371,12 +371,14 @@ function exitProMode() {
   proModeState = 'off';
   const prev = proModePrevBounds;
   proModePrevBounds = null;
-  if (!prev) return;
 
-  // Todas las operaciones en try/catch individuales — un fallo en chat no
-  // tumba la restauracion de main/deposito.
+  // SALIR PRO siempre deja: SOLO la ventana principal visible. Chat y deposito
+  // se ocultan por completo (independiente de si estaban abiertos antes).
+  // Cada operacion en su propio try/catch para que un fallo en una no tumbe
+  // la app entera.
   const safe = (label, fn) => { try { fn(); } catch (e) { console.error('[exitProMode] ' + label + ':', e); } };
 
+  // Restaurar minimos originales
   safe('main minSize', () => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setMinimumSize(420, 600);
   });
@@ -387,24 +389,25 @@ function exitProMode() {
     if (chatWindow && !chatWindow.isDestroyed()) chatWindow.setMinimumSize(460, 480);
   });
 
+  // Restaurar tamano/posicion de la ventana principal a como estaba antes de Pro Mode
   safe('main setBounds', () => {
-    if (mainWindow && !mainWindow.isDestroyed() && isValidBounds(prev.main)) {
+    if (mainWindow && !mainWindow.isDestroyed() && prev && isValidBounds(prev.main)) {
       mainWindow.setBounds(prev.main);
     }
   });
 
-  safe('deposit restore', () => {
-    if (!depositWindow || depositWindow.isDestroyed()) return;
-    if (isValidBounds(prev.deposit)) depositWindow.setBounds(prev.deposit);
-    if (!prev.depositWasOpen) depositWindow.hide();
-    else if (!depositWindow.isVisible()) depositWindow.show();
+  // Ocultar deposito SIEMPRE
+  safe('hide deposit', () => {
+    if (depositWindow && !depositWindow.isDestroyed() && depositWindow.isVisible()) {
+      depositWindow.hide();
+    }
   });
 
-  safe('chat restore', () => {
-    if (!chatWindow || chatWindow.isDestroyed()) return;
-    if (isValidBounds(prev.chat)) chatWindow.setBounds(prev.chat);
-    if (!prev.chatWasOpen) chatWindow.hide();
-    else if (!chatWindow.isVisible()) chatWindow.show();
+  // Ocultar chat SIEMPRE
+  safe('hide chat', () => {
+    if (chatWindow && !chatWindow.isDestroyed() && chatWindow.isVisible()) {
+      chatWindow.hide();
+    }
   });
 
   safe('deposit view restore', () => sendDepositViewMode('restore', false));
