@@ -20,6 +20,104 @@ let unsubscribeNotifQueue = null;
 let unsubscribeChat = null;
 let chatNotificationsArmed = false; // skip sonido en la primera carga
 
+// ===== TEMA DE INTERFAZ =====
+// 3 temas disponibles: 'default' (morado oscuro), 'dark' (negro puro), 'light' (claro).
+// Se guarda por usuario en localStorage. Aplicacion en tiempo real.
+const THEME_KEY = 'app-theme';
+function getTheme() {
+  try { return localStorage.getItem(THEME_KEY) || 'default'; } catch (e) { return 'default'; }
+}
+function applyTheme(theme) {
+  const valid = ['default', 'dark', 'light'];
+  if (!valid.includes(theme)) theme = 'default';
+  document.body.classList.remove('theme-default', 'theme-dark', 'theme-light');
+  document.body.classList.add(`theme-${theme}`);
+  try { localStorage.setItem(THEME_KEY, theme); } catch (e) {}
+  // Marcar el boton activo en settings
+  document.querySelectorAll('.theme-option').forEach(btn => {
+    if (btn.dataset.theme === theme) {
+      btn.style.borderColor = 'var(--accent)';
+      btn.style.background = 'rgba(108,99,255,0.1)';
+    } else {
+      btn.style.borderColor = 'var(--border)';
+      btn.style.background = '';
+    }
+  });
+}
+// Aplicar el tema guardado lo antes posible (evita flash de tema incorrecto)
+applyTheme(getTheme());
+// Wireup de los botones de seleccion de tema (cuando el DOM este listo)
+function wireThemeButtons() {
+  document.querySelectorAll('.theme-option').forEach(btn => {
+    btn.addEventListener('click', () => applyTheme(btn.dataset.theme));
+  });
+  applyTheme(getTheme()); // refresca el estilo activo
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', wireThemeButtons);
+} else {
+  wireThemeButtons();
+}
+
+// ===== "QUE HAY NUEVO" — modal de changelog tras actualizar =====
+// Mapea version -> { title, features }. Para mostrar nuevo changelog en el
+// futuro, agrega una entrada con la nueva version. Si el usuario abre la app
+// y la version actual tiene un changelog que no ha visto, se muestra el modal.
+const APP_CHANGELOG = {
+  '2.62.0': {
+    title: 'Tema personalizable y novedades',
+    features: [
+      '🎨 <strong>Selector de tema</strong>: ahora puedes elegir entre Morado oscuro, Negro puro o Claro/Blanco. Configuralo desde Configuración → Tema de la interfaz.',
+      '✉️ <strong>Mensajes directos</strong> entre miembros del equipo (click en un miembro abre chat privado).',
+      '🔔 <strong>Sonido de notificación</strong> al recibir mensajes en chat (general o privado).',
+      '🖼️ <strong>Miniatura del link en tareas</strong>: cuando se asigna una entry del depósito, la card de la tarea muestra el thumbnail del video/carrusel/etc.',
+      '📚 <strong>Botón Referencias</strong> separado del botón Tareas, con su propio contador de items.',
+      '📁 <strong>Botón Mover</strong> en cada entry del depósito para reorganizarlas entre categorías.',
+      '🔁 <strong>Botón Reutilizar</strong> en items finalizados (vuelven a Tareas por hacer).',
+      '📐 <strong>Sidebar más limpio</strong>: badges alineados en columna, números organizados.'
+    ]
+  }
+};
+// Version actual de la app (debe coincidir con package.json para que el
+// changelog se muestre solo en builds de esta version).
+const APP_CURRENT_VERSION = '2.62.0';
+const WHATS_NEW_SEEN_KEY = 'whats-new-seen-version';
+
+function maybeShowWhatsNew() {
+  const lastSeen = (() => { try { return localStorage.getItem(WHATS_NEW_SEEN_KEY); } catch (e) { return null; } })();
+  if (lastSeen === APP_CURRENT_VERSION) return;
+  const entry = APP_CHANGELOG[APP_CURRENT_VERSION];
+  if (!entry) return;
+  const titleEl = document.getElementById('whatsNewTitle');
+  const contentEl = document.getElementById('whatsNewContent');
+  const modalEl = document.getElementById('whatsNewModal');
+  if (!titleEl || !contentEl || !modalEl) return;
+  titleEl.innerHTML = `🎉 v${APP_CURRENT_VERSION} — ${entry.title}`;
+  const items = (entry.features || []).map(f => `<li style="margin-bottom:6px">${f}</li>`).join('');
+  contentEl.innerHTML = `<ul style="padding-left:18px;list-style:disc">${items}</ul>`;
+  modalEl.classList.add('active');
+}
+
+function dismissWhatsNew() {
+  try { localStorage.setItem(WHATS_NEW_SEEN_KEY, APP_CURRENT_VERSION); } catch (e) {}
+  const modalEl = document.getElementById('whatsNewModal');
+  if (modalEl) modalEl.classList.remove('active');
+}
+
+function wireWhatsNew() {
+  const btn = document.getElementById('whatsNewAccept');
+  if (btn) btn.addEventListener('click', dismissWhatsNew);
+  const modal = document.getElementById('whatsNewModal');
+  if (modal) modal.addEventListener('click', (e) => { if (e.target === modal) dismissWhatsNew(); });
+  // Mostrar modal tras un pequeno delay (cuando el resto de la UI esta lista)
+  setTimeout(maybeShowWhatsNew, 800);
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', wireWhatsNew);
+} else {
+  wireWhatsNew();
+}
+
 // Reproduce un "ding" suave de 2 notas con Web Audio API (sin archivos externos)
 function playNotificationSound() {
   try {

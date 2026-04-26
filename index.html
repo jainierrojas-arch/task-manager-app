@@ -7,7 +7,7 @@
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
-    :root {
+    :root, body.theme-default {
       --bg-primary: #1a1b2e;
       --bg-secondary: #232442;
       --bg-card: #2a2b4a;
@@ -20,6 +20,36 @@
       --danger: #ff6b6b;
       --warning: #ffd93d;
       --border: #3a3b5c;
+    }
+    /* Tema NEGRO PURO — alto contraste */
+    body.theme-dark {
+      --bg-primary: #0a0a0a;
+      --bg-secondary: #141414;
+      --bg-card: #1c1c1c;
+      --bg-hover: #262626;
+      --text-primary: #f5f5f5;
+      --text-secondary: #a0a0a0;
+      --accent: #7c6dff;
+      --accent-hover: #6a5ce8;
+      --success: #4ecdc4;
+      --danger: #ff5e5e;
+      --warning: #ffc94d;
+      --border: #2a2a2a;
+    }
+    /* Tema CLARO / BLANCO */
+    body.theme-light {
+      --bg-primary: #f7f8fb;
+      --bg-secondary: #ffffff;
+      --bg-card: #ffffff;
+      --bg-hover: #f0f1f6;
+      --text-primary: #1a1b2e;
+      --text-secondary: #5d5d75;
+      --accent: #6c63ff;
+      --accent-hover: #5a52e0;
+      --success: #2ec4b6;
+      --danger: #ff5757;
+      --warning: #f4b400;
+      --border: #d8dae3;
     }
 
     body {
@@ -1159,6 +1189,31 @@
           </div>
 
           <div class="settings-group">
+            <div class="settings-label">Tema de la interfaz</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button class="btn btn-ghost theme-option" data-theme="default" style="flex:1;min-width:100px;padding:10px;border:2px solid var(--border)">
+                <div style="display:flex;align-items:center;gap:6px;justify-content:center">
+                  <span style="display:inline-block;width:18px;height:18px;border-radius:50%;background:linear-gradient(135deg,#1a1b2e,#6c63ff);border:1px solid var(--border)"></span>
+                  Morado
+                </div>
+              </button>
+              <button class="btn btn-ghost theme-option" data-theme="dark" style="flex:1;min-width:100px;padding:10px;border:2px solid var(--border)">
+                <div style="display:flex;align-items:center;gap:6px;justify-content:center">
+                  <span style="display:inline-block;width:18px;height:18px;border-radius:50%;background:#0a0a0a;border:1px solid var(--border)"></span>
+                  Negro
+                </div>
+              </button>
+              <button class="btn btn-ghost theme-option" data-theme="light" style="flex:1;min-width:100px;padding:10px;border:2px solid var(--border)">
+                <div style="display:flex;align-items:center;gap:6px;justify-content:center">
+                  <span style="display:inline-block;width:18px;height:18px;border-radius:50%;background:#ffffff;border:1px solid var(--border)"></span>
+                  Claro
+                </div>
+              </button>
+            </div>
+            <div style="font-size:11px;color:var(--text-secondary);margin-top:8px">El tema se guarda por usuario y se aplica al instante.</div>
+          </div>
+
+          <div class="settings-group">
             <div class="settings-label">Proyectos</div>
             <button class="btn btn-primary" id="newProjectBtn" style="width:100%">+ Nuevo Proyecto</button>
             <div id="projectListSettings" style="margin-top:12px"></div>
@@ -1189,6 +1244,17 @@
       </div>
     </div>
 
+  </div>
+
+  <!-- "Que hay nuevo" modal: aparece tras actualizar la app a una version con changelog -->
+  <div class="modal-overlay" id="whatsNewModal">
+    <div class="modal" style="max-width:480px">
+      <div class="modal-title" id="whatsNewTitle">&#127881; Nueva version disponible</div>
+      <div id="whatsNewContent" style="font-size:13px;color:var(--text-secondary);line-height:1.6;max-height:50vh;overflow-y:auto;margin-bottom:14px"></div>
+      <div class="modal-buttons">
+        <button class="btn btn-primary" id="whatsNewAccept" style="width:100%">Aceptar</button>
+      </div>
+    </div>
   </div>
 
   <!-- New Project Modal -->
