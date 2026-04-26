@@ -135,12 +135,24 @@ auth.onAuthStateChanged((user) => {
 });
 
 async function ensureDefaultCategories() {
+  // Solo Trabajos Finalizados y Referencias son predeterminadas / no borrables.
+  // Reels y Carruseles eran defaults antes pero ahora son categorias normales
+  // que el usuario puede borrar libremente.
   const defaults = [
-    { id: 'reels', name: 'Reels' },
-    { id: 'carruseles', name: 'Carruseles' },
     { id: 'trabajos-finalizados', name: 'Trabajos Finalizados' },
     { id: 'referencias', name: 'Referencias' }
   ];
+  // Migracion: si existen reels/carruseles con isDefault=true, quitarles el
+  // flag para que se puedan borrar.
+  const legacyDefaults = ['reels', 'carruseles'];
+  for (const id of legacyDefaults) {
+    const existing = categories.find(c => c.id === id);
+    if (existing && existing.isDefault) {
+      try {
+        await db.collection('depositCategories').doc(id).update({ isDefault: false });
+      } catch (e) { /* ignore */ }
+    }
+  }
   const existingIds = new Set(categories.map(c => c.id));
   const toCreate = defaults.filter(d => !existingIds.has(d.id) && !defaultCatsInFlight.has(d.id));
   await Promise.all(toCreate.map(async d => {
@@ -215,8 +227,10 @@ function renderCategories() {
     html += `
       <div class="category-item${active}" data-all-cats="1">
         <span class="cat-name">&#128230; Todos</span>
-        ${pendingBadge(totalPending)}
-        <span class="cat-count">${totalCount}</span>
+        <span class="cat-badges">
+          ${pendingBadge(totalPending)}
+          <span class="cat-count">${totalCount}</span>
+        </span>
       </div>`;
   }
 
@@ -229,9 +243,11 @@ function renderCategories() {
     html += `
       <div class="category-item${active}" data-id="${esc(c.id)}">
         <span class="cat-name">${esc(c.name)}</span>
-        ${pendingBadge(pending)}
-        <span class="cat-count">${count}</span>
-        ${canDelete ? `<button class="cat-delete" data-delete="${esc(c.id)}" title="Eliminar categoria">&#10005;</button>` : ''}
+        <span class="cat-badges">
+          ${pendingBadge(pending)}
+          <span class="cat-count">${count}</span>
+          ${canDelete ? `<button class="cat-delete" data-delete="${esc(c.id)}" title="Eliminar categoria">&#10005;</button>` : ''}
+        </span>
       </div>`;
   });
 
@@ -252,8 +268,10 @@ function renderCategories() {
       <div class="category-section-header">TRABAJOS FINALIZADOS</div>
       <div class="category-item${tfActive}" data-tf-root="1">
         <span class="cat-name" style="opacity:0.85">&#128230; Todos</span>
-        ${pendingBadge(tfTotalFinalized)}
-        <span class="cat-count">${tfTotalCount}</span>
+        <span class="cat-badges">
+          ${pendingBadge(tfTotalFinalized)}
+          <span class="cat-count">${tfTotalCount}</span>
+        </span>
       </div>`;
     tfSubs.forEach(s => {
       const c = entries.filter(e => e.subcategoryId === s.id && e.status !== 'converted').length;
@@ -262,9 +280,11 @@ function renderCategories() {
       html += `
         <div class="category-item${sActive}" data-tf-sub="${esc(s.id)}" style="padding-left:18px">
           <span class="cat-name">${esc(s.name)}</span>
-          ${pendingBadge(cFinalized)}
-          <span class="cat-count">${c}</span>
-          <button class="cat-delete" data-delete-tf-sub="${esc(s.id)}" title="Eliminar categoria">&#10005;</button>
+          <span class="cat-badges">
+            ${pendingBadge(cFinalized)}
+            <span class="cat-count">${c}</span>
+            <button class="cat-delete" data-delete-tf-sub="${esc(s.id)}" title="Eliminar categoria">&#10005;</button>
+          </span>
         </div>`;
     });
     html += `
@@ -282,7 +302,9 @@ function renderCategories() {
       <div class="category-section-header">REFERENCIAS</div>
       <div class="category-item${refActive}" data-ref-root="1">
         <span class="cat-name" style="opacity:0.85">&#128230; Todos</span>
-        <span class="cat-count">${refTotalCount}</span>
+        <span class="cat-badges">
+          <span class="cat-count">${refTotalCount}</span>
+        </span>
       </div>`;
     refSubs.forEach(s => {
       const c = entries.filter(e => e.subcategoryId === s.id).length;
@@ -290,8 +312,10 @@ function renderCategories() {
       html += `
         <div class="category-item${sActive}" data-ref-sub="${esc(s.id)}" style="padding-left:18px">
           <span class="cat-name">${esc(s.name)}</span>
-          <span class="cat-count">${c}</span>
-          <button class="cat-delete" data-delete-ref-sub="${esc(s.id)}" title="Eliminar categoria">&#10005;</button>
+          <span class="cat-badges">
+            <span class="cat-count">${c}</span>
+            <button class="cat-delete" data-delete-ref-sub="${esc(s.id)}" title="Eliminar categoria">&#10005;</button>
+          </span>
         </div>`;
     });
     html += `
