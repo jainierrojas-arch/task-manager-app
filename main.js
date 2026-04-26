@@ -361,23 +361,45 @@ function exitProMode() {
   if (proModeState === 'off') return;
   proModeState = 'off';
   if (!proModePrevBounds) return;
-  // Restaurar minimos originales antes de reposicionar (mismos valores que en createWindow / toggleXxxWindow)
-  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setMinimumSize(420, 600);
-  if (depositWindow && !depositWindow.isDestroyed()) depositWindow.setMinimumSize(700, 500);
-  if (chatWindow && !chatWindow.isDestroyed()) chatWindow.setMinimumSize(460, 480);
-  if (mainWindow && !mainWindow.isDestroyed() && proModePrevBounds.main) {
-    mainWindow.setBounds(proModePrevBounds.main);
-  }
-  if (depositWindow && !depositWindow.isDestroyed()) {
-    if (proModePrevBounds.deposit) depositWindow.setBounds(proModePrevBounds.deposit);
-    if (!proModePrevBounds.depositWasOpen) depositWindow.hide();
-  }
-  if (chatWindow && !chatWindow.isDestroyed()) {
-    if (proModePrevBounds.chat) chatWindow.setBounds(proModePrevBounds.chat);
-    if (!proModePrevBounds.chatWasOpen) chatWindow.hide();
+  // Todo el cuerpo envuelto en try/catch para evitar crashes si alguna ventana
+  // se destruyo durante la sesion de Pro Mode (ej. usuario cerro chat con X
+  // mientras estaba en no-chat).
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setMinimumSize(420, 600);
+    if (depositWindow && !depositWindow.isDestroyed()) depositWindow.setMinimumSize(700, 500);
+    if (chatWindow && !chatWindow.isDestroyed()) chatWindow.setMinimumSize(460, 480);
+
+    if (mainWindow && !mainWindow.isDestroyed() && proModePrevBounds.main) {
+      mainWindow.setBounds(proModePrevBounds.main);
+    }
+
+    if (depositWindow && !depositWindow.isDestroyed()) {
+      if (proModePrevBounds.deposit) {
+        try { depositWindow.setBounds(proModePrevBounds.deposit); } catch (e) { console.error('deposit setBounds:', e); }
+      }
+      if (!proModePrevBounds.depositWasOpen) {
+        try { depositWindow.hide(); } catch (e) { /* ignore */ }
+      } else if (!depositWindow.isVisible()) {
+        try { depositWindow.show(); } catch (e) { /* ignore */ }
+      }
+    }
+
+    if (chatWindow && !chatWindow.isDestroyed()) {
+      if (proModePrevBounds.chat) {
+        try { chatWindow.setBounds(proModePrevBounds.chat); } catch (e) { console.error('chat setBounds:', e); }
+      }
+      if (!proModePrevBounds.chatWasOpen) {
+        try { chatWindow.hide(); } catch (e) { /* ignore */ }
+      } else if (!chatWindow.isVisible()) {
+        // Si el chat estaba abierto antes de Pro Mode, restaurarlo visible
+        try { chatWindow.show(); } catch (e) { /* ignore */ }
+      }
+    }
+  } catch (e) {
+    console.error('exitProMode error:', e);
   }
   proModePrevBounds = null;
-  sendDepositViewMode('restore', false);
+  try { sendDepositViewMode('restore', false); } catch (e) { /* ignore */ }
 }
 
 // Ciclo: off -> full (3 ventanas) -> no-chat (2 ventanas) -> off
@@ -998,6 +1020,16 @@ function registerIpcHandlers() {
   // oculta), el chat-renderer lo reproduce en su lugar para evitar doble sonido.
   ipcMain.handle('is-chat-window-open', () => {
     return !!(chatWindow && !chatWindow.isDestroyed());
+  });
+  // Cambio de tema en main app — propaga a chat y deposito para que las 3
+  // ventanas se vean con el mismo tema simultaneamente.
+  ipcMain.handle('broadcast-theme', (_, theme) => {
+    if (chatWindow && !chatWindow.isDestroyed()) {
+      try { chatWindow.webContents.send('theme-changed', theme); } catch (e) {}
+    }
+    if (depositWindow && !depositWindow.isDestroyed()) {
+      try { depositWindow.webContents.send('theme-changed', theme); } catch (e) {}
+    }
   });
 
   // Modo PRO: las 3 ventanas en mosaico ocupando la pantalla

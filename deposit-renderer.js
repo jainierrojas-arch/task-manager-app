@@ -1,3 +1,22 @@
+// ===== TEMA — sincronizado con la app principal =====
+const THEME_KEY = 'app-theme';
+function applyDepositTheme(theme) {
+  const valid = ['default', 'dark', 'light'];
+  if (!valid.includes(theme)) theme = 'default';
+  document.body.classList.remove('theme-default', 'theme-dark', 'theme-light');
+  document.body.classList.add(`theme-${theme}`);
+  try { localStorage.setItem(THEME_KEY, theme); } catch (e) {}
+}
+(function loadInitialTheme() {
+  try {
+    const saved = localStorage.getItem(THEME_KEY) || 'default';
+    applyDepositTheme(saved);
+  } catch (e) { applyDepositTheme('default'); }
+})();
+if (window.api && window.api.onThemeChanged) {
+  window.api.onThemeChanged((theme) => applyDepositTheme(theme));
+}
+
 // ===== STATE =====
 let currentUser = null;
 let currentUserData = null;

@@ -43,6 +43,12 @@ function applyTheme(theme) {
       btn.style.background = '';
     }
   });
+  // Propagar el cambio a las ventanas de chat y deposito (si existen)
+  try {
+    if (window.api && window.api.broadcastTheme) {
+      window.api.broadcastTheme(theme);
+    }
+  } catch (e) { /* ignore */ }
 }
 // Aplicar el tema guardado lo antes posible (evita flash de tema incorrecto)
 applyTheme(getTheme());

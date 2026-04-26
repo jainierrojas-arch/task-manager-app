@@ -57,5 +57,7 @@ contextBridge.exposeInMainWorld('api', {
   toggleDepositWithCategory: (categoryId) => ipcRenderer.invoke('toggle-deposit-with-category', categoryId),
 
   // Modo PRO: las 3 ventanas en mosaico
-  toggleProMode: () => ipcRenderer.invoke('toggle-pro-mode')
+  toggleProMode: () => ipcRenderer.invoke('toggle-pro-mode'),
+  // Tema: broadcast a las otras ventanas
+  broadcastTheme: (theme) => ipcRenderer.invoke('broadcast-theme', theme)
 });
