@@ -2,10 +2,24 @@
 let currentUser = null;
 let currentUserData = null;
 let teamMembers = [];
-let chatMessages = [];
+let chatMessages = [];        // mensajes del chat general
+let allDmMessages = [];       // TODOS los DMs en los que participo (de cualquier conversacion)
 let unsubscribers = [];
 let presenceRefreshTimer = null;
-let chatNotificationsArmed = false; // skip sonido en la primera carga
+let chatNotificationsArmed = false; // skip sonido en la primera carga (general)
+let dmNotificationsArmed = false;   // skip sonido en la primera carga (DM)
+let currentDmTargetId = null; // null = chat general, sino UID del destinatario
+// IDs de DM ya leidos (para badges de no-leidos por miembro). Se persiste en
+// localStorage para que la cuenta sobreviva recargas.
+let dmReadStateBySender = {};
+try { dmReadStateBySender = JSON.parse(localStorage.getItem('chat-dm-read-state') || '{}'); } catch (e) {}
+function saveDmReadState() {
+  try { localStorage.setItem('chat-dm-read-state', JSON.stringify(dmReadStateBySender)); } catch (e) {}
+}
+// Construye participantIds canonico [a,b] ordenado para la conversacion
+function dmParticipantIds(uidA, uidB) {
+  return [uidA, uidB].sort();
+}
 
 const ONLINE_THRESHOLD_MS = 90 * 1000;
 const PRESENCE_REFRESH_MS = 30 * 1000;
@@ -104,13 +118,35 @@ function renderMembers() {
     const isMe = currentUser && m.id === currentUser.uid;
     const initial = (m.name || '?').charAt(0).toUpperCase();
     const titleTxt = online ? 'En linea' : 'Desconectado';
+    const isActive = currentDmTargetId === m.id ? ' active' : '';
+    const unread = isMe ? 0 : countUnreadDmsFrom(m.id);
+    const unreadBadge = unread > 0 ? `<span class="member-unread">${unread > 99 ? '99+' : unread}</span>` : '';
+    const clickAttr = isMe ? '' : `data-dm-target="${esc(m.id)}"`;
+    const hint = isMe ? '' : ' (click para abrir DM)';
     html += `
-      <div class="member-item" title="${esc(m.name)} - ${titleTxt}">
+      <div class="member-item${isActive}" ${clickAttr} title="${esc(m.name)} - ${titleTxt}${hint}">
         <div class="member-avatar" style="background:${color}">${initial}<span class="online-dot${online ? '' : ' offline'}"></span></div>
         <span class="member-name${online ? '' : ' offline'}">${esc(m.name || '')}${isMe ? ' (tu)' : ''}</span>
+        ${unreadBadge}
       </div>`;
   });
   container.innerHTML = html;
+  // Click para abrir DM
+  container.querySelectorAll('[data-dm-target]').forEach(el => {
+    el.addEventListener('click', () => openDm(el.dataset.dmTarget));
+  });
+}
+
+// Cuenta DMs recibidos de un usuario que aun no fueron leidos por mi
+function countUnreadDmsFrom(senderId) {
+  if (!currentUser) return 0;
+  const lastReadMs = dmReadStateBySender[senderId] || 0;
+  return allDmMessages.filter(m => {
+    if (m.authorId !== senderId) return false;
+    if (m.recipientId !== currentUser.uid) return false;
+    const ms = m.createdAt && m.createdAt.toDate ? m.createdAt.toDate().getTime() : 0;
+    return ms > lastReadMs;
+  }).length;
 }
 
 // ===== MESSAGES =====
@@ -136,22 +172,75 @@ function messageHtml(m) {
     </div>`;
 }
 
+// Devuelve los mensajes a renderizar segun el modo actual (general o DM)
+function getActiveMessages() {
+  if (!currentDmTargetId) return chatMessages;
+  if (!currentUser) return [];
+  return allDmMessages.filter(m => {
+    return (m.authorId === currentUser.uid && m.recipientId === currentDmTargetId) ||
+           (m.authorId === currentDmTargetId && m.recipientId === currentUser.uid);
+  });
+}
+
+function openDm(targetId) {
+  if (!targetId || targetId === currentUser?.uid) return;
+  currentDmTargetId = targetId;
+  // Marcar todos los DMs recibidos de este usuario como leidos
+  dmReadStateBySender[targetId] = Date.now();
+  saveDmReadState();
+  // Actualizar UI
+  updateChatModeBar();
+  renderedIds.clear();
+  lastDayKey = null;
+  renderMessages();
+  renderMembers();
+  document.getElementById('chatInput').focus();
+}
+
+function returnToGeneralChat() {
+  currentDmTargetId = null;
+  updateChatModeBar();
+  renderedIds.clear();
+  lastDayKey = null;
+  renderMessages();
+  renderMembers();
+}
+
+function updateChatModeBar() {
+  const bar = document.getElementById('chatModeBar');
+  const title = document.getElementById('chatModeTitle');
+  if (!bar || !title) return;
+  if (currentDmTargetId) {
+    const member = teamMembers.find(m => m.id === currentDmTargetId);
+    const name = member ? member.name : 'Usuario';
+    bar.classList.add('dm');
+    title.innerHTML = `&#128172; Privado con <span class="dm-target">${esc(name)}</span>`;
+  } else {
+    bar.classList.remove('dm');
+    title.innerHTML = '&#128172; Chat general del equipo';
+  }
+}
+
 function renderMessages() {
   const container = document.getElementById('messagesArea');
   if (!container) return;
-  if (!chatMessages.length) {
+  const activeMessages = getActiveMessages();
+  if (!activeMessages.length) {
+    const emptySub = currentDmTargetId
+      ? 'Escribe el primer mensaje privado'
+      : 'Se el primero en escribir';
     container.innerHTML = `
       <div class="empty-state">
         <div class="empty-state-icon">&#128172;</div>
         <div class="empty-state-text">Sin mensajes todavia</div>
-        <div class="empty-state-sub">Se el primero en escribir</div>
+        <div class="empty-state-sub">${emptySub}</div>
       </div>`;
     renderedIds.clear();
     lastDayKey = null;
     return;
   }
-  const newOnes = chatMessages.filter(m => !renderedIds.has(m.id));
-  const existing = chatMessages.filter(m => renderedIds.has(m.id));
+  const newOnes = activeMessages.filter(m => !renderedIds.has(m.id));
+  const existing = activeMessages.filter(m => renderedIds.has(m.id));
   const allExistingStillThere = existing.length === renderedIds.size;
   if (renderedIds.size > 0 && newOnes.length > 0 && allExistingStillThere) {
     let html = '';
@@ -172,7 +261,7 @@ function renderMessages() {
   renderedIds.clear();
   lastDayKey = null;
   let html = '';
-  chatMessages.forEach(m => {
+  activeMessages.forEach(m => {
     const d = tsToDate(m.createdAt);
     const key = d ? d.toDateString() : 'pending';
     if (key !== lastDayKey) {
@@ -202,12 +291,27 @@ async function sendMessage() {
   if (!text) return;
   input.value = '';
   try {
-    await db.collection('chatMessages').add({
-      text,
-      authorId: currentUser.uid,
-      authorName: currentUserData.name,
-      createdAt: firebase.firestore.FieldValue.serverTimestamp()
-    });
+    if (currentDmTargetId) {
+      // Mensaje privado
+      const targetMember = teamMembers.find(m => m.id === currentDmTargetId);
+      await db.collection('directMessages').add({
+        text,
+        authorId: currentUser.uid,
+        authorName: currentUserData.name,
+        recipientId: currentDmTargetId,
+        recipientName: targetMember ? targetMember.name : 'Usuario',
+        participantIds: dmParticipantIds(currentUser.uid, currentDmTargetId),
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    } else {
+      // Chat general
+      await db.collection('chatMessages').add({
+        text,
+        authorId: currentUser.uid,
+        authorName: currentUserData.name,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    }
   } catch (e) {
     console.error('Error enviando chat:', e);
     input.value = text;
@@ -226,26 +330,49 @@ function subscribeAll() {
   });
   unsubscribers.push(unsubUsers);
 
-  // Chat messages
+  // Chat messages — chat general
   const unsubChat = db.collection('chatMessages')
     .orderBy('createdAt', 'desc')
     .limit(200)
     .onSnapshot((snap) => {
       const newList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })).reverse();
-      // Detectar mensajes nuevos para reproducir sonido. Skip la primera carga
-      // (chatNotificationsArmed=false) y skip mensajes propios.
       if (chatNotificationsArmed) {
         const previousIds = new Set(chatMessages.map(m => m.id));
         const newOnes = newList.filter(m => !previousIds.has(m.id));
-        const fromOthers = newOnes.filter(m => m.userId !== currentUser.uid);
+        const fromOthers = newOnes.filter(m => m.authorId !== currentUser.uid);
         if (fromOthers.length > 0) playNotificationSound();
       }
       chatMessages = newList;
       chatNotificationsArmed = true;
-      renderMessages();
+      if (!currentDmTargetId) renderMessages();
       markChatAsRead();
     });
   unsubscribers.push(unsubChat);
+
+  // Direct messages — mensajes privados (todos los DMs en los que participo)
+  const unsubDm = db.collection('directMessages')
+    .where('participantIds', 'array-contains', currentUser.uid)
+    .orderBy('createdAt', 'desc')
+    .limit(500)
+    .onSnapshot((snap) => {
+      const newList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })).reverse();
+      if (dmNotificationsArmed) {
+        const previousIds = new Set(allDmMessages.map(m => m.id));
+        const newOnes = newList.filter(m => !previousIds.has(m.id));
+        const fromOthers = newOnes.filter(m => m.authorId !== currentUser.uid);
+        if (fromOthers.length > 0) playNotificationSound();
+      }
+      allDmMessages = newList;
+      dmNotificationsArmed = true;
+      // Si estoy viendo un DM con el remitente, marcar como leido
+      if (currentDmTargetId) {
+        dmReadStateBySender[currentDmTargetId] = Date.now();
+        saveDmReadState();
+        renderMessages();
+      }
+      renderMembers(); // re-renderiza badges de no-leidos
+    });
+  unsubscribers.push(unsubDm);
 }
 
 // ===== AUTH =====
@@ -277,6 +404,9 @@ auth.onAuthStateChanged(async (user) => {
 });
 
 // ===== UI WIRING =====
+const backBtn = document.getElementById('backToGeneralBtn');
+if (backBtn) backBtn.addEventListener('click', returnToGeneralChat);
+
 document.getElementById('chatSendBtn').addEventListener('click', sendMessage);
 document.getElementById('chatInput').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {

@@ -83,8 +83,60 @@
       gap: 8px;
       padding: 6px 8px;
       border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.15s;
+      position: relative;
     }
     .member-item:hover { background: var(--bg-card); }
+    .member-item.active { background: var(--accent); color: white; }
+    .member-item.active .member-name { color: white !important; }
+    .member-unread {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      background: var(--danger);
+      color: white;
+      border-radius: 10px;
+      min-width: 18px;
+      height: 18px;
+      padding: 0 6px;
+      font-size: 10px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .chat-mode-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .chat-mode-bar-back {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text-primary);
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 11px;
+      cursor: pointer;
+      display: none;
+    }
+    .chat-mode-bar-back:hover { background: var(--bg-hover); }
+    .chat-mode-bar.dm .chat-mode-bar-back { display: inline-block; }
+    .chat-mode-bar-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-primary);
+      flex: 1;
+    }
+    .chat-mode-bar-title .dm-target {
+      color: var(--accent);
+    }
     .member-avatar {
       width: 26px;
       height: 26px;
@@ -292,6 +344,10 @@
       <div class="members-list" id="membersList"></div>
     </div>
     <div class="main">
+      <div class="chat-mode-bar" id="chatModeBar">
+        <button class="chat-mode-bar-back" id="backToGeneralBtn" title="Volver al chat general">&#8592; General</button>
+        <div class="chat-mode-bar-title" id="chatModeTitle">&#128172; Chat general del equipo</div>
+      </div>
       <div class="messages" id="messagesArea">
         <div class="empty-state">
           <div class="empty-state-icon">&#128172;</div>
