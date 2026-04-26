@@ -3672,9 +3672,9 @@ if (proModeBtn) {
       proModeBtn.style.background = 'linear-gradient(135deg,#1e90ff,#4a6cf7)';
       proModeBtn.innerHTML = '&#128203; PRO SIN CHAT';
     } else {
-      // currentState === 'no-chat', proxima accion: salir de Pro
-      proModeBtn.style.background = 'linear-gradient(135deg,#ff6b6b,#ee5a6f)';
-      proModeBtn.innerHTML = '&#10006; SALIR PRO';
+      // currentState === 'no-chat', proxima accion: pasar a SIMPLE (solo main)
+      proModeBtn.style.background = 'linear-gradient(135deg,#ff9966,#ff5e62)';
+      proModeBtn.innerHTML = '&#9881; SIMPLE';
     }
   }
   // Inicializar etiqueta con el estado off (proxima accion: PRO 3 VENTANAS)

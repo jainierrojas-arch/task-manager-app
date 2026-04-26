@@ -369,16 +369,15 @@ function isValidBounds(b) {
 function exitProMode() {
   if (proModeState === 'off') return;
   proModeState = 'off';
-  const prev = proModePrevBounds;
   proModePrevBounds = null;
 
-  // SALIR PRO siempre deja: SOLO la ventana principal visible. Chat y deposito
-  // se ocultan por completo (independiente de si estaban abiertos antes).
-  // Cada operacion en su propio try/catch para que un fallo en una no tumbe
-  // la app entera.
-  const safe = (label, fn) => { try { fn(); } catch (e) { console.error('[exitProMode] ' + label + ':', e); } };
+  // Modo SIMPLE — minimal y robusto. NO toca la ventana principal (se queda
+  // donde este). Solo oculta chat y deposito. Todas las operaciones aisladas
+  // en try/catch para que un fallo en una NO afecte a las otras.
+  const safe = (label, fn) => {
+    try { fn(); } catch (e) { console.error('[exitProMode] ' + label + ':', e); }
+  };
 
-  // Restaurar minimos originales
   safe('main minSize', () => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setMinimumSize(420, 600);
   });
@@ -389,28 +388,23 @@ function exitProMode() {
     if (chatWindow && !chatWindow.isDestroyed()) chatWindow.setMinimumSize(460, 480);
   });
 
-  // Restaurar tamano/posicion de la ventana principal a como estaba antes de Pro Mode
-  safe('main setBounds', () => {
-    if (mainWindow && !mainWindow.isDestroyed() && prev && isValidBounds(prev.main)) {
-      mainWindow.setBounds(prev.main);
-    }
-  });
-
-  // Ocultar deposito SIEMPRE
+  // Ocultar deposito (siempre)
   safe('hide deposit', () => {
     if (depositWindow && !depositWindow.isDestroyed() && depositWindow.isVisible()) {
       depositWindow.hide();
     }
   });
 
-  // Ocultar chat SIEMPRE
+  // Ocultar chat (siempre)
   safe('hide chat', () => {
     if (chatWindow && !chatWindow.isDestroyed() && chatWindow.isVisible()) {
       chatWindow.hide();
     }
   });
 
-  safe('deposit view restore', () => sendDepositViewMode('restore', false));
+  // NO se toca mainWindow — se queda donde este. El usuario puede arrastrarla
+  // o redimensionarla a su gusto. Esto evita cualquier crash relacionado con
+  // setBounds en algunas configuraciones de Mac.
 }
 
 // Ciclo: off -> full (3 ventanas) -> no-chat (2 ventanas) -> off
