@@ -7,7 +7,8 @@
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
-    :root, body.theme-default {
+    /* Aplicar variables a multiples niveles para maxima compatibilidad cross-platform */
+    :root, html, html.theme-default, body, body.theme-default {
       --bg-primary: #1a1b2e;
       --bg-secondary: #232442;
       --bg-card: #2a2b4a;
@@ -22,34 +23,34 @@
       --border: #3a3b5c;
     }
     /* Tema NEGRO PURO — alto contraste */
-    body.theme-dark {
-      --bg-primary: #0a0a0a;
-      --bg-secondary: #141414;
-      --bg-card: #1c1c1c;
-      --bg-hover: #262626;
-      --text-primary: #f5f5f5;
-      --text-secondary: #a0a0a0;
-      --accent: #7c6dff;
-      --accent-hover: #6a5ce8;
-      --success: #4ecdc4;
-      --danger: #ff5e5e;
-      --warning: #ffc94d;
-      --border: #2a2a2a;
+    html.theme-dark, html.theme-dark body, body.theme-dark {
+      --bg-primary: #0a0a0a !important;
+      --bg-secondary: #141414 !important;
+      --bg-card: #1c1c1c !important;
+      --bg-hover: #262626 !important;
+      --text-primary: #f5f5f5 !important;
+      --text-secondary: #a0a0a0 !important;
+      --accent: #7c6dff !important;
+      --accent-hover: #6a5ce8 !important;
+      --success: #4ecdc4 !important;
+      --danger: #ff5e5e !important;
+      --warning: #ffc94d !important;
+      --border: #2a2a2a !important;
     }
     /* Tema CLARO / BLANCO */
-    body.theme-light {
-      --bg-primary: #f7f8fb;
-      --bg-secondary: #ffffff;
-      --bg-card: #ffffff;
-      --bg-hover: #f0f1f6;
-      --text-primary: #1a1b2e;
-      --text-secondary: #5d5d75;
-      --accent: #6c63ff;
-      --accent-hover: #5a52e0;
-      --success: #2ec4b6;
-      --danger: #ff5757;
-      --warning: #f4b400;
-      --border: #d8dae3;
+    html.theme-light, html.theme-light body, body.theme-light {
+      --bg-primary: #f7f8fb !important;
+      --bg-secondary: #ffffff !important;
+      --bg-card: #ffffff !important;
+      --bg-hover: #f0f1f6 !important;
+      --text-primary: #1a1b2e !important;
+      --text-secondary: #5d5d75 !important;
+      --accent: #6c63ff !important;
+      --accent-hover: #5a52e0 !important;
+      --success: #2ec4b6 !important;
+      --danger: #ff5757 !important;
+      --warning: #f4b400 !important;
+      --border: #d8dae3 !important;
     }
 
     body {

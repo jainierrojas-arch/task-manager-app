@@ -3,6 +3,8 @@ const THEME_KEY = 'app-theme';
 function applyChatTheme(theme) {
   const valid = ['default', 'dark', 'light'];
   if (!valid.includes(theme)) theme = 'default';
+  document.documentElement.classList.remove('theme-default', 'theme-dark', 'theme-light');
+  document.documentElement.classList.add(`theme-${theme}`);
   document.body.classList.remove('theme-default', 'theme-dark', 'theme-light');
   document.body.classList.add(`theme-${theme}`);
   try { localStorage.setItem(THEME_KEY, theme); } catch (e) {}

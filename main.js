@@ -357,49 +357,57 @@ function enterProModeNoChat() {
   setTimeout(() => sendDepositViewMode('horizontal', false), 250);
 }
 
+// Verifica que un objeto bounds tenga valores validos antes de setBounds
+function isValidBounds(b) {
+  if (!b || typeof b !== 'object') return false;
+  if (typeof b.x !== 'number' || typeof b.y !== 'number') return false;
+  if (typeof b.width !== 'number' || typeof b.height !== 'number') return false;
+  if (b.width < 100 || b.height < 100) return false;
+  return true;
+}
+
 function exitProMode() {
   if (proModeState === 'off') return;
   proModeState = 'off';
-  if (!proModePrevBounds) return;
-  // Todo el cuerpo envuelto en try/catch para evitar crashes si alguna ventana
-  // se destruyo durante la sesion de Pro Mode (ej. usuario cerro chat con X
-  // mientras estaba en no-chat).
-  try {
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setMinimumSize(420, 600);
-    if (depositWindow && !depositWindow.isDestroyed()) depositWindow.setMinimumSize(700, 500);
-    if (chatWindow && !chatWindow.isDestroyed()) chatWindow.setMinimumSize(460, 480);
-
-    if (mainWindow && !mainWindow.isDestroyed() && proModePrevBounds.main) {
-      mainWindow.setBounds(proModePrevBounds.main);
-    }
-
-    if (depositWindow && !depositWindow.isDestroyed()) {
-      if (proModePrevBounds.deposit) {
-        try { depositWindow.setBounds(proModePrevBounds.deposit); } catch (e) { console.error('deposit setBounds:', e); }
-      }
-      if (!proModePrevBounds.depositWasOpen) {
-        try { depositWindow.hide(); } catch (e) { /* ignore */ }
-      } else if (!depositWindow.isVisible()) {
-        try { depositWindow.show(); } catch (e) { /* ignore */ }
-      }
-    }
-
-    if (chatWindow && !chatWindow.isDestroyed()) {
-      if (proModePrevBounds.chat) {
-        try { chatWindow.setBounds(proModePrevBounds.chat); } catch (e) { console.error('chat setBounds:', e); }
-      }
-      if (!proModePrevBounds.chatWasOpen) {
-        try { chatWindow.hide(); } catch (e) { /* ignore */ }
-      } else if (!chatWindow.isVisible()) {
-        // Si el chat estaba abierto antes de Pro Mode, restaurarlo visible
-        try { chatWindow.show(); } catch (e) { /* ignore */ }
-      }
-    }
-  } catch (e) {
-    console.error('exitProMode error:', e);
-  }
+  const prev = proModePrevBounds;
   proModePrevBounds = null;
-  try { sendDepositViewMode('restore', false); } catch (e) { /* ignore */ }
+  if (!prev) return;
+
+  // Todas las operaciones en try/catch individuales — un fallo en chat no
+  // tumba la restauracion de main/deposito.
+  const safe = (label, fn) => { try { fn(); } catch (e) { console.error('[exitProMode] ' + label + ':', e); } };
+
+  safe('main minSize', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setMinimumSize(420, 600);
+  });
+  safe('deposit minSize', () => {
+    if (depositWindow && !depositWindow.isDestroyed()) depositWindow.setMinimumSize(700, 500);
+  });
+  safe('chat minSize', () => {
+    if (chatWindow && !chatWindow.isDestroyed()) chatWindow.setMinimumSize(460, 480);
+  });
+
+  safe('main setBounds', () => {
+    if (mainWindow && !mainWindow.isDestroyed() && isValidBounds(prev.main)) {
+      mainWindow.setBounds(prev.main);
+    }
+  });
+
+  safe('deposit restore', () => {
+    if (!depositWindow || depositWindow.isDestroyed()) return;
+    if (isValidBounds(prev.deposit)) depositWindow.setBounds(prev.deposit);
+    if (!prev.depositWasOpen) depositWindow.hide();
+    else if (!depositWindow.isVisible()) depositWindow.show();
+  });
+
+  safe('chat restore', () => {
+    if (!chatWindow || chatWindow.isDestroyed()) return;
+    if (isValidBounds(prev.chat)) chatWindow.setBounds(prev.chat);
+    if (!prev.chatWasOpen) chatWindow.hide();
+    else if (!chatWindow.isVisible()) chatWindow.show();
+  });
+
+  safe('deposit view restore', () => sendDepositViewMode('restore', false));
 }
 
 // Ciclo: off -> full (3 ventanas) -> no-chat (2 ventanas) -> off

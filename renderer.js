@@ -30,6 +30,10 @@ function getTheme() {
 function applyTheme(theme) {
   const valid = ['default', 'dark', 'light'];
   if (!valid.includes(theme)) theme = 'default';
+  // Aplicar la clase a documentElement (html) Y a body — algunos sistemas
+  // (especialmente Windows) parecen dar resultados inconsistentes con solo body.
+  document.documentElement.classList.remove('theme-default', 'theme-dark', 'theme-light');
+  document.documentElement.classList.add(`theme-${theme}`);
   document.body.classList.remove('theme-default', 'theme-dark', 'theme-light');
   document.body.classList.add(`theme-${theme}`);
   try { localStorage.setItem(THEME_KEY, theme); } catch (e) {}
