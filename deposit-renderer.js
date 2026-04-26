@@ -32,18 +32,32 @@ function newCountIn(catId, subId) {
   return arr.filter(isNewEntry).length;
 }
 
-// Cuenta items pendientes (no asignados a tarea) en una categoria/subcategoria.
-// Esta es la cifra que va al badge rojo persistente del sidebar.
+// Estados de un depositEntry:
+//   'idea'      - pendiente, visible en Tareas por hacer
+//   'converted' - asignada a tarea, en proceso, OCULTA del deposito
+//   'finalized' - tarea completada, archivada en Trabajos Finalizados
+
+// Cuenta items pendientes por asignar (status === 'idea') en una categoria.
 function pendingCountIn(catId, subId) {
-  return entriesIn(catId, subId).filter(e => e.status !== 'converted').length;
+  return entriesIn(catId, subId).filter(e => e.status === 'idea' || !e.status).length;
+}
+
+// Cuenta items finalizados (status === 'finalized') en una categoria/subcategoria.
+function finalizedCountIn(catId, subId) {
+  return entriesIn(catId, subId).filter(e => e.status === 'finalized').length;
 }
 
 function rootCategories() { return categories.filter(c => !c.parentId); }
 function subcategoriesOf(parentId) { return categories.filter(c => c.parentId === parentId); }
+
+// Devuelve entries en una categoria/subcategoria. Por default OCULTA las que
+// estan en proceso (status='converted') porque ya fueron asignadas a tarea
+// y deben aparecer "fuera del deposito" hasta que se completen o se cancelen.
 function entriesIn(catId, subId) {
-  if (subId === '__unsorted__') return entries.filter(e => e.categoryId === catId && !e.subcategoryId);
-  if (subId) return entries.filter(e => e.categoryId === catId && e.subcategoryId === subId);
-  return entries.filter(e => e.categoryId === catId);
+  const visible = (e) => e.status !== 'converted';
+  if (subId === '__unsorted__') return entries.filter(e => e.categoryId === catId && !e.subcategoryId && visible(e));
+  if (subId) return entries.filter(e => e.categoryId === catId && e.subcategoryId === subId && visible(e));
+  return entries.filter(e => e.categoryId === catId && visible(e));
 }
 
 const userColors = [
@@ -227,27 +241,28 @@ function renderCategories() {
       <span class="cat-name" style="color:var(--text-dim)">+ Nueva categoria</span>
     </div>`;
 
-  // Seccion separada: Trabajos Finalizados con sus subcategorias como items
+  // Seccion separada: Trabajos Finalizados con sus subcategorias como items.
+  // El badge rojo aqui cuenta items finalizados (tareas completadas).
   if (tfRoot) {
     const tfSubs = subcategoriesOf('trabajos-finalizados');
-    const tfTotalCount = entries.filter(e => e.categoryId === 'trabajos-finalizados').length;
-    const tfTotalPending = entries.filter(e => e.categoryId === 'trabajos-finalizados' && e.status !== 'converted').length;
+    const tfTotalCount = entries.filter(e => e.categoryId === 'trabajos-finalizados' && e.status !== 'converted').length;
+    const tfTotalFinalized = entries.filter(e => e.categoryId === 'trabajos-finalizados' && e.status === 'finalized').length;
     const tfActive = selectedCategoryId === 'trabajos-finalizados' && !selectedSubcategoryId ? ' active' : '';
     html += `
       <div class="category-section-header">TRABAJOS FINALIZADOS</div>
       <div class="category-item${tfActive}" data-tf-root="1">
         <span class="cat-name" style="opacity:0.85">&#128230; Todos</span>
-        ${pendingBadge(tfTotalPending)}
+        ${pendingBadge(tfTotalFinalized)}
         <span class="cat-count">${tfTotalCount}</span>
       </div>`;
     tfSubs.forEach(s => {
-      const c = entries.filter(e => e.subcategoryId === s.id).length;
-      const cPending = entries.filter(e => e.subcategoryId === s.id && e.status !== 'converted').length;
+      const c = entries.filter(e => e.subcategoryId === s.id && e.status !== 'converted').length;
+      const cFinalized = entries.filter(e => e.subcategoryId === s.id && e.status === 'finalized').length;
       const sActive = selectedSubcategoryId === s.id ? ' active' : '';
       html += `
         <div class="category-item${sActive}" data-tf-sub="${esc(s.id)}" style="padding-left:18px">
           <span class="cat-name">${esc(s.name)}</span>
-          ${pendingBadge(cPending)}
+          ${pendingBadge(cFinalized)}
           <span class="cat-count">${c}</span>
           <button class="cat-delete" data-delete-tf-sub="${esc(s.id)}" title="Eliminar categoria">&#10005;</button>
         </div>`;
@@ -1204,6 +1219,8 @@ document.getElementById('confirmAssign').addEventListener('click', async () => {
     };
     if (videoLink) taskData.videoLink = videoLink;
     if (materialLink) taskData.link = materialLink;
+    // Referencia inversa para sincronizar el deposito con el ciclo de vida de la tarea
+    taskData.depositEntryId = assigningEntry.id;
     if (amount && amount > 0) {
       const deadline = new Date();
       if (unit === 'minutes') deadline.setMinutes(deadline.getMinutes() + amount);
@@ -1271,12 +1288,22 @@ document.getElementById('confirmAssign').addEventListener('click', async () => {
     toast(`Cadena de ${createdTaskIds.length} tareas creada`);
   }
 
-  // Marcar entrada como convertida
-  await db.collection('depositEntries').doc(assigningEntry.id).update({
+  // Marcar entrada como convertida (en proceso). Guardar categoria original
+  // para poder restaurarla si la tarea se cancela/elimina antes de completarse.
+  const conversionUpdate = {
     status: 'converted',
     convertedAt: firebase.firestore.FieldValue.serverTimestamp(),
     convertedTaskIds: firebase.firestore.FieldValue.arrayUnion(...createdTaskIds)
-  });
+  };
+  // Solo guardar originalCategoryId la PRIMERA vez (no sobrescribir si ya existe
+  // por una asignacion-restauracion anterior).
+  if (!assigningEntry.originalCategoryId) {
+    conversionUpdate.originalCategoryId = assigningEntry.categoryId;
+    conversionUpdate.originalCategoryName = assigningEntry.categoryName || null;
+    conversionUpdate.originalSubcategoryId = assigningEntry.subcategoryId || null;
+    conversionUpdate.originalSubcategoryName = assigningEntry.subcategoryName || null;
+  }
+  await db.collection('depositEntries').doc(assigningEntry.id).update(conversionUpdate);
 
   document.getElementById('assignModal').classList.remove('active');
   assigningEntry = null;

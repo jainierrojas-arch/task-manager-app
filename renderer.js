@@ -1480,6 +1480,10 @@ async function finalizeCompletedDirect(task) {
     completedByName: currentUserData.name
   });
 
+  // Sincronizar deposito: si esta tarea vino del deposito, la entry pasa a
+  // 'finalized' y se mueve a Trabajos Finalizados.
+  await syncDepositOnTaskChange(task, 'complete');
+
   // Notificar creador
   const creator = teamMembers.find(m => m.id === task.createdBy);
   if (creator && creator.telegramChatId && creator.id !== currentUser.uid) {
@@ -1582,6 +1586,9 @@ async function approveTask(taskId) {
     approvedBy: currentUser.uid,
     approvedByName: currentUserData.name
   });
+
+  // Sincronizar deposito al aprobar: la entry pasa a Trabajos Finalizados
+  if (task) await syncDepositOnTaskChange(task, 'complete');
 
   if (task) {
     const assignee = teamMembers.find(m => m.id === task.assignedTo);
@@ -1889,6 +1896,68 @@ function canComplete(task) {
   return false;
 }
 
+// =====================================================
+// Sincronizacion entre tareas y depositEntries
+// =====================================================
+// Cuando una tarea cambia de estado, hay que mover la depositEntry asociada:
+//   - 'complete'      -> status 'finalized', mover a Trabajos Finalizados
+//   - 'restore'       -> status 'idea', regresar a categoria original
+//   - 're-convert'    -> status 'converted', oculta del deposito (en proceso)
+//
+// La tarea conoce el deposit entry via taskData.depositEntryId (set en
+// deposit-renderer.js al crearse). Si no hay depositEntryId, esta funcion no
+// hace nada (la tarea fue creada manualmente, no desde el deposito).
+async function syncDepositOnTaskChange(task, action) {
+  if (!task || !task.depositEntryId) return;
+  try {
+    const ref = db.collection('depositEntries').doc(task.depositEntryId);
+    if (action === 'complete') {
+      // Mover a Trabajos Finalizados (sin subcategoria; el usuario puede
+      // re-categorizarlo despues con el editar de la entry).
+      await ref.update({
+        status: 'finalized',
+        finalizedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        finalizedTaskId: task.id,
+        categoryId: 'trabajos-finalizados',
+        categoryName: 'Trabajos Finalizados',
+        subcategoryId: firebase.firestore.FieldValue.delete(),
+        subcategoryName: firebase.firestore.FieldValue.delete()
+      });
+    } else if (action === 'restore') {
+      // Tarea cancelada/eliminada: regresar a categoria original como pendiente
+      const snap = await ref.get();
+      if (!snap.exists) return;
+      const data = snap.data();
+      const update = {
+        status: 'idea',
+        finalizedAt: firebase.firestore.FieldValue.delete(),
+        finalizedTaskId: firebase.firestore.FieldValue.delete()
+      };
+      if (data.originalCategoryId) {
+        update.categoryId = data.originalCategoryId;
+        update.categoryName = data.originalCategoryName || '';
+        if (data.originalSubcategoryId) {
+          update.subcategoryId = data.originalSubcategoryId;
+          update.subcategoryName = data.originalSubcategoryName || '';
+        } else {
+          update.subcategoryId = firebase.firestore.FieldValue.delete();
+          update.subcategoryName = firebase.firestore.FieldValue.delete();
+        }
+      }
+      await ref.update(update);
+    } else if (action === 're-convert') {
+      // Tarea restaurada de la papelera: regresa a estado en proceso (oculta)
+      await ref.update({
+        status: 'converted',
+        finalizedAt: firebase.firestore.FieldValue.delete(),
+        finalizedTaskId: firebase.firestore.FieldValue.delete()
+      });
+    }
+  } catch (e) {
+    console.error('[deposit sync] error', e);
+  }
+}
+
 async function deleteTask(taskId) {
   const task = tasks.find(t => t.id === taskId);
   if (!task) return;
@@ -1899,14 +1968,25 @@ async function deleteTask(taskId) {
     deletedBy: currentUser.uid,
     deletedByName: currentUserData.name
   });
+  // Si era una tarea creada desde el deposito y NO estaba completa, regresar
+  // la entry al deposito (status 'idea' en su categoria original)
+  if (task.status !== 'completed') {
+    await syncDepositOnTaskChange(task, 'restore');
+  }
 }
 
 async function restoreTask(taskId) {
+  // Buscar la tarea en la papelera para saber si venia del deposito
+  const task = trashTasks.find(t => t.id === taskId) || tasks.find(t => t.id === taskId);
   await db.collection('tasks').doc(taskId).update({
     deletedAt: firebase.firestore.FieldValue.delete(),
     deletedBy: firebase.firestore.FieldValue.delete(),
     deletedByName: firebase.firestore.FieldValue.delete()
   });
+  // Restaurar a "en proceso" (oculta del deposito) si la tarea no estaba completa
+  if (task && task.status !== 'completed') {
+    await syncDepositOnTaskChange(task, 're-convert');
+  }
 }
 window.restoreTask = restoreTask;
 
@@ -1915,6 +1995,10 @@ async function permanentlyDeleteTask(taskId) {
   if (!task) return;
   if (!confirm(`Eliminar PERMANENTEMENTE la tarea "${task.text}"?\n\nEsta accion no se puede deshacer.`)) return;
   await db.collection('tasks').doc(taskId).delete();
+  // Si la tarea NO estaba completa, regresar la entry al deposito
+  if (task.status !== 'completed') {
+    await syncDepositOnTaskChange(task, 'restore');
+  }
 }
 window.permanentlyDeleteTask = permanentlyDeleteTask;
 
