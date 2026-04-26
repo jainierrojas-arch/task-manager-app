@@ -142,6 +142,11 @@ async function ensureDefaultCategories() {
     { id: 'trabajos-finalizados', name: 'Trabajos Finalizados' },
     { id: 'referencias', name: 'Referencias' }
   ];
+  // Subcategoria predeterminada "Publicados" dentro de Trabajos Finalizados.
+  // Es donde caen automaticamente las tareas finalizadas.
+  const defaultSubs = [
+    { id: 'tf-publicados', name: 'Publicados', parentId: 'trabajos-finalizados' }
+  ];
   // Migracion: si existen reels/carruseles con isDefault=true, quitarles el
   // flag para que se puedan borrar.
   const legacyDefaults = ['reels', 'carruseles'];
@@ -170,6 +175,24 @@ async function ensureDefaultCategories() {
       }
     } catch (e) { /* ignore */ }
     // no borramos de in-flight para no re-intentar cada snapshot si ya lo hicimos una vez
+  }));
+  // Crear subcategoria "Publicados" dentro de Trabajos Finalizados
+  const subsToCreate = defaultSubs.filter(s => !existingIds.has(s.id) && !defaultCatsInFlight.has(s.id));
+  await Promise.all(subsToCreate.map(async s => {
+    defaultCatsInFlight.add(s.id);
+    try {
+      const ref = db.collection('depositCategories').doc(s.id);
+      const snap = await ref.get();
+      if (!snap.exists) {
+        await ref.set({
+          name: s.name,
+          parentId: s.parentId,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          createdBy: currentUser.uid,
+          isDefault: true
+        });
+      }
+    } catch (e) { /* ignore */ }
   }));
 }
 
@@ -257,33 +280,31 @@ function renderCategories() {
       <span class="cat-name" style="color:var(--text-dim)">+ Nueva categoria</span>
     </div>`;
 
-  // Seccion separada: Trabajos Finalizados con sus subcategorias como items.
-  // El badge rojo aqui cuenta items finalizados (tareas completadas).
+  // Seccion separada: Trabajos Finalizados — el final del final, NO muestra
+  // badges rojos de notificacion (ya estan completadas, no son tareas pendientes).
+  // Solo muestra cat-count con el total de items finalizados.
   if (tfRoot) {
     const tfSubs = subcategoriesOf('trabajos-finalizados');
     const tfTotalCount = entries.filter(e => e.categoryId === 'trabajos-finalizados' && e.status !== 'converted').length;
-    const tfTotalFinalized = entries.filter(e => e.categoryId === 'trabajos-finalizados' && e.status === 'finalized').length;
     const tfActive = selectedCategoryId === 'trabajos-finalizados' && !selectedSubcategoryId ? ' active' : '';
     html += `
       <div class="category-section-header">TRABAJOS FINALIZADOS</div>
       <div class="category-item${tfActive}" data-tf-root="1">
         <span class="cat-name" style="opacity:0.85">&#128230; Todos</span>
         <span class="cat-badges">
-          ${pendingBadge(tfTotalFinalized)}
           <span class="cat-count">${tfTotalCount}</span>
         </span>
       </div>`;
     tfSubs.forEach(s => {
       const c = entries.filter(e => e.subcategoryId === s.id && e.status !== 'converted').length;
-      const cFinalized = entries.filter(e => e.subcategoryId === s.id && e.status === 'finalized').length;
       const sActive = selectedSubcategoryId === s.id ? ' active' : '';
+      const canDeleteSub = !s.isDefault;
       html += `
         <div class="category-item${sActive}" data-tf-sub="${esc(s.id)}" style="padding-left:18px">
           <span class="cat-name">${esc(s.name)}</span>
           <span class="cat-badges">
-            ${pendingBadge(cFinalized)}
             <span class="cat-count">${c}</span>
-            <button class="cat-delete" data-delete-tf-sub="${esc(s.id)}" title="Eliminar categoria">&#10005;</button>
+            ${canDeleteSub ? `<button class="cat-delete" data-delete-tf-sub="${esc(s.id)}" title="Eliminar categoria">&#10005;</button>` : ''}
           </span>
         </div>`;
     });

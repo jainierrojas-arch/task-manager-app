@@ -343,11 +343,16 @@ function subscribeToData() {
 function renderDepositBadge() {
   const badge = document.getElementById('depositUnreadBadge');
   if (!badge) return;
-  // Badge persistente: cuenta items pendientes (status !== 'converted').
-  // EXCLUYE la categoria 'referencias' — es un banco de contenido, no tareas
-  // por hacer, asi que sus items no suman al total ni disparan el aviso rojo.
+  // Badge solo cuenta items PENDIENTES por asignar (status === 'idea').
+  // EXCLUYE:
+  //   - 'converted' (en proceso, ya asignadas)
+  //   - 'finalized' (ya completadas, archivadas en Trabajos Finalizados)
+  //   - categoria 'referencias' (banco de contenido)
+  //   - categoria 'trabajos-finalizados' (final del final, no notifica)
   const count = depositEntries.filter(e =>
-    e.status !== 'converted' && e.categoryId !== 'referencias'
+    (e.status === 'idea' || !e.status) &&
+    e.categoryId !== 'referencias' &&
+    e.categoryId !== 'trabajos-finalizados'
   ).length;
   if (count <= 0) {
     badge.style.display = 'none';
@@ -1912,16 +1917,17 @@ async function syncDepositOnTaskChange(task, action) {
   try {
     const ref = db.collection('depositEntries').doc(task.depositEntryId);
     if (action === 'complete') {
-      // Mover a Trabajos Finalizados (sin subcategoria; el usuario puede
-      // re-categorizarlo despues con el editar de la entry).
+      // Mover a Trabajos Finalizados / Publicados (subcategoria predeterminada
+      // donde caen todas las tareas finalizadas). El usuario puede moverlo a
+      // otra subcategoria de TF manualmente despues con el boton de editar.
       await ref.update({
         status: 'finalized',
         finalizedAt: firebase.firestore.FieldValue.serverTimestamp(),
         finalizedTaskId: task.id,
         categoryId: 'trabajos-finalizados',
         categoryName: 'Trabajos Finalizados',
-        subcategoryId: firebase.firestore.FieldValue.delete(),
-        subcategoryName: firebase.firestore.FieldValue.delete()
+        subcategoryId: 'tf-publicados',
+        subcategoryName: 'Publicados'
       });
     } else if (action === 'restore') {
       // Tarea cancelada/eliminada: regresar a categoria original como pendiente

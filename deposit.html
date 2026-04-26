@@ -145,14 +145,13 @@
     .category-item:hover { background: var(--bg-hover); }
     .category-item.active { background: var(--accent); color: white; }
     .category-item .cat-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    /* Contenedor de badges alineados al borde derecho — todos en una columna fija */
+    /* Contenedor de badges - en horizontal flotan natural, en vertical se alinean
+       en columna fija al borde derecho de cada fila */
     .category-item .cat-badges {
       display: inline-flex;
       align-items: center;
       gap: 4px;
       flex-shrink: 0;
-      justify-content: flex-end;
-      min-width: 60px;
     }
     .category-item .cat-count {
       font-size: 10px;
@@ -162,6 +161,11 @@
       border-radius: 8px;
       min-width: 22px;
       text-align: center;
+    }
+    /* SOLO en vista VERTICAL: alinear todas las badges en columna a la derecha */
+    .app:not(.horizontal) .category-item .cat-badges {
+      width: 80px;
+      justify-content: flex-end;
     }
     /* Globo rojo de "ideas nuevas" */
     .new-badge {
