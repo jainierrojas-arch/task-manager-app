@@ -800,7 +800,9 @@ function registerIpcHandlers() {
     return new Promise((resolve) => {
       try {
         const https = require('https');
-        const apiUrl = `https://api.microlink.io/?url=${encodeURIComponent(url)}&audio=false&video=false&iframe=false`;
+        // prerender=auto fuerza render de JavaScript en el lado servidor de Microlink.
+        // Es necesario para Instagram carruseles, TikTok y otros sitios JS-heavy.
+        const apiUrl = `https://api.microlink.io/?url=${encodeURIComponent(url)}&audio=false&video=false&iframe=false&prerender=auto&meta=true`;
         const parsed = new URL(apiUrl);
         const req = https.get({
           host: parsed.hostname,
@@ -905,30 +907,38 @@ function registerIpcHandlers() {
     if (!url || typeof url !== 'string' || !/^https?:\/\//i.test(url)) {
       return { image: null, title: null, description: null };
     }
-    // Detectar redes sociales que bloquean scraping (necesitan render server-side)
     const isInstagram = /instagram\.com\/(?:p|reel|reels|tv)\//.test(url);
     const isTiktok = /tiktok\.com\//.test(url);
     const isFacebook = /facebook\.com\//.test(url) || /fb\.com\//.test(url);
     const needsMicrolink = isInstagram || isTiktok || isFacebook;
 
-    // Para redes sociales: Microlink primero (renderiza server-side, mismo
-    // truco que usan WhatsApp/Slack/Discord internamente)
+    // Cascada de intentos: el primero que devuelva imagen gana.
     if (needsMicrolink) {
+      // Intento 1: Microlink con la URL original (con prerender JS)
       const ml = await fetchOgViaMicrolink(url);
       if (ml && ml.image) return ml;
+
+      // Intento 2: Microlink con la URL del embed publico de Instagram
+      // (los carruseles a veces solo exponen og:image en /embed/captioned/)
+      const igMatch = url.match(/instagram\.com\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
+      if (igMatch) {
+        const embedUrl = `https://www.instagram.com/p/${igMatch[1]}/embed/captioned/`;
+        const mlEmbed = await fetchOgViaMicrolink(embedUrl);
+        if (mlEmbed && mlEmbed.image) return mlEmbed;
+        // Intento 3: HTTP directo del embed
+        const embedHttp = await fetchOgViaHttp(embedUrl);
+        if (embedHttp && embedHttp.image) return embedHttp;
+        // Intento 4: BrowserWindow del embed (renderiza JS local)
+        try {
+          const browserEmbed = await fetchOgViaBrowser(embedUrl);
+          if (browserEmbed && browserEmbed.image) return browserEmbed;
+        } catch (_) {}
+      }
     }
 
-    // HTTP simple con UA de Facebook bot (sirve para ~95% de sitios normales)
+    // Sitios normales: HTTP simple con UA de Facebook bot
     let result = await fetchOgViaHttp(url);
     if (result && result.image) return result;
-
-    // Para Instagram, probar embed publico como respaldo
-    const igMatch = url.match(/instagram\.com\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
-    if (igMatch) {
-      const embedUrl = `https://www.instagram.com/p/${igMatch[1]}/embed/captioned/`;
-      const embedResult = await fetchOgViaHttp(embedUrl);
-      if (embedResult && embedResult.image) return embedResult;
-    }
 
     // Ultimo recurso: BrowserWindow oculto con Chromium real
     try {
@@ -938,7 +948,7 @@ function registerIpcHandlers() {
       }
     } catch (_) {}
 
-    // Ultimo intento: Microlink para sitios no-sociales (raro que llegue aqui)
+    // Ultimo intento: Microlink para sitios no-sociales
     if (!needsMicrolink) {
       const ml = await fetchOgViaMicrolink(url);
       if (ml && ml.image) return ml;

@@ -1076,12 +1076,29 @@ async function lazyFetchCovers(visibleEntries) {
     try {
       const og = await window.api.fetchOgData(url);
       const update = { coverImage: og.image || null };
-      // Guardar dimensiones para que la card use aspect-ratio real (no cortar imagen)
       if (og.imageWidth && og.imageHeight) {
         update.coverWidth = og.imageWidth;
         update.coverHeight = og.imageHeight;
       }
       await db.collection('depositEntries').doc(entry.id).update(update);
+      // Propagar la portada a tareas vinculadas (depositEntryId === entry.id).
+      // Asi tareas que ya estan creadas y mostraban placeholder se actualizan
+      // con la imagen real cuando el fetcher funciona.
+      if (update.coverImage) {
+        try {
+          const tasksSnap = await db.collection('tasks').where('depositEntryId', '==', entry.id).get();
+          const batch = db.batch();
+          let count = 0;
+          tasksSnap.forEach(d => {
+            const taskUpdate = { coverImage: update.coverImage };
+            if (update.coverWidth) taskUpdate.coverWidth = update.coverWidth;
+            if (update.coverHeight) taskUpdate.coverHeight = update.coverHeight;
+            batch.update(d.ref, taskUpdate);
+            count++;
+          });
+          if (count > 0) await batch.commit();
+        } catch (e) { /* ignore */ }
+      }
     } catch (e) { /* ignore */ }
     ogFetchInFlight.delete(entry.id);
     ogFetchedThisSession.add(entry.id);
