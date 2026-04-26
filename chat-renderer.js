@@ -5,9 +5,33 @@ let teamMembers = [];
 let chatMessages = [];
 let unsubscribers = [];
 let presenceRefreshTimer = null;
+let chatNotificationsArmed = false; // skip sonido en la primera carga
 
 const ONLINE_THRESHOLD_MS = 90 * 1000;
 const PRESENCE_REFRESH_MS = 30 * 1000;
+
+// Reproduce un "ding" suave de 2 notas con Web Audio API (sin archivos externos)
+function playNotificationSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const playTone = (freq, startOffset, duration) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      const t0 = ctx.currentTime + startOffset;
+      gain.gain.setValueAtTime(0, t0);
+      gain.gain.linearRampToValueAtTime(0.25, t0 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, t0 + duration);
+      osc.start(t0);
+      osc.stop(t0 + duration + 0.05);
+    };
+    playTone(880, 0, 0.18);    // A5
+    playTone(1175, 0.10, 0.22); // D6 (perfect fourth) — efecto "ding ding" alegre
+  } catch (e) { /* audio context puede no estar disponible, ignorar */ }
+}
 
 const userColors = [
   '#FF4757', '#1E90FF', '#2ED573', '#FFA502', '#BE2EDD',
@@ -207,7 +231,17 @@ function subscribeAll() {
     .orderBy('createdAt', 'desc')
     .limit(200)
     .onSnapshot((snap) => {
-      chatMessages = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })).reverse();
+      const newList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })).reverse();
+      // Detectar mensajes nuevos para reproducir sonido. Skip la primera carga
+      // (chatNotificationsArmed=false) y skip mensajes propios.
+      if (chatNotificationsArmed) {
+        const previousIds = new Set(chatMessages.map(m => m.id));
+        const newOnes = newList.filter(m => !previousIds.has(m.id));
+        const fromOthers = newOnes.filter(m => m.userId !== currentUser.uid);
+        if (fromOthers.length > 0) playNotificationSound();
+      }
+      chatMessages = newList;
+      chatNotificationsArmed = true;
       renderMessages();
       markChatAsRead();
     });

@@ -18,6 +18,30 @@ let unsubscribeUsers = null;
 let unsubscribePersonal = null;
 let unsubscribeNotifQueue = null;
 let unsubscribeChat = null;
+let chatNotificationsArmed = false; // skip sonido en la primera carga
+
+// Reproduce un "ding" suave de 2 notas con Web Audio API (sin archivos externos)
+function playNotificationSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const playTone = (freq, startOffset, duration) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      const t0 = ctx.currentTime + startOffset;
+      gain.gain.setValueAtTime(0, t0);
+      gain.gain.linearRampToValueAtTime(0.25, t0 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, t0 + duration);
+      osc.start(t0);
+      osc.stop(t0 + duration + 0.05);
+    };
+    playTone(880, 0, 0.18);
+    playTone(1175, 0.10, 0.22);
+  } catch (e) { /* audio context puede no estar disponible, ignorar */ }
+}
 let unsubscribeDeposit = null;
 let depositEntries = [];
 let depositLastViewedAt = null;
@@ -322,8 +346,25 @@ function subscribeToData() {
   unsubscribeChat = db.collection('chatMessages')
     .orderBy('createdAt', 'desc')
     .limit(CHAT_MESSAGE_LIMIT)
-    .onSnapshot((snapshot) => {
-      chatMessages = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).reverse();
+    .onSnapshot(async (snapshot) => {
+      const newList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).reverse();
+      // Sonido de notificacion al recibir mensaje nuevo de OTRO usuario.
+      // Solo suena en main app si la ventana del chat NO esta abierta (cerrada
+      // con X). Si la ventana del chat existe (visible u oculta), el sonido lo
+      // reproduce el chat-renderer para evitar doble notificacion.
+      if (chatNotificationsArmed) {
+        const previousIds = new Set(chatMessages.map(m => m.id));
+        const newOnes = newList.filter(m => !previousIds.has(m.id));
+        const fromOthers = newOnes.filter(m => m.userId !== currentUser.uid);
+        if (fromOthers.length > 0) {
+          try {
+            const chatOpen = window.api.isChatWindowOpen ? await window.api.isChatWindowOpen() : false;
+            if (!chatOpen) playNotificationSound();
+          } catch (e) { /* ignore */ }
+        }
+      }
+      chatMessages = newList;
+      chatNotificationsArmed = true;
       renderChatBadge();
     });
 

@@ -964,6 +964,12 @@ function registerIpcHandlers() {
   ipcMain.handle('chat-close', () => {
     if (chatWindow) chatWindow.close();
   });
+  // Para coordinar el sonido de notificacion: el main app solo lo reproduce
+  // si la ventana del chat NO existe (cerrada con X). Si existe (visible u
+  // oculta), el chat-renderer lo reproduce en su lugar para evitar doble sonido.
+  ipcMain.handle('is-chat-window-open', () => {
+    return !!(chatWindow && !chatWindow.isDestroyed());
+  });
 
   // Modo PRO: las 3 ventanas en mosaico ocupando la pantalla
   ipcMain.handle('toggle-pro-mode', () => {

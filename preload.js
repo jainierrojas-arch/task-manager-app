@@ -50,6 +50,7 @@ contextBridge.exposeInMainWorld('api', {
 
   // Chat externo (ventana separada)
   toggleChat: () => ipcRenderer.invoke('toggle-chat-window'),
+  isChatWindowOpen: () => ipcRenderer.invoke('is-chat-window-open'),
 
   // Deposito de ideas
   toggleDeposit: () => ipcRenderer.invoke('toggle-deposit-window'),
