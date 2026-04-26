@@ -740,6 +740,9 @@ function renderEntries() {
     area.querySelectorAll('[data-reuse]').forEach(btn => {
       btn.addEventListener('click', () => reuseEntry(btn.dataset.reuse));
     });
+    area.querySelectorAll('[data-move]').forEach(btn => {
+      btn.addEventListener('click', () => showMoveModal(btn.dataset.move));
+    });
   }
 
   const backBtn = document.getElementById('backToSubs');
@@ -832,10 +835,12 @@ function renderEntryHtml(e) {
             ${e.status === 'finalized' ? `
               <button class="btn btn-ghost btn-small" data-edit="${esc(e.id)}" title="Editar">&#9998;</button>
               <button class="btn btn-danger btn-small" data-delete-entry="${esc(e.id)}" title="Eliminar">&#10005;</button>
+              <button class="btn btn-info btn-small" data-move="${esc(e.id)}" title="Mover a otra categoria">&#128194; Mover</button>
               <button class="btn btn-primary btn-small" data-reuse="${esc(e.id)}" title="Volver a Tareas por hacer">&#128260; Reutilizar</button>
             ` : `
               <button class="btn btn-ghost btn-small" data-edit="${esc(e.id)}" title="Editar">&#9998;</button>
               <button class="btn btn-danger btn-small" data-delete-entry="${esc(e.id)}" title="Eliminar">&#10005;</button>
+              <button class="btn btn-info btn-small" data-move="${esc(e.id)}" title="Mover a otra categoria">&#128194; Mover</button>
               <button class="btn btn-primary btn-small" data-take="${esc(e.id)}" title="Tomarla yo (solo o cadena)">&#128587; Tomar</button>
               <button class="btn btn-success btn-small" data-assign="${esc(e.id)}">&#10140; Asignar</button>
             `}
@@ -880,6 +885,82 @@ async function reuseEntry(entryId) {
   toast('Tarea reutilizada — ahora aparece en Tareas por hacer');
 }
 
+// Mover entry a otra categoria / subcategoria. Util sobre todo para mover
+// items de Referencias (banco de contenido sin notificaciones) a una categoria
+// normal donde se cuenten como Tareas por hacer.
+let movingEntryId = null;
+function showMoveModal(entryId) {
+  const entry = entries.find(e => e.id === entryId);
+  if (!entry) return;
+  movingEntryId = entryId;
+  // Poblar categorias raiz (excluye Trabajos Finalizados — solo el sistema mueve alli)
+  const catSelect = document.getElementById('moveCategorySelect');
+  const roots = rootCategories().filter(c => c.id !== 'trabajos-finalizados');
+  catSelect.innerHTML = roots.map(c =>
+    `<option value="${esc(c.id)}"${c.id === entry.categoryId ? ' selected' : ''}>${esc(c.name)}</option>`
+  ).join('');
+  // Poblar subcategorias del seleccionado
+  populateMoveSubcategorySelect(entry.categoryId, entry.subcategoryId);
+  catSelect.onchange = () => populateMoveSubcategorySelect(catSelect.value, null);
+  document.getElementById('moveModal').classList.add('active');
+}
+
+function populateMoveSubcategorySelect(catId, preselectSubId) {
+  const subSelect = document.getElementById('moveSubcategorySelect');
+  const subs = subcategoriesOf(catId);
+  let html = '<option value="">Sin clasificar</option>';
+  subs.forEach(s => {
+    const sel = preselectSubId === s.id ? ' selected' : '';
+    html += `<option value="${esc(s.id)}"${sel}>${esc(s.name)}</option>`;
+  });
+  subSelect.innerHTML = html;
+}
+
+async function confirmMoveEntry() {
+  if (!movingEntryId) return;
+  const entry = entries.find(e => e.id === movingEntryId);
+  if (!entry) { hideMoveModal(); return; }
+  const newCatId = document.getElementById('moveCategorySelect').value;
+  const newSubId = document.getElementById('moveSubcategorySelect').value;
+  if (!newCatId) { toast('Elige una categoria', 'error'); return; }
+  const newCat = categories.find(c => c.id === newCatId);
+  const newSub = newSubId ? categories.find(c => c.id === newSubId) : null;
+  const update = {
+    categoryId: newCatId,
+    categoryName: newCat ? newCat.name : '',
+    // Al mover, el item se vuelve "Tarea por hacer" (status='idea') asi que
+    // suma al badge rojo y entra al ciclo normal — esto es lo que el usuario
+    // quiere especialmente al mover items desde Referencias.
+    status: 'idea'
+  };
+  if (newSubId) {
+    update.subcategoryId = newSubId;
+    update.subcategoryName = newSub ? newSub.name : '';
+  } else {
+    update.subcategoryId = firebase.firestore.FieldValue.delete();
+    update.subcategoryName = firebase.firestore.FieldValue.delete();
+  }
+  // Limpiar referencias a tareas anteriores (por si venia de finalizado)
+  update.finalizedAt = firebase.firestore.FieldValue.delete();
+  update.finalizedTaskId = firebase.firestore.FieldValue.delete();
+  update.convertedAt = firebase.firestore.FieldValue.delete();
+  update.convertedTaskIds = firebase.firestore.FieldValue.delete();
+  await db.collection('depositEntries').doc(movingEntryId).update(update);
+  hideMoveModal();
+  toast(`Movida a "${newCat.name}${newSub ? ' / ' + newSub.name : ''}"`);
+}
+
+function hideMoveModal() {
+  document.getElementById('moveModal').classList.remove('active');
+  movingEntryId = null;
+}
+
+document.getElementById('cancelMove').addEventListener('click', hideMoveModal);
+document.getElementById('confirmMove').addEventListener('click', confirmMoveEntry);
+document.getElementById('moveModal').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('moveModal')) hideMoveModal();
+});
+
 // Attachea listeners comunes a los entry cards dentro de un contenedor
 function bindEntryHandlers(area) {
   area.querySelectorAll('[data-link-open]').forEach(chip => {
@@ -903,6 +984,9 @@ function bindEntryHandlers(area) {
   });
   area.querySelectorAll('[data-reuse]').forEach(btn => {
     btn.addEventListener('click', () => reuseEntry(btn.dataset.reuse));
+  });
+  area.querySelectorAll('[data-move]').forEach(btn => {
+    btn.addEventListener('click', () => showMoveModal(btn.dataset.move));
   });
 }
 

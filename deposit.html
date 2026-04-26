@@ -813,6 +813,25 @@
     </div>
   </div>
 
+  <!-- Modal: mover entry a otra categoria/subcategoria -->
+  <div class="modal-overlay" id="moveModal">
+    <div class="modal" style="max-width:380px">
+      <div class="modal-title">Mover a otra categoria</div>
+      <div class="modal-row">
+        <label>Categoria destino</label>
+        <select id="moveCategorySelect"></select>
+      </div>
+      <div class="modal-row">
+        <label>Subcategoria (opcional)</label>
+        <select id="moveSubcategorySelect"><option value="">Sin clasificar</option></select>
+      </div>
+      <div class="modal-buttons">
+        <button class="btn btn-ghost" id="cancelMove">Cancelar</button>
+        <button class="btn btn-primary" id="confirmMove">Mover</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal: asignar como tarea -->
   <div class="modal-overlay" id="assignModal">
     <div class="modal">
