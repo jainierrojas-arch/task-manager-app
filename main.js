@@ -964,6 +964,25 @@ function registerIpcHandlers() {
   ipcMain.handle('chat-close', () => {
     if (chatWindow) chatWindow.close();
   });
+  // Abre/cierra deposito y navega automaticamente a una categoria especifica.
+  // Usado por el boton "Referencias" del main app para abrir el deposito ya
+  // posicionado en la categoria Referencias.
+  ipcMain.handle('toggle-deposit-with-category', (_, categoryId) => {
+    const wasOpen = !!(depositWindow && !depositWindow.isDestroyed() && depositWindow.isVisible());
+    if (!wasOpen) toggleDepositWindow();
+    // Esperar un poquito a que la ventana este lista, luego enviar mensaje
+    const sendNavigate = () => {
+      if (!depositWindow || depositWindow.isDestroyed()) return;
+      depositWindow.webContents.send('deposit-navigate', { categoryId });
+    };
+    if (depositWindow && depositWindow.webContents.isLoading()) {
+      depositWindow.webContents.once('did-finish-load', sendNavigate);
+    } else {
+      sendNavigate();
+    }
+    setTimeout(sendNavigate, 300); // re-enviar por si acaso
+    return !!(depositWindow && !depositWindow.isDestroyed() && depositWindow.isVisible());
+  });
   // Para coordinar el sonido de notificacion: el main app solo lo reproduce
   // si la ventana del chat NO existe (cerrada con X). Si existe (visible u
   // oculta), el chat-renderer lo reproduce en su lugar para evitar doble sonido.

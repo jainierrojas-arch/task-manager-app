@@ -1602,6 +1602,18 @@ if (window.api && window.api.onSetViewMode) {
   });
 }
 
+// Recibe instrucciones del proceso principal para navegar a una categoria
+// especifica al abrir el deposito (ej. boton "Referencias" del main app)
+if (window.api && window.api.onNavigate) {
+  window.api.onNavigate((payload) => {
+    if (!payload || !payload.categoryId) return;
+    selectedCategoryId = payload.categoryId;
+    selectedSubcategoryId = null;
+    try { renderCategories(); } catch (e) {}
+    try { renderEntries(); } catch (e) {}
+  });
+}
+
 // Window controls
 document.getElementById('btnMinimize').addEventListener('click', () => window.api.minimizeWindow());
 document.getElementById('btnClose').addEventListener('click', () => window.api.closeWindow());

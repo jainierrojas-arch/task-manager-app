@@ -54,6 +54,7 @@ contextBridge.exposeInMainWorld('api', {
 
   // Deposito de ideas
   toggleDeposit: () => ipcRenderer.invoke('toggle-deposit-window'),
+  toggleDepositWithCategory: (categoryId) => ipcRenderer.invoke('toggle-deposit-with-category', categoryId),
 
   // Modo PRO: las 3 ventanas en mosaico
   toggleProMode: () => ipcRenderer.invoke('toggle-pro-mode')

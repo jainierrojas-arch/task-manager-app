@@ -307,6 +307,20 @@ if (depositBtn) {
   });
 }
 
+const referencesBtn = document.getElementById('referencesBtn');
+if (referencesBtn) {
+  referencesBtn.addEventListener('click', async () => {
+    // Abre el deposito y navega automaticamente a la categoria Referencias
+    if (window.api.toggleDepositWithCategory) {
+      await window.api.toggleDepositWithCategory('referencias');
+    } else {
+      await window.api.toggleDeposit();
+    }
+    // Marcar como visto: limpia el badge rojo
+    markReferencesAsSeen();
+  });
+}
+
 // ===== FIRESTORE REAL-TIME =====
 function subscribeToData() {
   unsubscribeTasks = db.collection('tasks').orderBy('createdAt', 'desc').onSnapshot((snapshot) => {
@@ -377,6 +391,7 @@ function subscribeToData() {
     .onSnapshot((snapshot) => {
       depositEntries = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       renderDepositBadge();
+      renderReferencesBadge();
     });
 
   depositLastViewedAt = currentUserData.depositLastViewedAt || null;
@@ -385,17 +400,41 @@ function subscribeToData() {
 function renderDepositBadge() {
   const badge = document.getElementById('depositUnreadBadge');
   if (!badge) return;
-  // Badge solo cuenta items PENDIENTES por asignar (status === 'idea').
-  // EXCLUYE:
-  //   - 'converted' (en proceso, ya asignadas)
-  //   - 'finalized' (ya completadas, archivadas en Trabajos Finalizados)
-  //   - categoria 'referencias' (banco de contenido)
-  //   - categoria 'trabajos-finalizados' (final del final, no notifica)
+  // Badge del boton TAREAS — cuenta items PENDIENTES por asignar.
+  // EXCLUYE referencias y trabajos-finalizados.
   const count = depositEntries.filter(e =>
     (e.status === 'idea' || !e.status) &&
     e.categoryId !== 'referencias' &&
     e.categoryId !== 'trabajos-finalizados'
   ).length;
+  if (count <= 0) {
+    badge.style.display = 'none';
+    return;
+  }
+  badge.textContent = count > 99 ? '99+' : String(count);
+  badge.style.display = 'inline-block';
+}
+
+// Badge del boton REFERENCIAS — cuenta items NUEVOS en categoria referencias
+// agregados despues de la ultima visita del usuario al area de Referencias.
+const REFERENCES_LAST_SEEN_KEY = 'references-last-seen-at';
+function getReferencesLastSeenMs() {
+  try { return parseInt(localStorage.getItem(REFERENCES_LAST_SEEN_KEY) || '0', 10) || 0; } catch (e) { return 0; }
+}
+function markReferencesAsSeen() {
+  try { localStorage.setItem(REFERENCES_LAST_SEEN_KEY, String(Date.now())); } catch (e) {}
+  renderReferencesBadge();
+}
+function renderReferencesBadge() {
+  const badge = document.getElementById('referencesUnreadBadge');
+  if (!badge) return;
+  const lastSeenMs = getReferencesLastSeenMs();
+  const count = depositEntries.filter(e => {
+    if (e.categoryId !== 'referencias') return false;
+    if (!e.createdAt) return false;
+    const ms = e.createdAt.toDate ? e.createdAt.toDate().getTime() : new Date(e.createdAt).getTime();
+    return ms > lastSeenMs;
+  }).length;
   if (count <= 0) {
     badge.style.display = 'none';
     return;
