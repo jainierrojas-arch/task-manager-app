@@ -737,6 +737,9 @@ function renderEntries() {
     area.querySelectorAll('[data-delete-entry]').forEach(btn => {
       btn.addEventListener('click', () => deleteEntry(btn.dataset.deleteEntry));
     });
+    area.querySelectorAll('[data-reuse]').forEach(btn => {
+      btn.addEventListener('click', () => reuseEntry(btn.dataset.reuse));
+    });
   }
 
   const backBtn = document.getElementById('backToSubs');
@@ -826,14 +829,55 @@ function renderEntryHtml(e) {
         <div class="entry-card-foot">
           <div class="entry-author">Por <span style="color:${color};font-weight:600">${esc(author)}</span> &middot; ${timeAgo(e.createdAt)}</div>
           <div class="entry-actions">
-            <button class="btn btn-ghost btn-small" data-edit="${esc(e.id)}" title="Editar">&#9998;</button>
-            <button class="btn btn-danger btn-small" data-delete-entry="${esc(e.id)}" title="Eliminar">&#10005;</button>
-            <button class="btn btn-primary btn-small" data-take="${esc(e.id)}" title="Tomarla yo (solo o cadena)">&#128587; Tomar</button>
-            <button class="btn btn-success btn-small" data-assign="${esc(e.id)}">&#10140; Asignar</button>
+            ${e.status === 'finalized' ? `
+              <button class="btn btn-ghost btn-small" data-edit="${esc(e.id)}" title="Editar">&#9998;</button>
+              <button class="btn btn-danger btn-small" data-delete-entry="${esc(e.id)}" title="Eliminar">&#10005;</button>
+              <button class="btn btn-primary btn-small" data-reuse="${esc(e.id)}" title="Volver a Tareas por hacer">&#128260; Reutilizar</button>
+            ` : `
+              <button class="btn btn-ghost btn-small" data-edit="${esc(e.id)}" title="Editar">&#9998;</button>
+              <button class="btn btn-danger btn-small" data-delete-entry="${esc(e.id)}" title="Eliminar">&#10005;</button>
+              <button class="btn btn-primary btn-small" data-take="${esc(e.id)}" title="Tomarla yo (solo o cadena)">&#128587; Tomar</button>
+              <button class="btn btn-success btn-small" data-assign="${esc(e.id)}">&#10140; Asignar</button>
+            `}
           </div>
         </div>
       </div>
     </div>`;
+}
+
+// Reutilizar una entry finalizada: la regresa a "Tareas por hacer" con su
+// categoria original (si la tenemos). Asi vuelve a sumar al badge rojo y se
+// puede asignar de nuevo. Cuando se complete otra vez, regresa a Publicados.
+async function reuseEntry(entryId) {
+  const entry = entries.find(e => e.id === entryId);
+  if (!entry) return;
+  if (entry.status !== 'finalized') {
+    toast('Solo se pueden reutilizar tareas finalizadas', 'error');
+    return;
+  }
+  if (!confirm(`Reutilizar "${entry.title}"?\n\nVolvera a "Tareas por hacer" y sumara al badge rojo. Cuando se complete otra vez regresa a Publicados.`)) return;
+  const update = {
+    status: 'idea',
+    finalizedAt: firebase.firestore.FieldValue.delete(),
+    finalizedTaskId: firebase.firestore.FieldValue.delete()
+  };
+  // Restaurar a categoria original si la tenemos
+  if (entry.originalCategoryId) {
+    update.categoryId = entry.originalCategoryId;
+    update.categoryName = entry.originalCategoryName || '';
+    if (entry.originalSubcategoryId) {
+      update.subcategoryId = entry.originalSubcategoryId;
+      update.subcategoryName = entry.originalSubcategoryName || '';
+    } else {
+      update.subcategoryId = firebase.firestore.FieldValue.delete();
+      update.subcategoryName = firebase.firestore.FieldValue.delete();
+    }
+  }
+  // Limpiar referencias inversas a la tarea anterior para que se pueda crear una nueva
+  update.convertedTaskIds = firebase.firestore.FieldValue.delete();
+  update.convertedAt = firebase.firestore.FieldValue.delete();
+  await db.collection('depositEntries').doc(entryId).update(update);
+  toast('Tarea reutilizada — ahora aparece en Tareas por hacer');
 }
 
 // Attachea listeners comunes a los entry cards dentro de un contenedor
@@ -856,6 +900,9 @@ function bindEntryHandlers(area) {
   });
   area.querySelectorAll('[data-delete-entry]').forEach(btn => {
     btn.addEventListener('click', () => deleteEntry(btn.dataset.deleteEntry));
+  });
+  area.querySelectorAll('[data-reuse]').forEach(btn => {
+    btn.addEventListener('click', () => reuseEntry(btn.dataset.reuse));
   });
 }
 
