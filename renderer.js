@@ -1287,9 +1287,19 @@ function renderTaskList(container, taskList, mode) {
       }
 
       // Preview/portada del link copiado del deposito (se ve en el espacio
-      // libre entre el contenido y los botones de accion)
+      // libre entre el contenido y los botones de accion).
+      // Fallback: si la tarea no tiene videoLink/link pero esta vinculada a una
+      // entry del deposito (depositEntryId), usar el primer link de la entry.
+      // Esto rescata tareas viejas que se crearon con tipo Carrusel cuando la
+      // logica de copia de links no contemplaba ese tipo.
       let coverPreview = '';
-      const previewUrl = task.videoLink || task.link;
+      let previewUrl = task.videoLink || task.link;
+      if (!previewUrl && task.depositEntryId && Array.isArray(depositEntries)) {
+        const entry = depositEntries.find(e => e.id === task.depositEntryId);
+        if (entry && Array.isArray(entry.links) && entry.links[0]) {
+          previewUrl = entry.links[0].url;
+        }
+      }
       if (task.coverImage && previewUrl) {
         coverPreview = `<div class="task-cover-preview" style="background-image:url('${esc(task.coverImage)}')" onclick="window.api.openExternal('${esc(previewUrl)}')" title="Abrir ${esc(previewUrl)}"></div>`;
       }

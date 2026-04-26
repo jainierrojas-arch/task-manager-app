@@ -1423,10 +1423,17 @@ document.getElementById('confirmAssign').addEventListener('click', async () => {
   if (!projectId) { toast('Elige un proyecto', 'error'); return; }
   const project = projects.find(p => p.id === projectId);
 
-  // Tomar solo el primer link de cada tipo para las casillas de la tarea
+  // Tomar solo el primer link de cada tipo para las casillas de la tarea.
+  // Carruseles tambien se mapean al slot videoLink para que la preview se muestre.
   const links = assigningEntry.links || [];
-  const videoLink = links.find(l => l.type === 'video')?.url;
-  const materialLink = links.find(l => l.type === 'material')?.url || links.find(l => l.type === 'recurso')?.url;
+  let videoLink = links.find(l => l.type === 'video')?.url
+    || links.find(l => l.type === 'carrusel')?.url;
+  let materialLink = links.find(l => l.type === 'material')?.url
+    || links.find(l => l.type === 'recurso')?.url;
+  // Fallback: si no se mapeo nada, usar el primer link de cualquier tipo
+  if (!videoLink && !materialLink && links.length > 0) {
+    videoLink = links[0].url;
+  }
 
   const baseText = assigningEntry.title;
   const createdTaskIds = [];
