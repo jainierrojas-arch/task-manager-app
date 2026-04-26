@@ -537,6 +537,41 @@
     }
     .task-item:hover .task-delete { opacity: 1; }
 
+    /* Preview/portada del link de la tarea (copiada del deposito al asignar) */
+    .task-cover-preview {
+      width: 78px;
+      height: 78px;
+      flex-shrink: 0;
+      background-color: #0e0f1a;
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      border-radius: 6px;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      align-self: center;
+      margin-left: 8px;
+      transition: transform 0.15s, box-shadow 0.15s;
+      position: relative;
+    }
+    .task-cover-preview:hover {
+      transform: scale(1.05);
+      box-shadow: 0 2px 8px rgba(108,99,255,0.3);
+    }
+    .task-cover-preview::after {
+      content: '\25B6';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 22px;
+      color: rgba(255,255,255,0.85);
+      text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+    .task-cover-preview:hover::after { opacity: 1; }
+
     /* Completed */
     .task-item.completed { opacity: 0.5; }
     .task-item.completed .task-text { text-decoration: line-through; color: var(--text-secondary); }

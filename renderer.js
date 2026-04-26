@@ -1286,6 +1286,14 @@ function renderTaskList(container, taskList, mode) {
         markDoneBtn = `<button class="btn-mark-done" onclick="completeTask('${task.id}')" title="Sube el resultado y manda a aprobacion">${label}</button>`;
       }
 
+      // Preview/portada del link copiado del deposito (se ve en el espacio
+      // libre entre el contenido y los botones de accion)
+      let coverPreview = '';
+      const previewUrl = task.videoLink || task.link;
+      if (task.coverImage && previewUrl) {
+        coverPreview = `<div class="task-cover-preview" style="background-image:url('${esc(task.coverImage)}')" onclick="window.api.openExternal('${esc(previewUrl)}')" title="Abrir ${esc(previewUrl)}"></div>`;
+      }
+
       html += `
         <div class="task-item ${overdueClass}" data-id="${task.id}" data-project-id="${task.projectId || ''}" data-project-name="${esc(task.projectName || '')}" style="border-left-color:${group.color}">
           ${checkBtn}
@@ -1309,6 +1317,7 @@ function renderTaskList(container, taskList, mode) {
             ${notesHtml}
             ${actionButtons}
           </div>
+          ${coverPreview}
           ${taskActions}
         </div>`;
     });

@@ -1439,6 +1439,13 @@ document.getElementById('confirmAssign').addEventListener('click', async () => {
     if (materialLink) taskData.link = materialLink;
     // Referencia inversa para sincronizar el deposito con el ciclo de vida de la tarea
     taskData.depositEntryId = assigningEntry.id;
+    // Copiar la portada (OG image) y dimensiones para que la tarea muestre la
+    // misma miniatura que la entry en el deposito.
+    if (assigningEntry.coverImage) {
+      taskData.coverImage = assigningEntry.coverImage;
+      if (assigningEntry.coverWidth) taskData.coverWidth = assigningEntry.coverWidth;
+      if (assigningEntry.coverHeight) taskData.coverHeight = assigningEntry.coverHeight;
+    }
     if (amount && amount > 0) {
       const deadline = new Date();
       if (unit === 'minutes') deadline.setMinutes(deadline.getMinutes() + amount);
