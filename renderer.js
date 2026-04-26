@@ -310,14 +310,14 @@ if (depositBtn) {
 const referencesBtn = document.getElementById('referencesBtn');
 if (referencesBtn) {
   referencesBtn.addEventListener('click', async () => {
-    // Abre el deposito y navega automaticamente a la categoria Referencias
+    // Abre el deposito y navega automaticamente a la categoria Referencias.
+    // El badge ya NO se reinicia al hacer click — es persistente y siempre
+    // refleja el total de items en Referencias (mismas reglas que TAREAS).
     if (window.api.toggleDepositWithCategory) {
       await window.api.toggleDepositWithCategory('referencias');
     } else {
       await window.api.toggleDeposit();
     }
-    // Marcar como visto: limpia el badge rojo
-    markReferencesAsSeen();
   });
 }
 
@@ -415,26 +415,13 @@ function renderDepositBadge() {
   badge.style.display = 'inline-block';
 }
 
-// Badge del boton REFERENCIAS — cuenta items NUEVOS en categoria referencias
-// agregados despues de la ultima visita del usuario al area de Referencias.
-const REFERENCES_LAST_SEEN_KEY = 'references-last-seen-at';
-function getReferencesLastSeenMs() {
-  try { return parseInt(localStorage.getItem(REFERENCES_LAST_SEEN_KEY) || '0', 10) || 0; } catch (e) { return 0; }
-}
-function markReferencesAsSeen() {
-  try { localStorage.setItem(REFERENCES_LAST_SEEN_KEY, String(Date.now())); } catch (e) {}
-  renderReferencesBadge();
-}
+// Badge del boton REFERENCIAS — cuenta TOTAL de items en categoria referencias
+// (mismas reglas que el badge de TAREAS: persistente, suma cuando se agregan,
+// resta cuando se mueven a otra categoria).
 function renderReferencesBadge() {
   const badge = document.getElementById('referencesUnreadBadge');
   if (!badge) return;
-  const lastSeenMs = getReferencesLastSeenMs();
-  const count = depositEntries.filter(e => {
-    if (e.categoryId !== 'referencias') return false;
-    if (!e.createdAt) return false;
-    const ms = e.createdAt.toDate ? e.createdAt.toDate().getTime() : new Date(e.createdAt).getTime();
-    return ms > lastSeenMs;
-  }).length;
+  const count = depositEntries.filter(e => e.categoryId === 'referencias').length;
   if (count <= 0) {
     badge.style.display = 'none';
     return;

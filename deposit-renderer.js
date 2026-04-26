@@ -319,11 +319,14 @@ function renderCategories() {
     const refSubs = subcategoriesOf('referencias');
     const refTotalCount = entries.filter(e => e.categoryId === 'referencias').length;
     const refActive = selectedCategoryId === 'referencias' && !selectedSubcategoryId ? ' active' : '';
+    // REFERENCIAS — sigue las mismas reglas de TAREAS: badge rojo con conteo
+    // de items en cada subcategoria, y total sumado en "Todos".
     html += `
       <div class="category-section-header">REFERENCIAS</div>
       <div class="category-item${refActive}" data-ref-root="1">
         <span class="cat-name" style="opacity:0.85">&#128230; Todos</span>
         <span class="cat-badges">
+          ${pendingBadge(refTotalCount)}
           <span class="cat-count">${refTotalCount}</span>
         </span>
       </div>`;
@@ -334,6 +337,7 @@ function renderCategories() {
         <div class="category-item${sActive}" data-ref-sub="${esc(s.id)}" style="padding-left:18px">
           <span class="cat-name">${esc(s.name)}</span>
           <span class="cat-badges">
+            ${pendingBadge(c)}
             <span class="cat-count">${c}</span>
             <button class="cat-delete" data-delete-ref-sub="${esc(s.id)}" title="Eliminar categoria">&#10005;</button>
           </span>
