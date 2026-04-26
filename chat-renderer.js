@@ -349,13 +349,21 @@ function subscribeAll() {
     });
   unsubscribers.push(unsubChat);
 
-  // Direct messages — mensajes privados (todos los DMs en los que participo)
+  // Direct messages — mensajes privados (todos los DMs en los que participo).
+  // NOTA: array-contains + orderBy requiere indice compuesto en Firestore. Para
+  // evitar tener que crearlo manualmente, ordenamos del lado del cliente.
   const unsubDm = db.collection('directMessages')
     .where('participantIds', 'array-contains', currentUser.uid)
-    .orderBy('createdAt', 'desc')
     .limit(500)
     .onSnapshot((snap) => {
-      const newList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })).reverse();
+      const docs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      // Ordenar ascendente por createdAt (mensajes pendientes sin timestamp van al final)
+      docs.sort((a, b) => {
+        const aMs = a.createdAt && a.createdAt.toDate ? a.createdAt.toDate().getTime() : Number.MAX_SAFE_INTEGER;
+        const bMs = b.createdAt && b.createdAt.toDate ? b.createdAt.toDate().getTime() : Number.MAX_SAFE_INTEGER;
+        return aMs - bMs;
+      });
+      const newList = docs;
       if (dmNotificationsArmed) {
         const previousIds = new Set(allDmMessages.map(m => m.id));
         const newOnes = newList.filter(m => !previousIds.has(m.id));
@@ -371,6 +379,8 @@ function subscribeAll() {
         renderMessages();
       }
       renderMembers(); // re-renderiza badges de no-leidos
+    }, (err) => {
+      console.error('Error suscribiendo a DMs:', err);
     });
   unsubscribers.push(unsubDm);
 }

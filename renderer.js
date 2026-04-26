@@ -355,7 +355,8 @@ function subscribeToData() {
       if (chatNotificationsArmed) {
         const previousIds = new Set(chatMessages.map(m => m.id));
         const newOnes = newList.filter(m => !previousIds.has(m.id));
-        const fromOthers = newOnes.filter(m => m.userId !== currentUser.uid);
+        // Filtrar mensajes propios — el campo correcto es authorId (no userId)
+        const fromOthers = newOnes.filter(m => m.authorId !== currentUser.uid);
         if (fromOthers.length > 0) {
           try {
             const chatOpen = window.api.isChatWindowOpen ? await window.api.isChatWindowOpen() : false;
