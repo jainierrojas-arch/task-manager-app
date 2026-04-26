@@ -3657,22 +3657,38 @@ if (el.chatToggleBtn) {
 
 const proModeBtn = document.getElementById('proModeBtn');
 if (proModeBtn) {
-  // El estado se cicla con cada click: off -> full (3 ventanas) -> no-chat (2 ventanas) -> off
+  // El boton SIEMPRE muestra el siguiente modo al que se va a cambiar al hacer click.
+  // Asi el usuario sabe a donde lo va a llevar el siguiente click:
+  //   off       -> click pasa a 'full'      -> boton mostraba "PRO 3 VENTANAS" (proxima accion)
+  //   full      -> click pasa a 'no-chat'   -> boton mostraba "PRO SIN CHAT"   (proxima accion)
+  //   no-chat   -> click pasa a 'off'       -> boton mostraba "SALIR PRO"      (proxima accion)
+  function applyProBtnLabel(currentState) {
+    if (currentState === 'off') {
+      // proxima accion: activar Pro 3 ventanas
+      proModeBtn.style.background = 'linear-gradient(135deg,#2ed573,#1aaf4a)';
+      proModeBtn.innerHTML = '&#128202; PRO 3 VENTANAS';
+    } else if (currentState === 'full') {
+      // proxima accion: pasar a Sin Chat
+      proModeBtn.style.background = 'linear-gradient(135deg,#1e90ff,#4a6cf7)';
+      proModeBtn.innerHTML = '&#128203; PRO SIN CHAT';
+    } else {
+      // currentState === 'no-chat', proxima accion: salir de Pro
+      proModeBtn.style.background = 'linear-gradient(135deg,#ff6b6b,#ee5a6f)';
+      proModeBtn.innerHTML = '&#10006; SALIR PRO';
+    }
+  }
+  // Inicializar etiqueta con el estado off (proxima accion: PRO 3 VENTANAS)
+  applyProBtnLabel('off');
+
   proModeBtn.addEventListener('click', async () => {
     try {
+      console.log('[ProMode] click — solicitando toggle...');
       const state = await window.api.toggleProMode();
-      // Soporta retorno como string (nuevo) o boolean (viejo, por si rollback)
       const s = typeof state === 'string' ? state : (state ? 'full' : 'off');
-      if (s === 'full') {
-        proModeBtn.style.background = 'linear-gradient(135deg,#2ed573,#1aaf4a)';
-        proModeBtn.innerHTML = '&#128202; PRO 3 VENTANAS';
-      } else if (s === 'no-chat') {
-        proModeBtn.style.background = 'linear-gradient(135deg,#1e90ff,#4a6cf7)';
-        proModeBtn.innerHTML = '&#128203; PRO SIN CHAT';
-      } else {
-        proModeBtn.style.background = 'linear-gradient(135deg,#ff6b6b,#ee5a6f)';
-        proModeBtn.innerHTML = '&#128640; MODO PRO';
-      }
-    } catch (e) { console.error(e); }
+      console.log('[ProMode] nuevo estado:', s);
+      applyProBtnLabel(s);
+    } catch (e) {
+      console.error('[ProMode] error:', e);
+    }
   });
 }
