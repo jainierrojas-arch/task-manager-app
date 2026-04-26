@@ -815,15 +815,11 @@
 
   <!-- Modal: mover entry a otra categoria/subcategoria -->
   <div class="modal-overlay" id="moveModal">
-    <div class="modal" style="max-width:380px">
+    <div class="modal" style="max-width:420px">
       <div class="modal-title">Mover a otra categoria</div>
       <div class="modal-row">
-        <label>Categoria destino</label>
-        <select id="moveCategorySelect"></select>
-      </div>
-      <div class="modal-row">
-        <label>Subcategoria (opcional)</label>
-        <select id="moveSubcategorySelect"><option value="">Sin clasificar</option></select>
+        <label>Destino</label>
+        <select id="moveDestinationSelect" size="14" style="width:100%;height:auto;padding:6px"></select>
       </div>
       <div class="modal-buttons">
         <button class="btn btn-ghost" id="cancelMove">Cancelar</button>

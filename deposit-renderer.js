@@ -893,45 +893,75 @@ function showMoveModal(entryId) {
   const entry = entries.find(e => e.id === entryId);
   if (!entry) return;
   movingEntryId = entryId;
-  // Poblar categorias raiz (excluye Trabajos Finalizados — solo el sistema mueve alli)
-  const catSelect = document.getElementById('moveCategorySelect');
-  const roots = rootCategories().filter(c => c.id !== 'trabajos-finalizados');
-  catSelect.innerHTML = roots.map(c =>
-    `<option value="${esc(c.id)}"${c.id === entry.categoryId ? ' selected' : ''}>${esc(c.name)}</option>`
-  ).join('');
-  // Poblar subcategorias del seleccionado
-  populateMoveSubcategorySelect(entry.categoryId, entry.subcategoryId);
-  catSelect.onchange = () => populateMoveSubcategorySelect(catSelect.value, null);
-  document.getElementById('moveModal').classList.add('active');
-}
+  const select = document.getElementById('moveDestinationSelect');
+  // Construir un select con TODAS las categorias y sub-categorias visibles
+  // agrupadas en secciones (TAREAS POR HACER, REFERENCIAS, TRABAJOS FINALIZADOS).
+  // El value codifica catId + subId separados por "|".
+  const roots = rootCategories();
+  const normalRoots = roots.filter(c => c.id !== 'trabajos-finalizados' && c.id !== 'referencias');
+  const refRoot = roots.find(c => c.id === 'referencias');
+  const tfRoot = roots.find(c => c.id === 'trabajos-finalizados');
 
-function populateMoveSubcategorySelect(catId, preselectSubId) {
-  const subSelect = document.getElementById('moveSubcategorySelect');
-  const subs = subcategoriesOf(catId);
-  let html = '<option value="">Sin clasificar</option>';
-  subs.forEach(s => {
-    const sel = preselectSubId === s.id ? ' selected' : '';
-    html += `<option value="${esc(s.id)}"${sel}>${esc(s.name)}</option>`;
-  });
-  subSelect.innerHTML = html;
+  const currentValue = `${entry.categoryId || ''}|${entry.subcategoryId || ''}`;
+  const buildOption = (catId, subId, label) => {
+    const value = `${catId}|${subId || ''}`;
+    const sel = value === currentValue ? ' selected' : '';
+    return `<option value="${esc(value)}"${sel}>${esc(label)}</option>`;
+  };
+
+  let html = '';
+
+  // Seccion: TAREAS POR HACER (categorias normales)
+  if (normalRoots.length > 0) {
+    html += `<optgroup label="📋 TAREAS POR HACER">`;
+    normalRoots.forEach(c => {
+      html += buildOption(c.id, null, c.name);
+      const subs = subcategoriesOf(c.id);
+      subs.forEach(s => {
+        html += buildOption(c.id, s.id, `   ${c.name} / ${s.name}`);
+      });
+    });
+    html += `</optgroup>`;
+  }
+
+  // Seccion: REFERENCIAS
+  if (refRoot) {
+    html += `<optgroup label="📚 REFERENCIAS">`;
+    html += buildOption(refRoot.id, null, refRoot.name);
+    subcategoriesOf(refRoot.id).forEach(s => {
+      html += buildOption(refRoot.id, s.id, `   ${refRoot.name} / ${s.name}`);
+    });
+    html += `</optgroup>`;
+  }
+
+  // Seccion: TRABAJOS FINALIZADOS (permitida solo para mover manualmente)
+  if (tfRoot) {
+    html += `<optgroup label="✅ TRABAJOS FINALIZADOS">`;
+    html += buildOption(tfRoot.id, null, tfRoot.name);
+    subcategoriesOf(tfRoot.id).forEach(s => {
+      html += buildOption(tfRoot.id, s.id, `   ${tfRoot.name} / ${s.name}`);
+    });
+    html += `</optgroup>`;
+  }
+
+  select.innerHTML = html;
+  document.getElementById('moveModal').classList.add('active');
 }
 
 async function confirmMoveEntry() {
   if (!movingEntryId) return;
   const entry = entries.find(e => e.id === movingEntryId);
   if (!entry) { hideMoveModal(); return; }
-  const newCatId = document.getElementById('moveCategorySelect').value;
-  const newSubId = document.getElementById('moveSubcategorySelect').value;
-  if (!newCatId) { toast('Elige una categoria', 'error'); return; }
+  const value = document.getElementById('moveDestinationSelect').value;
+  if (!value) { toast('Elige un destino', 'error'); return; }
+  const [newCatId, newSubIdRaw] = value.split('|');
+  const newSubId = newSubIdRaw || null;
+  if (!newCatId) { toast('Elige un destino', 'error'); return; }
   const newCat = categories.find(c => c.id === newCatId);
   const newSub = newSubId ? categories.find(c => c.id === newSubId) : null;
   const update = {
     categoryId: newCatId,
-    categoryName: newCat ? newCat.name : '',
-    // Al mover, el item se vuelve "Tarea por hacer" (status='idea') asi que
-    // suma al badge rojo y entra al ciclo normal — esto es lo que el usuario
-    // quiere especialmente al mover items desde Referencias.
-    status: 'idea'
+    categoryName: newCat ? newCat.name : ''
   };
   if (newSubId) {
     update.subcategoryId = newSubId;
@@ -940,11 +970,19 @@ async function confirmMoveEntry() {
     update.subcategoryId = firebase.firestore.FieldValue.delete();
     update.subcategoryName = firebase.firestore.FieldValue.delete();
   }
-  // Limpiar referencias a tareas anteriores (por si venia de finalizado)
-  update.finalizedAt = firebase.firestore.FieldValue.delete();
-  update.finalizedTaskId = firebase.firestore.FieldValue.delete();
-  update.convertedAt = firebase.firestore.FieldValue.delete();
-  update.convertedTaskIds = firebase.firestore.FieldValue.delete();
+  // Determinar el status segun el destino:
+  //   - TF        -> 'finalized' (se considera como completada y archivada)
+  //   - cualquier otra categoria -> 'idea' (se vuelve Tarea por hacer y suma al badge)
+  if (newCatId === 'trabajos-finalizados') {
+    update.status = 'finalized';
+    update.finalizedAt = firebase.firestore.FieldValue.serverTimestamp();
+  } else {
+    update.status = 'idea';
+    update.finalizedAt = firebase.firestore.FieldValue.delete();
+    update.finalizedTaskId = firebase.firestore.FieldValue.delete();
+    update.convertedAt = firebase.firestore.FieldValue.delete();
+    update.convertedTaskIds = firebase.firestore.FieldValue.delete();
+  }
   await db.collection('depositEntries').doc(movingEntryId).update(update);
   hideMoveModal();
   toast(`Movida a "${newCat.name}${newSub ? ' / ' + newSub.name : ''}"`);
