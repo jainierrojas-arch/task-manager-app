@@ -49,6 +49,11 @@ contextBridge.exposeInMainWorld('api', {
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   refreshAllWindows: () => ipcRenderer.invoke('refresh-all-windows'),
 
+  // Make.com webhook para programacion de contenido en Instagram
+  getMakeWebhook: () => ipcRenderer.invoke('get-make-webhook'),
+  setMakeWebhook: (url) => ipcRenderer.invoke('set-make-webhook', url),
+  sendToMakeWebhook: (payload) => ipcRenderer.invoke('send-to-make-webhook', payload),
+
   // Chat externo (ventana separada)
   toggleChat: () => ipcRenderer.invoke('toggle-chat-window'),
   isChatWindowOpen: () => ipcRenderer.invoke('is-chat-window-open'),

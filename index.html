@@ -1029,6 +1029,64 @@
       color: var(--text-dim);
       font-size: 13px;
     }
+
+    /* ===== Programacion de contenido ===== */
+    .schedule-view-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+    .schedule-view-btn {
+      padding: 6px 14px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .schedule-view-btn:hover { background: var(--bg-hover); }
+    .schedule-view-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
+    .schedule-list { display: flex; flex-direction: column; gap: 8px; }
+    .sched-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      border-left: 3px solid #e1306c;
+    }
+    .sched-card.published { border-left-color: var(--success); opacity: 0.85; }
+    .sched-card.failed { border-left-color: var(--danger); }
+    .sched-card-thumb {
+      width: 60px;
+      height: 75px;
+      border-radius: 6px;
+      background: var(--bg-secondary) center/cover no-repeat;
+      flex-shrink: 0;
+    }
+    .sched-card-body { flex: 1; min-width: 0; }
+    .sched-card-when { font-size: 11px; color: var(--text-dim); margin-bottom: 2px; }
+    .sched-card-caption { font-size: 12px; color: var(--text-primary); line-height: 1.4; max-height: 38px; overflow: hidden; }
+    .sched-card-meta { font-size: 10px; color: var(--text-dim); margin-top: 4px; }
+    .sched-card-actions { display: flex; gap: 4px; flex-shrink: 0; }
+    .sched-status-pill {
+      display: inline-block;
+      padding: 1px 8px;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+    .sched-status-pending { background: rgba(225,48,108,0.15); color: #e1306c; }
+    .sched-status-published { background: rgba(46,213,115,0.15); color: var(--success); }
+    .sched-status-failed { background: rgba(255,71,87,0.15); color: var(--danger); }
   </style>
 </head>
 <body>
@@ -1107,6 +1165,10 @@
       <div class="nav-tab" data-tab="ideas">
         &#128161; Ideas
         <span class="tab-badge" id="ideasBadge" style="display:none">0</span>
+      </div>
+      <div class="nav-tab" data-tab="schedule">
+        &#128241; Programacion
+        <span class="tab-badge" id="scheduleBadge" style="display:none">0</span>
       </div>
       <div class="nav-tab" data-tab="new">
         &#10133; Nueva
@@ -1195,6 +1257,30 @@
         </div>
         <div class="calendar-grid" id="calendarGrid"></div>
         <div id="calendarDayList" style="margin-top:12px"></div>
+      </div>
+
+      <!-- Programacion: programar contenido a Instagram via Make.com webhook -->
+      <div class="tab-content" id="tabSchedule">
+        <div class="schedule-view-bar">
+          <button class="schedule-view-btn active" data-schedule-view="list">&#128203; Lista</button>
+          <button class="schedule-view-btn" data-schedule-view="calendar">&#128197; Calendario</button>
+          <span style="flex:1"></span>
+          <span id="scheduleConfigStatus" style="font-size:11px;color:var(--text-dim)"></span>
+        </div>
+        <div id="scheduleListView" class="schedule-list"></div>
+        <div id="scheduleCalendarView" style="display:none">
+          <div class="calendar-header">
+            <button class="btn btn-ghost btn-small" id="schedCalPrev">&larr;</button>
+            <div class="calendar-month-label" id="schedCalMonthLabel">-</div>
+            <button class="btn btn-ghost btn-small" id="schedCalNext">&rarr;</button>
+            <button class="btn btn-ghost btn-small" id="schedCalToday">Hoy</button>
+          </div>
+          <div class="calendar-weekdays">
+            <div>L</div><div>M</div><div>M</div><div>J</div><div>V</div><div>S</div><div>D</div>
+          </div>
+          <div class="calendar-grid" id="schedCalendarGrid"></div>
+          <div id="schedCalendarDayList" style="margin-top:12px"></div>
+        </div>
       </div>
 
       <!-- Ideas: notas tipo tarjeta, modo Grupal (compartido) o Personal (solo tu) -->
@@ -1325,6 +1411,32 @@
           </div>
 
           <div class="settings-group">
+            <div class="settings-label">Programacion de contenido (Make.com webhook)</div>
+            <div class="settings-input-group">
+              <input type="url" id="makeWebhookInput" placeholder="https://hook.eu2.make.com/xxxxxxxxxxxxxxxx">
+              <button class="btn btn-primary btn-small" id="saveMakeWebhook">Guardar</button>
+            </div>
+            <div style="display:flex;gap:6px;margin-top:6px">
+              <button class="btn btn-ghost btn-small" id="testMakeWebhook" style="flex:1">&#128293; Probar webhook</button>
+            </div>
+            <div class="status-indicator" id="makeStatus" style="margin-top:6px">
+              <span class="status-dot disconnected"></span>
+              <span>No configurado</span>
+            </div>
+            <div class="telegram-instructions">
+              <h4>Como configurar Make.com para programar en Instagram:</h4>
+              <ol>
+                <li>Crea un escenario en Make.com</li>
+                <li>Modulo trigger: <code>Webhooks &rarr; Custom webhook</code></li>
+                <li>Make te da una URL — pegala arriba y guarda</li>
+                <li>Modulo siguiente: <code>Instagram for Business &rarr; Create a Photo Post</code> (o Reel/Story)</li>
+                <li>Mapea los campos del webhook: <code>caption</code>, <code>mediaUrl</code>, <code>scheduledAt</code></li>
+                <li>Activa el escenario. Ahora cada vez que programes algo desde la app, Make lo publica automaticamente.</li>
+              </ol>
+            </div>
+          </div>
+
+          <div class="settings-group">
             <div class="settings-label">Tema de la interfaz</div>
             <div style="display:flex;gap:8px;flex-wrap:wrap">
               <button class="btn btn-ghost theme-option" data-theme="default" style="flex:1;min-width:100px;padding:10px;border:2px solid var(--border)">
@@ -1389,6 +1501,47 @@
       <div id="whatsNewContent" style="font-size:13px;color:var(--text-secondary);line-height:1.6;max-height:50vh;overflow-y:auto;margin-bottom:14px"></div>
       <div class="modal-buttons">
         <button class="btn btn-primary" id="whatsNewAccept" style="width:100%">Aceptar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Programar contenido en Instagram (envia a Make.com webhook) -->
+  <div class="modal-overlay" id="scheduleModal">
+    <div class="modal" style="max-width:520px">
+      <div class="modal-title">&#128241; Programar en Instagram</div>
+      <div id="scheduleNoWebhook" style="display:none;background:var(--bg-card);border:1px solid var(--warning);border-radius:6px;padding:10px;margin-bottom:12px;font-size:12px;color:var(--text-secondary)">
+        &#9888;&#65039; Primero configura tu webhook de Make.com en Configuracion &rarr; Programacion
+      </div>
+      <div id="scheduleMediaPreview" style="margin-bottom:12px;border-radius:8px;overflow:hidden;display:none">
+        <div id="scheduleMediaImg" style="width:100%;aspect-ratio:4/5;background:var(--bg-card) center/contain no-repeat"></div>
+      </div>
+      <div class="modal-row">
+        <label>Tipo de post</label>
+        <div style="display:flex;gap:6px;margin-top:4px">
+          <label style="flex:1"><input type="radio" name="schedPostType" value="post" checked> Post</label>
+          <label style="flex:1"><input type="radio" name="schedPostType" value="reel"> Reel</label>
+          <label style="flex:1"><input type="radio" name="schedPostType" value="story"> Story</label>
+        </div>
+      </div>
+      <div class="modal-row">
+        <label>Fecha y hora de publicacion</label>
+        <div style="display:flex;gap:6px;margin-top:4px">
+          <input type="date" id="schedDate" style="flex:1">
+          <input type="time" id="schedTime" style="flex:1">
+        </div>
+      </div>
+      <div class="modal-row">
+        <label>Caption (descripcion del post)</label>
+        <textarea id="schedCaption" rows="5" placeholder="Caption del post (puedes incluir hashtags y mentions)" style="font-family:inherit"></textarea>
+      </div>
+      <div class="modal-row">
+        <label>URL del medio (imagen/video publica)</label>
+        <input type="url" id="schedMediaUrl" placeholder="https://...jpg o .mp4">
+        <div style="font-size:11px;color:var(--text-dim);margin-top:2px">Auto-rellenada del thumbnail de la tarea. Para reels usa un .mp4 publico.</div>
+      </div>
+      <div class="modal-buttons">
+        <button class="btn btn-ghost" id="schedCancel">Cancelar</button>
+        <button class="btn btn-primary" id="schedConfirm">&#128241; Programar</button>
       </div>
     </div>
   </div>

@@ -49,7 +49,12 @@ const store = new JsonStore({
   telegramToken: '',
   claudeApiKey: '',
   reminderIntervalMinutes: 0,
-  tabsMultirow: false
+  tabsMultirow: false,
+  // URL de webhook de Make.com para programar contenido en redes sociales
+  // (Instagram via Graph API). El usuario lo configura en Settings; cuando
+  // marca una tarea como "programar", la app envia un POST con los datos del
+  // post a este webhook, y Make se encarga de publicar/programar.
+  makeWebhookUrl: ''
 });
 
 let mainWindow;
@@ -705,6 +710,55 @@ function registerIpcHandlers() {
   ipcMain.handle('get-claude-api-key-status', () => {
     const k = store.get('claudeApiKey');
     return k ? `Configurada (...${k.slice(-6)})` : '';
+  });
+
+  // Make.com webhook (programacion de contenido en Instagram via Make)
+  ipcMain.handle('get-make-webhook', () => store.get('makeWebhookUrl') || '');
+  ipcMain.handle('set-make-webhook', (_, url) => {
+    const clean = String(url || '').trim();
+    if (clean && !/^https?:\/\//i.test(clean)) {
+      return { ok: false, error: 'La URL debe empezar con http:// o https://' };
+    }
+    store.set('makeWebhookUrl', clean);
+    return { ok: true };
+  });
+  // POST al webhook de Make con el payload del post a programar
+  ipcMain.handle('send-to-make-webhook', async (_, payload) => {
+    const url = store.get('makeWebhookUrl');
+    if (!url) return { ok: false, error: 'Webhook URL no configurada' };
+    try {
+      const https = require('https');
+      const http = require('http');
+      const parsed = new URL(url);
+      const lib = parsed.protocol === 'https:' ? https : http;
+      const body = JSON.stringify(payload || {});
+      return await new Promise((resolve) => {
+        const req = lib.request({
+          host: parsed.hostname,
+          port: parsed.port,
+          path: parsed.pathname + parsed.search,
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(body),
+            'User-Agent': 'TaskManager/1.0'
+          }
+        }, (res) => {
+          let data = '';
+          res.on('data', c => { data += c; });
+          res.on('end', () => {
+            const ok = res.statusCode >= 200 && res.statusCode < 300;
+            resolve({ ok, status: res.statusCode, body: data.slice(0, 500) });
+          });
+        });
+        req.on('error', (e) => resolve({ ok: false, error: e.message }));
+        req.setTimeout(15000, () => { try { req.destroy(); } catch (_) {} resolve({ ok: false, error: 'Timeout (15s)' }); });
+        req.write(body);
+        req.end();
+      });
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
   });
 
   ipcMain.handle('get-reminder-interval', () => store.get('reminderIntervalMinutes') || 0);

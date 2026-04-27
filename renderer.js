@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '2.80.0': {
+    title: 'Programación de contenido en Instagram (Make.com)',
+    features: [
+      '📱 <strong>Nueva pestaña Programación</strong>: vista lista + calendario de los posts programados a Instagram.',
+      '🔗 <strong>Webhook de Make.com</strong>: configurable en Configuración. La app envía los datos del post (caption, mediaUrl, fecha) y Make publica/programa en tu Instagram Business automáticamente.',
+      '📅 <strong>Botón "Programar" en tareas finalizadas</strong>: abre un modal con fecha/hora, caption editable y preview de la imagen — confirmas y se manda al webhook.',
+      '🎯 Soporta Post, Reel y Story (lo eliges en el modal). Cada miembro ve solo sus propios posts programados (admin ve todos).',
+      '⚙️ <strong>Setup en Make.com</strong>: Custom Webhook trigger → Instagram for Business → Create Photo Post (mapeas caption/mediaUrl/scheduledAt). Instrucciones detalladas en Configuración.'
+    ]
+  },
   '2.79.0': {
     title: 'Updates de Windows funcionando otra vez',
     features: [
@@ -281,6 +291,11 @@ let depositEntries = [];
 let unsubscribeIdeas = null;
 let ideas = [];
 let currentIdeasMode = 'team'; // 'team' | 'personal'
+let unsubscribeScheduled = null;
+let scheduledPosts = [];
+let currentScheduleView = 'list'; // 'list' | 'calendar'
+let schedulingTaskId = null;
+let schedCalDate = new Date();
 let depositLastViewedAt = null;
 let reminderTimer = null;
 let presenceTimer = null;
@@ -524,6 +539,7 @@ function showLogin() {
   if (unsubscribeChat) { unsubscribeChat(); unsubscribeChat = null; }
   if (unsubscribeDeposit) { unsubscribeDeposit(); unsubscribeDeposit = null; }
   if (unsubscribeIdeas) { unsubscribeIdeas(); unsubscribeIdeas = null; }
+  if (unsubscribeScheduled) { unsubscribeScheduled(); unsubscribeScheduled = null; }
   if (presenceTimer) { clearInterval(presenceTimer); presenceTimer = null; }
 }
 
@@ -641,6 +657,16 @@ function subscribeToData() {
     .onSnapshot((snapshot) => {
       ideas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       renderIdeas();
+    });
+
+  // Posts programados (envios pendientes/completados a Make.com -> Instagram).
+  // Solo el creador o admins ven todos los posts; otros ven solo los suyos.
+  unsubscribeScheduled = db.collection('scheduledPosts')
+    .orderBy('scheduledAt', 'desc')
+    .limit(200)
+    .onSnapshot((snapshot) => {
+      scheduledPosts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      renderSchedule();
     });
 
   depositLastViewedAt = currentUserData.depositLastViewedAt || null;
@@ -811,6 +837,247 @@ function setIdeasMode(mode) {
       : 'Idea grupal (visible para todo el equipo)...';
   }
   renderIdeas();
+}
+
+// ===== Programacion de contenido a Instagram (via Make.com webhook) =====
+function scheduleStatusPill(s) {
+  if (s === 'published') return '<span class="sched-status-pill sched-status-published">publicado</span>';
+  if (s === 'failed') return '<span class="sched-status-pill sched-status-failed">fallo</span>';
+  return '<span class="sched-status-pill sched-status-pending">programado</span>';
+}
+function fmtScheduledDate(ts) {
+  if (!ts) return '';
+  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  return d.toLocaleString('es-ES', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+function visibleScheduledPosts() {
+  if (!currentUser) return [];
+  const isAdmin = currentUserData && currentUserData.role === 'admin';
+  return scheduledPosts.filter(p => isAdmin || p.createdBy === currentUser.uid);
+}
+function renderScheduleListView() {
+  const container = document.getElementById('scheduleListView');
+  if (!container) return;
+  const items = visibleScheduledPosts();
+  if (items.length === 0) {
+    container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">&#128241;</div><div class="empty-state-text">No hay posts programados</div><div class="empty-state-sub">Marca una tarea finalizada con &quot;&#128241; Programar&quot; para enviar a tu cuenta de Instagram via Make.com</div></div>`;
+    return;
+  }
+  container.innerHTML = items.map(p => {
+    const cls = p.status === 'published' ? 'published' : (p.status === 'failed' ? 'failed' : '');
+    const thumb = p.mediaUrl ? `style="background-image:url('${esc(p.mediaUrl)}')"` : '';
+    const cap = (p.caption || '').slice(0, 200);
+    const isMine = p.createdBy === currentUser.uid;
+    const cancelBtn = (isMine && p.status === 'pending') ? `<button class="btn btn-danger btn-small" data-cancel-sched="${esc(p.id)}" title="Cancelar">&#10005;</button>` : '';
+    const platformLabel = (p.postType || 'post').toUpperCase();
+    return `
+      <div class="sched-card ${cls}">
+        <div class="sched-card-thumb" ${thumb}></div>
+        <div class="sched-card-body">
+          <div class="sched-card-when">${esc(fmtScheduledDate(p.scheduledAt))} &middot; ${esc(platformLabel)}</div>
+          <div class="sched-card-caption">${esc(cap)}</div>
+          <div class="sched-card-meta">${scheduleStatusPill(p.status || 'pending')} &middot; por ${esc(p.createdByName || 'Anonimo')}</div>
+        </div>
+        <div class="sched-card-actions">${cancelBtn}</div>
+      </div>`;
+  }).join('');
+  container.querySelectorAll('[data-cancel-sched]').forEach(b => {
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      cancelScheduledPost(b.dataset.cancelSched);
+    });
+  });
+}
+function renderScheduleCalendarView() {
+  const grid = document.getElementById('schedCalendarGrid');
+  const monthLabel = document.getElementById('schedCalMonthLabel');
+  const dayList = document.getElementById('schedCalendarDayList');
+  if (!grid || !monthLabel) return;
+  const year = schedCalDate.getFullYear();
+  const month = schedCalDate.getMonth();
+  monthLabel.textContent = schedCalDate.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+  const firstDay = new Date(year, month, 1);
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const offset = (firstDay.getDay() + 6) % 7; // lunes = 0
+  let html = '';
+  for (let i = 0; i < offset; i++) html += `<div class="calendar-day other-month"></div>`;
+  const items = visibleScheduledPosts();
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dayPosts = items.filter(p => {
+      if (!p.scheduledAt) return false;
+      const dt = p.scheduledAt.toDate ? p.scheduledAt.toDate() : new Date(p.scheduledAt);
+      return dt.getFullYear() === year && dt.getMonth() === month && dt.getDate() === d;
+    });
+    const today = new Date();
+    const isToday = today.getFullYear() === year && today.getMonth() === month && today.getDate() === d;
+    const dotsHtml = dayPosts.slice(0, 3).map(p => {
+      const cls = p.status === 'published' ? '' : (p.status === 'failed' ? 'overdue' : '');
+      const time = (p.scheduledAt && (p.scheduledAt.toDate ? p.scheduledAt.toDate() : new Date(p.scheduledAt))).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+      return `<div class="calendar-task-dot ${cls}" style="background:rgba(225,48,108,0.25)">${time} 📷</div>`;
+    }).join('');
+    const more = dayPosts.length > 3 ? `<div class="calendar-task-dot">+${dayPosts.length - 3}</div>` : '';
+    html += `<div class="calendar-day ${isToday ? 'today' : ''} ${dayPosts.length > 0 ? 'has-tasks' : ''}" data-sched-day="${d}"><div class="calendar-day-num">${d}</div>${dotsHtml}${more}</div>`;
+  }
+  grid.innerHTML = html;
+  grid.querySelectorAll('[data-sched-day]').forEach(c => {
+    c.addEventListener('click', () => {
+      const d = parseInt(c.dataset.schedDay, 10);
+      const dayPosts = items.filter(p => {
+        if (!p.scheduledAt) return false;
+        const dt = p.scheduledAt.toDate ? p.scheduledAt.toDate() : new Date(p.scheduledAt);
+        return dt.getFullYear() === year && dt.getMonth() === month && dt.getDate() === d;
+      });
+      if (dayPosts.length === 0) { dayList.innerHTML = '<div style="color:var(--text-dim);font-size:12px;padding:12px;text-align:center">Sin posts ese dia</div>'; return; }
+      dayList.innerHTML = dayPosts.map(p => `
+        <div class="sched-card ${p.status === 'published' ? 'published' : (p.status === 'failed' ? 'failed' : '')}">
+          <div class="sched-card-thumb" ${p.mediaUrl ? `style="background-image:url('${esc(p.mediaUrl)}')"` : ''}></div>
+          <div class="sched-card-body">
+            <div class="sched-card-when">${esc(fmtScheduledDate(p.scheduledAt))}</div>
+            <div class="sched-card-caption">${esc((p.caption || '').slice(0, 200))}</div>
+            <div class="sched-card-meta">${scheduleStatusPill(p.status || 'pending')}</div>
+          </div>
+        </div>`).join('');
+    });
+  });
+}
+function renderSchedule() {
+  // Badge: cuenta posts pendientes (programados) del usuario
+  const badge = document.getElementById('scheduleBadge');
+  if (badge) {
+    const pending = visibleScheduledPosts().filter(p => (p.status || 'pending') === 'pending').length;
+    if (pending > 0) { badge.textContent = pending > 99 ? '99+' : String(pending); badge.style.display = 'inline-block'; }
+    else { badge.style.display = 'none'; }
+  }
+  if (currentScheduleView === 'list') renderScheduleListView();
+  else renderScheduleCalendarView();
+  // Status del webhook config (mostrar arriba a la derecha)
+  const status = document.getElementById('scheduleConfigStatus');
+  if (status && window.api && window.api.getMakeWebhook) {
+    window.api.getMakeWebhook().then(url => {
+      status.textContent = url ? '✓ Webhook configurado' : '⚠ Configurar webhook en Configuracion';
+      status.style.color = url ? 'var(--success)' : 'var(--warning)';
+    });
+  }
+}
+
+async function openScheduleModal(taskId) {
+  const task = tasks.find(t => t.id === taskId);
+  if (!task) { toast && toast('Tarea no encontrada', 'error'); return; }
+  schedulingTaskId = taskId;
+  const modal = document.getElementById('scheduleModal');
+  if (!modal) return;
+  // Verificar que el webhook este configurado; si no, mostrar warning
+  let webhookUrl = '';
+  try { webhookUrl = await window.api.getMakeWebhook(); } catch (e) {}
+  document.getElementById('scheduleNoWebhook').style.display = webhookUrl ? 'none' : 'block';
+  // Pre-rellenar fecha (hoy + 1 dia, 9am) y caption (titulo de la tarea)
+  const future = new Date(); future.setDate(future.getDate() + 1); future.setHours(9, 0, 0, 0);
+  const yyyy = future.getFullYear();
+  const mm = String(future.getMonth() + 1).padStart(2, '0');
+  const dd = String(future.getDate()).padStart(2, '0');
+  document.getElementById('schedDate').value = `${yyyy}-${mm}-${dd}`;
+  document.getElementById('schedTime').value = '09:00';
+  const desc = task.description ? `\n\n${task.description}` : '';
+  document.getElementById('schedCaption').value = `${task.text || ''}${desc}`.trim();
+  const mediaUrl = task.coverImage || '';
+  document.getElementById('schedMediaUrl').value = mediaUrl;
+  const previewBox = document.getElementById('scheduleMediaPreview');
+  const previewImg = document.getElementById('scheduleMediaImg');
+  if (mediaUrl) {
+    previewBox.style.display = 'block';
+    previewImg.style.backgroundImage = `url('${mediaUrl}')`;
+  } else {
+    previewBox.style.display = 'none';
+  }
+  // Default tipo: post
+  document.querySelectorAll('input[name="schedPostType"]').forEach(r => { r.checked = r.value === 'post'; });
+  modal.classList.add('active');
+}
+function closeScheduleModal() {
+  const m = document.getElementById('scheduleModal');
+  if (m) m.classList.remove('active');
+  schedulingTaskId = null;
+}
+async function confirmSchedulePost() {
+  if (!schedulingTaskId) return;
+  const task = tasks.find(t => t.id === schedulingTaskId);
+  const date = document.getElementById('schedDate').value;
+  const time = document.getElementById('schedTime').value;
+  const caption = document.getElementById('schedCaption').value.trim();
+  const mediaUrl = document.getElementById('schedMediaUrl').value.trim();
+  const postType = document.querySelector('input[name="schedPostType"]:checked')?.value || 'post';
+  if (!date || !time) { alert('Fecha y hora son obligatorias'); return; }
+  if (!caption) { alert('El caption no puede estar vacio'); return; }
+  if (!mediaUrl) { alert('La URL del medio es obligatoria'); return; }
+  const scheduledAt = new Date(`${date}T${time}`);
+  if (scheduledAt < new Date()) { alert('La fecha/hora debe ser en el futuro'); return; }
+  const payload = {
+    platform: 'instagram',
+    postType,
+    caption,
+    mediaUrl,
+    scheduledAt: scheduledAt.toISOString(),
+    taskId: schedulingTaskId,
+    taskTitle: task ? task.text : '',
+    triggeredBy: currentUserData ? currentUserData.name : currentUser.email,
+    triggeredByEmail: currentUser.email
+  };
+  // 1) Guardar en Firestore como pending
+  let docId = null;
+  try {
+    const ref = await db.collection('scheduledPosts').add({
+      ...payload,
+      scheduledAt: firebase.firestore.Timestamp.fromDate(scheduledAt),
+      status: 'pending',
+      createdBy: currentUser.uid,
+      createdByName: currentUserData ? currentUserData.name : currentUser.email,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    docId = ref.id;
+  } catch (e) {
+    alert('No se pudo guardar en Firestore: ' + e.message);
+    return;
+  }
+  // 2) Enviar al webhook de Make (que lo programa/publica en IG)
+  try {
+    const result = await window.api.sendToMakeWebhook({ ...payload, scheduledPostId: docId });
+    if (!result || !result.ok) {
+      // Marcar como failed
+      await db.collection('scheduledPosts').doc(docId).update({
+        status: 'failed',
+        error: (result && result.error) || `HTTP ${(result && result.status) || '?'}`
+      });
+      alert('Webhook fallo: ' + ((result && result.error) || `HTTP ${result && result.status}`));
+    } else {
+      // Listo: Make recibio el payload. Make luego marcara published cuando publique.
+      // Por defecto dejamos pending hasta que Make confirme (opcional via callback).
+    }
+  } catch (e) {
+    await db.collection('scheduledPosts').doc(docId).update({ status: 'failed', error: e.message });
+    alert('Error enviando webhook: ' + e.message);
+    return;
+  }
+  closeScheduleModal();
+  // Cambiar a la pestana Programacion
+  const schedTab = document.querySelector('.nav-tab[data-tab="schedule"]');
+  if (schedTab) schedTab.click();
+}
+async function cancelScheduledPost(id) {
+  if (!confirm('Cancelar este post programado? Tambien deberias desactivarlo en Make si ya esta agendado.')) return;
+  try {
+    await db.collection('scheduledPosts').doc(id).delete();
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+}
+function setScheduleView(v) {
+  currentScheduleView = v === 'calendar' ? 'calendar' : 'list';
+  document.querySelectorAll('.schedule-view-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.scheduleView === currentScheduleView);
+  });
+  document.getElementById('scheduleListView').style.display = currentScheduleView === 'list' ? '' : 'none';
+  document.getElementById('scheduleCalendarView').style.display = currentScheduleView === 'calendar' ? '' : 'none';
+  renderSchedule();
 }
 
 // ===== RENDER =====
@@ -1770,6 +2037,7 @@ function renderCompletedList(completedTasks) {
               ${approver ? `<span class="task-tag">${esc(approver)}</span>` : ''}
             </div>
           </div>
+          <button class="btn btn-ghost btn-small" data-schedule-task="${esc(task.id)}" title="Programar en Instagram" style="flex-shrink:0">&#128241; Programar</button>
         </div>`;
     });
 
@@ -3144,7 +3412,111 @@ document.querySelectorAll('.nav-tab').forEach(tab => {
     if (tabContent) tabContent.classList.add('active');
     if (currentTab === 'calendar') renderCalendar();
     if (currentTab === 'ideas') renderIdeas();
+    if (currentTab === 'schedule') renderSchedule();
   });
+});
+
+// ===== Programacion: handlers de UI =====
+document.querySelectorAll('.schedule-view-btn').forEach(b => {
+  b.addEventListener('click', () => setScheduleView(b.dataset.scheduleView));
+});
+const schedCancelBtn = document.getElementById('schedCancel');
+if (schedCancelBtn) schedCancelBtn.addEventListener('click', closeScheduleModal);
+const schedConfirmBtn = document.getElementById('schedConfirm');
+if (schedConfirmBtn) schedConfirmBtn.addEventListener('click', confirmSchedulePost);
+const schedModal = document.getElementById('scheduleModal');
+if (schedModal) schedModal.addEventListener('click', (e) => { if (e.target === schedModal) closeScheduleModal(); });
+const schedMediaUrlInput = document.getElementById('schedMediaUrl');
+if (schedMediaUrlInput) {
+  schedMediaUrlInput.addEventListener('input', () => {
+    const url = schedMediaUrlInput.value.trim();
+    const previewBox = document.getElementById('scheduleMediaPreview');
+    const previewImg = document.getElementById('scheduleMediaImg');
+    if (url) { previewBox.style.display = 'block'; previewImg.style.backgroundImage = `url('${url}')`; }
+    else { previewBox.style.display = 'none'; }
+  });
+}
+// Calendar nav
+const schedPrev = document.getElementById('schedCalPrev');
+if (schedPrev) schedPrev.addEventListener('click', () => { schedCalDate.setMonth(schedCalDate.getMonth() - 1); renderSchedule(); });
+const schedNext = document.getElementById('schedCalNext');
+if (schedNext) schedNext.addEventListener('click', () => { schedCalDate.setMonth(schedCalDate.getMonth() + 1); renderSchedule(); });
+const schedToday = document.getElementById('schedCalToday');
+if (schedToday) schedToday.addEventListener('click', () => { schedCalDate = new Date(); renderSchedule(); });
+
+// Click delegado: boton "Programar" en la lista de tareas completadas
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest && e.target.closest('[data-schedule-task]');
+  if (!btn) return;
+  e.preventDefault();
+  e.stopPropagation();
+  openScheduleModal(btn.dataset.scheduleTask);
+});
+
+// Settings: webhook de Make
+const makeWebhookInput = document.getElementById('makeWebhookInput');
+const saveMakeWebhookBtn = document.getElementById('saveMakeWebhook');
+const testMakeWebhookBtn = document.getElementById('testMakeWebhook');
+const makeStatusEl = document.getElementById('makeStatus');
+function setMakeStatus(connected, msg) {
+  if (!makeStatusEl) return;
+  const dot = makeStatusEl.querySelector('.status-dot');
+  const text = makeStatusEl.querySelector('span:last-child');
+  if (dot) { dot.classList.toggle('connected', !!connected); dot.classList.toggle('disconnected', !connected); }
+  if (text) text.textContent = msg;
+}
+if (window.api && window.api.getMakeWebhook && makeWebhookInput) {
+  window.api.getMakeWebhook().then(url => {
+    makeWebhookInput.value = url || '';
+    setMakeStatus(!!url, url ? 'Configurado' : 'No configurado');
+  });
+}
+if (saveMakeWebhookBtn) {
+  saveMakeWebhookBtn.addEventListener('click', async () => {
+    const url = makeWebhookInput.value.trim();
+    const result = await window.api.setMakeWebhook(url);
+    if (result && result.ok) {
+      setMakeStatus(!!url, url ? 'Configurado' : 'No configurado');
+      alert('Webhook guardado');
+    } else {
+      alert('Error: ' + (result && result.error));
+    }
+  });
+}
+if (testMakeWebhookBtn) {
+  testMakeWebhookBtn.addEventListener('click', async () => {
+    testMakeWebhookBtn.disabled = true;
+    testMakeWebhookBtn.textContent = '⏳ Enviando...';
+    try {
+      const result = await window.api.sendToMakeWebhook({
+        test: true,
+        platform: 'instagram',
+        postType: 'post',
+        caption: 'Test desde Task Manager',
+        mediaUrl: 'https://placehold.co/1080x1080.jpg',
+        scheduledAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        triggeredBy: currentUserData ? currentUserData.name : 'tester'
+      });
+      if (result && result.ok) {
+        alert(`✓ Webhook respondio OK (HTTP ${result.status}). Revisa en Make.com que el escenario se ejecutó.`);
+        setMakeStatus(true, 'Conectado');
+      } else {
+        alert('Webhook fallo: ' + ((result && result.error) || 'desconocido'));
+        setMakeStatus(false, 'Error');
+      }
+    } finally {
+      testMakeWebhookBtn.disabled = false;
+      testMakeWebhookBtn.innerHTML = '&#128293; Probar webhook';
+    }
+  });
+}
+
+// ESC cierra el modal de programacion
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    const m = document.getElementById('scheduleModal');
+    if (m && m.classList.contains('active')) closeScheduleModal();
+  }
 });
 
 // ===== Ideas: handlers de UI =====
