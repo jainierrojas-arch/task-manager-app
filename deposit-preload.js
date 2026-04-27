@@ -6,6 +6,8 @@ contextBridge.exposeInMainWorld('api', {
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   fetchOgData: (url) => ipcRenderer.invoke('fetch-og-data', url),
   refreshAllWindows: () => ipcRenderer.invoke('refresh-all-windows'),
+  // Programar una entry del deposito: envia data al main window que abre el modal
+  openScheduleFromEntry: (data) => ipcRenderer.invoke('open-schedule-from-entry', data),
   onSetViewMode: (callback) => ipcRenderer.on('deposit-set-view-mode', (_, payload) => callback(payload)),
   onNavigate: (callback) => ipcRenderer.on('deposit-navigate', (_, payload) => callback(payload)),
   onThemeChanged: (callback) => ipcRenderer.on('theme-changed', (_, theme) => callback(theme))

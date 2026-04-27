@@ -1517,10 +1517,11 @@
       </div>
       <div class="modal-row">
         <label>Tipo de post</label>
-        <div style="display:flex;gap:6px;margin-top:4px">
-          <label style="flex:1"><input type="radio" name="schedPostType" value="post" checked> Post</label>
-          <label style="flex:1"><input type="radio" name="schedPostType" value="reel"> Reel</label>
-          <label style="flex:1"><input type="radio" name="schedPostType" value="story"> Story</label>
+        <div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap">
+          <label style="flex:1;min-width:80px"><input type="radio" name="schedPostType" value="post" checked> Post</label>
+          <label style="flex:1;min-width:80px"><input type="radio" name="schedPostType" value="reel"> Reel</label>
+          <label style="flex:1;min-width:80px"><input type="radio" name="schedPostType" value="story"> Story</label>
+          <label style="flex:1;min-width:80px"><input type="radio" name="schedPostType" value="carousel"> Carrusel</label>
         </div>
       </div>
       <div class="modal-row">
@@ -1534,10 +1535,17 @@
         <label>Caption (descripcion del post)</label>
         <textarea id="schedCaption" rows="5" placeholder="Caption del post (puedes incluir hashtags y mentions)" style="font-family:inherit"></textarea>
       </div>
-      <div class="modal-row">
+      <!-- Single URL: para post/reel/story -->
+      <div class="modal-row" id="schedSingleUrlRow">
         <label>URL del medio (imagen/video publica)</label>
         <input type="url" id="schedMediaUrl" placeholder="https://...jpg o .mp4">
-        <div style="font-size:11px;color:var(--text-dim);margin-top:2px">Auto-rellenada del thumbnail de la tarea. Para reels usa un .mp4 publico.</div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:2px">Auto-rellenada del thumbnail. Para reels usa un .mp4 publico.</div>
+      </div>
+      <!-- Multiple URLs: solo para carrusel (oculto por default) -->
+      <div class="modal-row" id="schedCarouselUrlsRow" style="display:none">
+        <label>URLs de las imagenes (una por linea, minimo 2, maximo 10)</label>
+        <textarea id="schedMediaUrls" rows="6" placeholder="https://imagen1.jpg&#10;https://imagen2.jpg&#10;https://imagen3.jpg" style="font-family:monospace;font-size:11px"></textarea>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:2px">Una URL por linea. Solo imagenes JPEG publicas. La app envia un array <code>mediaUrls</code> a Make.</div>
       </div>
       <div class="modal-buttons">
         <button class="btn btn-ghost" id="schedCancel">Cancelar</button>

@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '2.81.0': {
+    title: 'Programación: carrusel + botón en Trabajos Finalizados',
+    features: [
+      '🎠 <strong>Soporte de Carrusel</strong>: en el modal de programar elige tipo "Carrusel" → aparece un campo para pegar 2-10 URLs (una por línea). La app envía un array <code>mediaUrls</code> a Make, además de <code>mediaUrl1</code>...<code>mediaUrl10</code> para mapeo más fácil.',
+      '📦 <strong>Botón Programar en Trabajos Finalizados</strong>: ahora también puedes programar contenido directamente desde una entry del depósito que esté en Trabajos Finalizados — no solo desde Tareas Hechas.',
+      '🔗 La data del entry (título, descripción, thumbnail) se pre-rellena en el modal automáticamente. Edita lo que quieras antes de programar.'
+    ]
+  },
   '2.80.0': {
     title: 'Programación de contenido en Instagram (Make.com)',
     features: [
@@ -960,27 +968,60 @@ function renderSchedule() {
   }
 }
 
+// schedulingContext puede ser:
+//   { type: 'task', taskId, ... }       -> programar desde una tarea completada
+//   { type: 'entry', entryId, ... }     -> programar desde una entry finalizada del deposito
+let schedulingContext = null;
+
+function applyPostTypeToModal(type) {
+  const isCarousel = type === 'carousel';
+  document.getElementById('schedSingleUrlRow').style.display = isCarousel ? 'none' : '';
+  document.getElementById('schedCarouselUrlsRow').style.display = isCarousel ? '' : 'none';
+}
+
 async function openScheduleModal(taskId) {
   const task = tasks.find(t => t.id === taskId);
   if (!task) { toast && toast('Tarea no encontrada', 'error'); return; }
-  schedulingTaskId = taskId;
+  schedulingContext = {
+    type: 'task',
+    taskId: task.id,
+    title: task.text || '',
+    description: task.description || '',
+    coverImage: task.coverImage || ''
+  };
+  await openScheduleModalWithContext();
+}
+
+async function openScheduleModalForEntry(entryData) {
+  if (!entryData || !entryData.id) return;
+  schedulingContext = {
+    type: 'entry',
+    entryId: entryData.id,
+    title: entryData.title || '',
+    description: entryData.description || '',
+    coverImage: entryData.coverImage || ''
+  };
+  await openScheduleModalWithContext();
+}
+
+async function openScheduleModalWithContext() {
   const modal = document.getElementById('scheduleModal');
-  if (!modal) return;
-  // Verificar que el webhook este configurado; si no, mostrar warning
+  if (!modal || !schedulingContext) return;
   let webhookUrl = '';
   try { webhookUrl = await window.api.getMakeWebhook(); } catch (e) {}
   document.getElementById('scheduleNoWebhook').style.display = webhookUrl ? 'none' : 'block';
-  // Pre-rellenar fecha (hoy + 1 dia, 9am) y caption (titulo de la tarea)
+  // Fecha default: manana 9am
   const future = new Date(); future.setDate(future.getDate() + 1); future.setHours(9, 0, 0, 0);
   const yyyy = future.getFullYear();
   const mm = String(future.getMonth() + 1).padStart(2, '0');
   const dd = String(future.getDate()).padStart(2, '0');
   document.getElementById('schedDate').value = `${yyyy}-${mm}-${dd}`;
   document.getElementById('schedTime').value = '09:00';
-  const desc = task.description ? `\n\n${task.description}` : '';
-  document.getElementById('schedCaption').value = `${task.text || ''}${desc}`.trim();
-  const mediaUrl = task.coverImage || '';
+  const desc = schedulingContext.description ? `\n\n${schedulingContext.description}` : '';
+  document.getElementById('schedCaption').value = `${schedulingContext.title || ''}${desc}`.trim();
+  const mediaUrl = schedulingContext.coverImage || '';
   document.getElementById('schedMediaUrl').value = mediaUrl;
+  document.getElementById('schedMediaUrls').value = mediaUrl ? mediaUrl + '\n' : '';
   const previewBox = document.getElementById('scheduleMediaPreview');
   const previewImg = document.getElementById('scheduleMediaImg');
   if (mediaUrl) {
@@ -989,39 +1030,62 @@ async function openScheduleModal(taskId) {
   } else {
     previewBox.style.display = 'none';
   }
-  // Default tipo: post
+  // Default tipo: post; aplicar visibilidad de campos
   document.querySelectorAll('input[name="schedPostType"]').forEach(r => { r.checked = r.value === 'post'; });
+  applyPostTypeToModal('post');
   modal.classList.add('active');
 }
+
 function closeScheduleModal() {
   const m = document.getElementById('scheduleModal');
   if (m) m.classList.remove('active');
-  schedulingTaskId = null;
+  schedulingContext = null;
 }
+
 async function confirmSchedulePost() {
-  if (!schedulingTaskId) return;
-  const task = tasks.find(t => t.id === schedulingTaskId);
+  if (!schedulingContext) return;
   const date = document.getElementById('schedDate').value;
   const time = document.getElementById('schedTime').value;
   const caption = document.getElementById('schedCaption').value.trim();
-  const mediaUrl = document.getElementById('schedMediaUrl').value.trim();
   const postType = document.querySelector('input[name="schedPostType"]:checked')?.value || 'post';
   if (!date || !time) { alert('Fecha y hora son obligatorias'); return; }
   if (!caption) { alert('El caption no puede estar vacio'); return; }
-  if (!mediaUrl) { alert('La URL del medio es obligatoria'); return; }
   const scheduledAt = new Date(`${date}T${time}`);
   if (scheduledAt < new Date()) { alert('La fecha/hora debe ser en el futuro'); return; }
+
+  // URL handling: carousel manda array, otros mandan string
+  let mediaUrl = '';
+  let mediaUrls = null;
+  if (postType === 'carousel') {
+    const text = document.getElementById('schedMediaUrls').value.trim();
+    const lines = text.split(/\r?\n/).map(s => s.trim()).filter(s => s.length > 0);
+    if (lines.length < 2) { alert('Carrusel requiere minimo 2 URLs (una por linea)'); return; }
+    if (lines.length > 10) { alert('Carrusel acepta maximo 10 URLs'); return; }
+    mediaUrls = lines;
+    mediaUrl = lines[0]; // primera como fallback compatible
+  } else {
+    mediaUrl = document.getElementById('schedMediaUrl').value.trim();
+    if (!mediaUrl) { alert('La URL del medio es obligatoria'); return; }
+  }
+
   const payload = {
     platform: 'instagram',
     postType,
     caption,
     mediaUrl,
     scheduledAt: scheduledAt.toISOString(),
-    taskId: schedulingTaskId,
-    taskTitle: task ? task.text : '',
     triggeredBy: currentUserData ? currentUserData.name : currentUser.email,
-    triggeredByEmail: currentUser.email
+    triggeredByEmail: currentUser.email,
+    sourceType: schedulingContext.type, // 'task' o 'entry'
+    taskId: schedulingContext.type === 'task' ? schedulingContext.taskId : null,
+    entryId: schedulingContext.type === 'entry' ? schedulingContext.entryId : null,
+    taskTitle: schedulingContext.title || ''
   };
+  if (mediaUrls) {
+    payload.mediaUrls = mediaUrls;
+    // Tambien individuales mediaUrl1..mediaUrl10 para mapeo simple en Make sin iterator
+    mediaUrls.forEach((u, i) => { payload[`mediaUrl${i + 1}`] = u; });
+  }
   // 1) Guardar en Firestore como pending
   let docId = null;
   try {
@@ -3434,6 +3498,17 @@ if (schedMediaUrlInput) {
     const previewImg = document.getElementById('scheduleMediaImg');
     if (url) { previewBox.style.display = 'block'; previewImg.style.backgroundImage = `url('${url}')`; }
     else { previewBox.style.display = 'none'; }
+  });
+}
+// Cambio de tipo de post: mostrar/ocultar campos segun corresponda
+document.querySelectorAll('input[name="schedPostType"]').forEach(r => {
+  r.addEventListener('change', (e) => applyPostTypeToModal(e.target.value));
+});
+
+// Listener IPC: el deposito pide programar una entry → abrir modal pre-llenado
+if (window.api && window.api.onScheduleFromEntry) {
+  window.api.onScheduleFromEntry((data) => {
+    openScheduleModalForEntry(data);
   });
 }
 // Calendar nav

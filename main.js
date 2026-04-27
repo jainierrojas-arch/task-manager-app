@@ -1274,6 +1274,20 @@ app.whenReady().then(() => {
     return app.getVersion();
   });
 
+  // El deposito quiere programar una entry finalizada: forwardear data al main
+  // window y traerla al frente. El modal de Programacion vive ahi.
+  ipcMain.handle('open-schedule-from-entry', (_, data) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return { ok: false, error: 'mainWindow no disponible' };
+    try {
+      mainWindow.show();
+      mainWindow.focus();
+      mainWindow.webContents.send('schedule-from-entry', data || {});
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  });
+
   // Refrescar todas las ventanas abiertas (equivale a un Cmd+R en cada una).
   // Util cuando el chat o algun listener de Firebase se queda colgado y el
   // usuario no quiere salir/entrar manualmente.

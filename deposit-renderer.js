@@ -768,6 +768,9 @@ function renderEntries() {
     area.querySelectorAll('[data-move]').forEach(btn => {
       btn.addEventListener('click', () => showMoveModal(btn.dataset.move));
     });
+    area.querySelectorAll('[data-schedule-entry]').forEach(btn => {
+      btn.addEventListener('click', () => scheduleFromEntry(btn.dataset.scheduleEntry));
+    });
   }
 
   const backBtn = document.getElementById('backToSubs');
@@ -861,6 +864,7 @@ function renderEntryHtml(e) {
               <button class="btn btn-ghost btn-small" data-edit="${esc(e.id)}" title="Editar">&#9998;</button>
               <button class="btn btn-danger btn-small" data-delete-entry="${esc(e.id)}" title="Eliminar">&#10005;</button>
               <button class="btn btn-info btn-small" data-move="${esc(e.id)}" title="Mover a otra categoria">&#128194; Mover</button>
+              <button class="btn btn-primary btn-small" data-schedule-entry="${esc(e.id)}" title="Programar en Instagram via Make">&#128241; Programar</button>
               <button class="btn btn-primary btn-small" data-reuse="${esc(e.id)}" title="Volver a Tareas por hacer">&#128260; Reutilizar</button>
             ` : `
               <button class="btn btn-ghost btn-small" data-edit="${esc(e.id)}" title="Editar">&#9998;</button>
@@ -873,6 +877,30 @@ function renderEntryHtml(e) {
         </div>
       </div>
     </div>`;
+}
+
+// Programar una entry finalizada en Instagram. Envia la data via IPC al main
+// window (que es donde vive el modal y el flujo de scheduling completo).
+async function scheduleFromEntry(entryId) {
+  const entry = entries.find(e => e.id === entryId);
+  if (!entry) { toast('Entry no encontrada', 'error'); return; }
+  if (!window.api || !window.api.openScheduleFromEntry) {
+    toast('Esta version aun no soporta programar desde el deposito. Actualiza la app.', 'error');
+    return;
+  }
+  try {
+    await window.api.openScheduleFromEntry({
+      id: entry.id,
+      title: entry.title || '',
+      description: entry.description || '',
+      coverImage: entry.coverImage || '',
+      links: entry.links || [],
+      categoryId: entry.categoryId || '',
+      subcategoryId: entry.subcategoryId || ''
+    });
+  } catch (e) {
+    toast('Error abriendo modal de programacion: ' + e.message, 'error');
+  }
 }
 
 // Reutilizar una entry finalizada: la regresa a "Tareas por hacer" con su

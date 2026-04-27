@@ -53,6 +53,8 @@ contextBridge.exposeInMainWorld('api', {
   getMakeWebhook: () => ipcRenderer.invoke('get-make-webhook'),
   setMakeWebhook: (url) => ipcRenderer.invoke('set-make-webhook', url),
   sendToMakeWebhook: (payload) => ipcRenderer.invoke('send-to-make-webhook', payload),
+  // El deposito puede pedir abrir el modal de programacion con datos pre-llenados
+  onScheduleFromEntry: (callback) => ipcRenderer.on('schedule-from-entry', (_, data) => callback(data)),
 
   // Chat externo (ventana separada)
   toggleChat: () => ipcRenderer.invoke('toggle-chat-window'),
