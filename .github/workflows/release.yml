@@ -1,7 +1,5 @@
 name: Build & Publish Release
 
-# Se dispara cuando se pushea un tag tipo v2.78.0 etc.
-# Tambien se puede correr manualmente desde la pestana Actions de GitHub.
 on:
   push:
     tags:
@@ -39,7 +37,4 @@ jobs:
       - name: Build & Publish
         run: ${{ matrix.cmd }}
         env:
-          # electron-builder lee GH_TOKEN para subir assets a la release.
-          # GITHUB_TOKEN es provisto automaticamente por Actions con permisos
-          # de contents:write segun la directiva permissions de arriba.
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
