@@ -75,10 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
-  '2.78.0': {
+  '2.79.0': {
     title: 'Updates de Windows funcionando otra vez',
     features: [
-      '🪟 <strong>Auto-update funcional para Windows</strong>: las versiones 2.75/2.76/2.77 solo tenían build de Mac porque el toolchain de Wine en Mac estaba roto. Ahora los builds de Mac y Windows se hacen automáticamente en los servidores de GitHub (CI), así todos los miembros del equipo reciben las actualizaciones de cualquier plataforma.'
+      '🪟 <strong>Auto-update funcional para Windows</strong>: las versiones 2.75 a 2.78 solo tenían build de Mac porque Wine estaba roto. Ahora los builds de Mac y Windows se hacen automáticamente en los servidores de GitHub (CI) de forma secuencial, así todos los miembros del equipo reciben actualizaciones en cualquier plataforma.'
+    ]
+  },
+  '2.78.0': {
+    title: 'Setup de CI para builds cross-platform',
+    features: [
+      '🛠️ Setup interno: GitHub Actions para builds automáticos. Esta versión solo trajo build de Mac por un detalle del CI; v2.79 ya completa Windows.'
     ]
   },
   '2.77.0': {
