@@ -47,6 +47,7 @@ contextBridge.exposeInMainWorld('api', {
   onUpdateStatus: (callback) => ipcRenderer.on('update-status', (_, data) => callback(data)),
   installUpdate: () => ipcRenderer.invoke('install-update'),
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+  refreshAllWindows: () => ipcRenderer.invoke('refresh-all-windows'),
 
   // Chat externo (ventana separada)
   toggleChat: () => ipcRenderer.invoke('toggle-chat-window'),

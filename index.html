@@ -913,6 +913,122 @@
       animation: spin 0.6s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ===== Ideas tab ===== */
+    .ideas-mode-bar {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 12px;
+      padding: 4px;
+      background: var(--bg-card);
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+    .ideas-mode-btn {
+      flex: 1;
+      padding: 8px 12px;
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .ideas-mode-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+    .ideas-mode-btn.active { background: var(--accent); color: white; }
+    .ideas-input-row {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 14px;
+      padding: 12px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    .ideas-input-row input,
+    .ideas-input-row textarea {
+      width: 100%;
+      padding: 8px 10px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text-primary);
+      font-size: 13px;
+      font-family: inherit;
+      box-sizing: border-box;
+    }
+    .ideas-input-row textarea { resize: vertical; min-height: 50px; max-height: 200px; }
+    .ideas-input-row input:focus,
+    .ideas-input-row textarea:focus { outline: none; border-color: var(--accent); }
+    .ideas-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 10px;
+    }
+    .idea-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      position: relative;
+      transition: all 0.15s;
+      border-left: 3px solid var(--accent);
+    }
+    .idea-card.personal { border-left-color: #BB8FCE; }
+    .idea-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+    .idea-card-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text-primary);
+      word-break: break-word;
+    }
+    .idea-card-text {
+      font-size: 12px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .idea-card-foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      margin-top: 4px;
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
+      font-size: 10px;
+      color: var(--text-dim);
+    }
+    .idea-card-author { font-weight: 600; }
+    .idea-card-delete {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      width: 24px;
+      height: 24px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
+    }
+    .idea-card-delete:hover { background: var(--danger); color: white; border-color: var(--danger); }
+    .ideas-empty {
+      grid-column: 1 / -1;
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--text-dim);
+      font-size: 13px;
+    }
   </style>
 </head>
 <body>
@@ -920,6 +1036,7 @@
   <div class="titlebar">
     <span class="titlebar-title">TASK MANAGER - EQUIPO</span>
     <div class="titlebar-buttons">
+      <button id="btnRefreshAll" title="Refrescar la app (recarga las 3 ventanas)" style="-webkit-app-region:no-drag;background:transparent;border:none;color:var(--text-secondary);cursor:pointer;font-size:14px;padding:2px 8px;margin-right:6px;border-radius:4px;transition:all 0.15s">&#8635;</button>
       <button class="titlebar-btn btn-minimize" id="btnMinimize" title="Minimizar"></button>
       <button class="titlebar-btn btn-close" id="btnClose" title="Cerrar"></button>
     </div>
@@ -986,6 +1103,10 @@
       </div>
       <div class="nav-tab" data-tab="calendar">
         &#128197; Calendario
+      </div>
+      <div class="nav-tab" data-tab="ideas">
+        &#128161; Ideas
+        <span class="tab-badge" id="ideasBadge" style="display:none">0</span>
       </div>
       <div class="nav-tab" data-tab="new">
         &#10133; Nueva
@@ -1074,6 +1195,20 @@
         </div>
         <div class="calendar-grid" id="calendarGrid"></div>
         <div id="calendarDayList" style="margin-top:12px"></div>
+      </div>
+
+      <!-- Ideas: notas tipo tarjeta, modo Grupal (compartido) o Personal (solo tu) -->
+      <div class="tab-content" id="tabIdeas">
+        <div class="ideas-mode-bar">
+          <button class="ideas-mode-btn active" data-ideas-mode="team">&#128101; Grupal</button>
+          <button class="ideas-mode-btn" data-ideas-mode="personal">&#128274; Personal</button>
+        </div>
+        <div class="ideas-input-row">
+          <input type="text" id="ideaTitleInput" placeholder="Titulo (opcional)" maxlength="80">
+          <textarea id="ideaTextInput" placeholder="Escribe tu idea aqui..." rows="2"></textarea>
+          <button class="btn btn-primary" id="addIdeaBtn">&#10133; Agregar idea</button>
+        </div>
+        <div class="ideas-grid" id="ideasList"></div>
       </div>
 
       <!-- Personal Tasks -->

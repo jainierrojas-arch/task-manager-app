@@ -1086,7 +1086,51 @@ async function ensureCoverDimensions(entries) {
   }
 }
 
+// Migracion v5: detecta covers ROTOS de Instagram y los limpia para re-fetch.
+// Casos detectados:
+//   - URL lookaside.instagram.com (302 redirige a HTML, no carga como imagen)
+//   - URL static.cdninstagram.com/rsrc.php (logo generico de IG, fallback de
+//     Microlink cuando no consigue scrapear)
+// Tras el clear, lazyFetchCovers corre el fetcher mejorado (extrae srcset del
+// embed que devuelve URLs scontent.cdninstagram.com REALES que sí cargan).
+const coverMigratedThisSession = new Set();
+function looksLikeBrokenIgCover(entry) {
+  const img = (entry.coverImage || '').toLowerCase();
+  if (!img) return false;
+  if (img.includes('lookaside.instagram.com')) return true;
+  if (img.includes('static.cdninstagram.com/rsrc.php')) return true;
+  if (img.includes('static.xx.fbcdn.net/rsrc.php')) return true;
+  return false;
+}
+async function migrateCovers(visibleEntries) {
+  for (const entry of visibleEntries) {
+    if (coverMigratedThisSession.has(entry.id)) continue;
+    if (entry.coverFetcherV >= 6) continue;
+    coverMigratedThisSession.add(entry.id);
+
+    const isInstagramLink = (entry.links || []).some(l => /instagram\.com\//.test(l.url || ''));
+    const isBroken = looksLikeBrokenIgCover(entry);
+
+    if (isInstagramLink && isBroken) {
+      try {
+        await db.collection('depositEntries').doc(entry.id).update({
+          coverImage: firebase.firestore.FieldValue.delete(),
+          coverWidth: firebase.firestore.FieldValue.delete(),
+          coverHeight: firebase.firestore.FieldValue.delete(),
+          coverFetcherV: 6
+        });
+      } catch (_) {}
+      await new Promise(r => setTimeout(r, 150));
+    } else {
+      try { await db.collection('depositEntries').doc(entry.id).update({ coverFetcherV: 6 }); } catch (_) {}
+    }
+  }
+}
+
 async function lazyFetchCovers(visibleEntries) {
+  // Antes de re-fetchear lo que falta, migrar covers viejos (logos de marca,
+  // carruseles 1:1 recortados, etc.) — los limpia para que se re-descarguen
+  migrateCovers(visibleEntries);
   for (const entry of visibleEntries) {
     if (entry.coverImage) continue; // ya tiene imagen real, no reintentamos
     const links = entry.links || [];
@@ -1096,7 +1140,7 @@ async function lazyFetchCovers(visibleEntries) {
     const url = links[0].url;
     try {
       const og = await window.api.fetchOgData(url);
-      const update = { coverImage: og.image || null };
+      const update = { coverImage: og.image || null, coverFetcherV: 6 };
       if (og.imageWidth && og.imageHeight) {
         update.coverWidth = og.imageWidth;
         update.coverHeight = og.imageHeight;
@@ -1582,7 +1626,29 @@ document.getElementById('confirmAssign').addEventListener('click', async () => {
 // Toggle vista sidebar vertical/horizontal (un solo boton que alterna)
 // Aplicamos estilos inline directamente para no depender del CSS (mas robusto)
 const SIDEBAR_MODE_KEY = 'deposit-sidebar-mode';
+const SIDEBAR_HORIZONTAL_HEIGHT_KEY = 'deposit-sidebar-horizontal-height';
+const SIDEBAR_HORIZONTAL_DEFAULT_HEIGHT = 210;
+const SIDEBAR_HORIZONTAL_MIN_HEIGHT = 80;
+const SIDEBAR_HORIZONTAL_MAX_HEIGHT_RATIO = 0.7; // max 70% de la altura de la ventana
 let currentSidebarMode = 'vertical';
+
+function getSavedHorizontalHeight() {
+  try {
+    const v = parseInt(localStorage.getItem(SIDEBAR_HORIZONTAL_HEIGHT_KEY), 10);
+    if (Number.isFinite(v) && v >= SIDEBAR_HORIZONTAL_MIN_HEIGHT) return v;
+  } catch (e) {}
+  return SIDEBAR_HORIZONTAL_DEFAULT_HEIGHT;
+}
+
+function applySidebarHorizontalHeight(px) {
+  const sidebar = document.querySelector('.sidebar');
+  if (!sidebar) return;
+  const maxAllowed = Math.floor(window.innerHeight * SIDEBAR_HORIZONTAL_MAX_HEIGHT_RATIO);
+  const h = Math.max(SIDEBAR_HORIZONTAL_MIN_HEIGHT, Math.min(maxAllowed, Math.round(px)));
+  sidebar.style.height = h + 'px';
+  sidebar.style.maxHeight = h + 'px';
+  return h;
+}
 
 function applySidebarMode(mode, persist = true) {
   currentSidebarMode = mode;
@@ -1595,7 +1661,6 @@ function applySidebarMode(mode, persist = true) {
     app.classList.add('horizontal');
     app.style.flexDirection = 'column';
     sidebar.style.width = '100%';
-    sidebar.style.maxHeight = '210px';
     sidebar.style.minHeight = '0';
     sidebar.style.borderRight = 'none';
     sidebar.style.borderBottom = '1px solid var(--border)';
@@ -1606,10 +1671,13 @@ function applySidebarMode(mode, persist = true) {
       catList.style.overflowY = 'auto';
       catList.style.alignContent = 'flex-start';
     }
+    // Restaurar altura guardada (o default) — el handle permite ajustarla
+    applySidebarHorizontalHeight(getSavedHorizontalHeight());
   } else {
     app.classList.remove('horizontal');
     app.style.flexDirection = '';
     sidebar.style.width = '';
+    sidebar.style.height = '';
     sidebar.style.maxHeight = '';
     sidebar.style.minHeight = '';
     sidebar.style.borderRight = '';
@@ -1642,6 +1710,44 @@ window.toggleSidebarMode = function () {
 };
 try { applySidebarMode(localStorage.getItem(SIDEBAR_MODE_KEY) || 'vertical'); } catch (e) {}
 
+// Drag del divisor: solo funciona en modo horizontal. Permite ajustar la altura
+// del area de categorias arrastrando la linea inferior.
+(function setupSidebarResize() {
+  const handle = document.getElementById('sidebarResizeHandle');
+  const sidebar = document.querySelector('.sidebar');
+  if (!handle || !sidebar) return;
+  let dragging = false;
+  let startY = 0;
+  let startH = 0;
+  handle.addEventListener('mousedown', (e) => {
+    if (currentSidebarMode !== 'horizontal') return;
+    dragging = true;
+    startY = e.clientY;
+    startH = sidebar.getBoundingClientRect().height;
+    handle.classList.add('dragging');
+    document.body.classList.add('sidebar-resizing');
+    e.preventDefault();
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const next = startH + (e.clientY - startY);
+    applySidebarHorizontalHeight(next);
+  });
+  window.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove('dragging');
+    document.body.classList.remove('sidebar-resizing');
+    const finalH = sidebar.getBoundingClientRect().height;
+    try { localStorage.setItem(SIDEBAR_HORIZONTAL_HEIGHT_KEY, String(Math.round(finalH))); } catch (e) {}
+  });
+  // Si se redimensiona la ventana, re-clampear la altura para no exceder el max
+  window.addEventListener('resize', () => {
+    if (currentSidebarMode !== 'horizontal') return;
+    applySidebarHorizontalHeight(sidebar.getBoundingClientRect().height);
+  });
+})();
+
 // Escuchar cambios de modo enviados desde el proceso principal (modo PRO).
 // payload: { mode: 'horizontal' | 'vertical' | 'restore', persist: boolean }
 if (window.api && window.api.onSetViewMode) {
@@ -1673,13 +1779,42 @@ if (window.api && window.api.onNavigate) {
 // Window controls
 document.getElementById('btnMinimize').addEventListener('click', () => window.api.minimizeWindow());
 document.getElementById('btnClose').addEventListener('click', () => window.api.closeWindow());
+const btnRefreshAllD = document.getElementById('btnRefreshAll');
+if (btnRefreshAllD) {
+  btnRefreshAllD.addEventListener('click', () => {
+    btnRefreshAllD.style.transition = 'transform 0.6s';
+    btnRefreshAllD.style.transform = 'rotate(360deg)';
+    setTimeout(() => { try { window.api.refreshAllWindows(); } catch (e) { location.reload(); } }, 200);
+  });
+}
 
-// ESC closes modals
+// ESC: 1) si hay modal abierto, lo cierra; 2) si no, navega hacia atras
+//   - Estoy dentro de una subcategoria  -> volver a la grilla de subs
+//   - Estoy en la grilla de subs (cat seleccionada sin sub) -> deseleccionar categoria
+//   - Estoy en "Todos las categorias" o nada seleccionado -> no-op
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') {
+  if (e.key !== 'Escape') return;
+  const moveModalEl = document.getElementById('moveModal');
+  const openModalEl = document.querySelector('.modal-overlay.active');
+  if (openModalEl) {
+    // Cerrar el modal abierto y no navegar
     hideCategoryModal();
     hideEntryModal();
-    document.getElementById('assignModal').classList.remove('active');
+    if (document.getElementById('assignModal')) document.getElementById('assignModal').classList.remove('active');
+    if (moveModalEl) moveModalEl.classList.remove('active');
+    return;
+  }
+  // No hay modal: navegar hacia atras
+  if (selectedSubcategoryId) {
+    selectedSubcategoryId = null;
+    renderEntries();
+    return;
+  }
+  if (selectedCategoryId && selectedCategoryId !== '__all_categories__') {
+    selectedCategoryId = '__all_categories__';
+    renderCategories();
+    renderEntries();
+    return;
   }
 });
 

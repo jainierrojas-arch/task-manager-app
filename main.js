@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, screen, Menu, MenuItem } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { autoUpdater } = require('electron-updater');
@@ -58,6 +58,48 @@ let chatWindow;
 let telegramBot;
 let TelegramBotLib;
 let anthropic;
+
+// Conecta el spell-checker nativo de Chromium + menu contextual con sugerencias
+// al hacer click derecho sobre una palabra mal escrita en cualquier campo de
+// texto. Aplica a TODA la app (main, deposito, chat).
+function setupSpellChecker(win) {
+  if (!win || win.isDestroyed()) return;
+  try {
+    win.webContents.session.setSpellCheckerLanguages(['es', 'en-US']);
+  } catch (e) { /* algunos sistemas no soportan dos idiomas, ignoramos */ }
+  win.webContents.on('context-menu', (event, params) => {
+    const menu = new Menu();
+    let added = false;
+    // 1) Sugerencias del diccionario para la palabra mal escrita
+    for (const suggestion of (params.dictionarySuggestions || [])) {
+      menu.append(new MenuItem({
+        label: suggestion,
+        click: () => win.webContents.replaceMisspelling(suggestion)
+      }));
+      added = true;
+    }
+    if (params.misspelledWord) {
+      if (added) menu.append(new MenuItem({ type: 'separator' }));
+      menu.append(new MenuItem({
+        label: `Agregar "${params.misspelledWord}" al diccionario`,
+        click: () => win.webContents.session.addWordToSpellCheckerDictionary(params.misspelledWord)
+      }));
+      added = true;
+    }
+    // 2) Acciones de edicion estandar (Cortar/Copiar/Pegar)
+    const flags = params.editFlags || {};
+    const canEdit = flags.canCut || flags.canCopy || flags.canPaste || flags.canSelectAll;
+    if (canEdit) {
+      if (added) menu.append(new MenuItem({ type: 'separator' }));
+      if (flags.canCut) menu.append(new MenuItem({ role: 'cut', label: 'Cortar' }));
+      if (flags.canCopy) menu.append(new MenuItem({ role: 'copy', label: 'Copiar' }));
+      if (flags.canPaste) menu.append(new MenuItem({ role: 'paste', label: 'Pegar' }));
+      if (flags.canSelectAll) menu.append(new MenuItem({ role: 'selectAll', label: 'Seleccionar todo' }));
+      added = true;
+    }
+    if (added) menu.popup({ window: win });
+  });
+}
 
 // Modo PRO ciclico: 'off' -> 'full' (deposito+main+chat) -> 'no-chat' (deposito+main) -> 'off'
 let proModeState = 'off';
@@ -132,6 +174,7 @@ function toggleDepositWindow() {
     backgroundColor: '#1a1b2e'
   });
   depositWindow.loadFile('deposit.html');
+  setupSpellChecker(depositWindow);
 
   // Mostrar cuando este lista. Fallback: si ready-to-show no dispara en 3s,
   // mostrar igual para evitar ventana fantasma (p.ej. Windows con Firebase lento)
@@ -227,6 +270,7 @@ function toggleChatWindow() {
     backgroundColor: '#1a1b2e'
   });
   chatWindow.loadFile('chat.html');
+  setupSpellChecker(chatWindow);
 
   let shown = false;
   const showOnce = () => {
@@ -298,13 +342,13 @@ function sendDepositViewMode(mode, persist) {
 }
 
 function applyProModeNoChatLayout() {
-  // Layout 2 ventanas: deposito a la izquierda, main ocupa el resto. Chat oculto.
+  // Layout 2 ventanas: deposito + principal divididas 50/50 en el ancho total. Chat oculto.
   if (!mainWindow || mainWindow.isDestroyed()) return;
   const display = screen.getDisplayMatching(mainWindow.getBounds()) || screen.getPrimaryDisplay();
   const wa = display.workArea;
   const totalW = wa.width;
   const totalH = wa.height;
-  const depositW = Math.floor(totalW * 0.30);
+  const depositW = Math.floor(totalW * 0.50);
   const mainW = totalW - depositW;
   const depositX = wa.x;
   const mainX = wa.x + depositW;
@@ -452,6 +496,7 @@ function createWindow() {
   });
 
   mainWindow.loadFile('index.html');
+  setupSpellChecker(mainWindow);
 
   mainWindow.on('resize', () => {
     if (isProActive()) return;
@@ -796,11 +841,40 @@ function registerIpcHandlers() {
                 const m = html.match(re1) || html.match(re2);
                 return m ? m[1] : null;
               };
-              // Para Instagram embed: el thumbnail viene como <img class="EmbeddedMediaImage" src="...">
+              // Para Instagram embed: el thumbnail real esta en el SRCSET del
+              // <img class="EmbeddedMediaImage">. El src apunta a lookaside.instagram
+              // que devuelve un 302 al HTML del reel (NO a una imagen) — por eso
+              // si lo usamos directo el background-image queda vacio. El srcset
+              // en cambio trae URLs scontent.cdninstagram.com que sí cargan como
+              // imagen. Formato srcset: "url1 640w, url2 750w, url3 1080w".
+              const decodeHtmlEntities = (s) => {
+                if (!s) return s;
+                return s.replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#039;/g, "'")
+                  .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+                  .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))
+                  .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)));
+              };
               let embedImg = null;
-              const embedMatch = html.match(/<img[^>]+class=["'][^"']*EmbeddedMediaImage[^"']*["'][^>]+src=["']([^"']+)["']/i)
-                || html.match(/<img[^>]+src=["']([^"']+)["'][^>]+class=["'][^"']*EmbeddedMediaImage[^"']*["']/i);
-              if (embedMatch) embedImg = embedMatch[1];
+              const srcsetMatch = html.match(/<img[^>]+class=["'][^"']*EmbeddedMediaImage[^"']*["'][^>]*srcset=["']([^"']+)["']/i)
+                || html.match(/<img[^>]+srcset=["']([^"']+)["'][^>]+class=["'][^"']*EmbeddedMediaImage[^"']*["']/i);
+              if (srcsetMatch) {
+                // Tomar la 1ra URL del srcset (resolucion mas baja, suele ser 640w)
+                const firstEntry = srcsetMatch[1].split(',')[0].trim();
+                const firstUrl = firstEntry.split(/\s+/)[0];
+                if (firstUrl) embedImg = decodeHtmlEntities(firstUrl);
+              }
+              // Fallback: cualquier URL scontent.cdninstagram.com en el HTML
+              if (!embedImg) {
+                const sm = html.match(/(https:\/\/scontent[^"\s]+\.(?:jpg|webp))/i);
+                if (sm) embedImg = decodeHtmlEntities(sm[1]);
+              }
+              // Ultimo: el src del EmbeddedMediaImage (probablemente lookaside,
+              // que NO carga como imagen pero al menos no es null)
+              if (!embedImg) {
+                const embedMatch = html.match(/<img[^>]+class=["'][^"']*EmbeddedMediaImage[^"']*["'][^>]+src=["']([^"']+)["']/i)
+                  || html.match(/<img[^>]+src=["']([^"']+)["'][^>]+class=["'][^"']*EmbeddedMediaImage[^"']*["']/i);
+                if (embedMatch) embedImg = decodeHtmlEntities(embedMatch[1]);
+              }
               resolve({
                 image: findMeta('og:image') || findMeta('twitter:image') || embedImg,
                 title: findMeta('og:title') || findMeta('twitter:title'),
@@ -902,7 +976,24 @@ function registerIpcHandlers() {
                 const get = (sel) => { const el = document.querySelector(sel); return el ? el.getAttribute('content') : null; };
                 let img = get('meta[property="og:image"]') || get('meta[name="twitter:image"]');
                 if (!img) {
-                  const embedded = document.querySelector('img.EmbeddedMediaImage, img[src*="cdninstagram"], video[poster]');
+                  // Para embed de Instagram: el thumbnail real esta en el SRCSET
+                  // del <img class="EmbeddedMediaImage">. El src apunta a
+                  // lookaside.instagram.com que es un 302 al HTML, NO una imagen.
+                  const embImg = document.querySelector('img.EmbeddedMediaImage');
+                  if (embImg) {
+                    const srcset = embImg.getAttribute('srcset');
+                    if (srcset) {
+                      const firstEntry = srcset.split(',')[0].trim();
+                      img = firstEntry.split(/\\s+/)[0];
+                    }
+                    if (!img) {
+                      const src = embImg.getAttribute('src');
+                      if (src && !src.includes('lookaside.instagram.com')) img = src;
+                    }
+                  }
+                }
+                if (!img) {
+                  const embedded = document.querySelector('img[src*="scontent"][src*="cdninstagram"], video[poster]');
                   if (embedded) img = embedded.getAttribute('src') || embedded.getAttribute('poster');
                 }
                 return {
@@ -939,37 +1030,54 @@ function registerIpcHandlers() {
     const isFacebook = /facebook\.com\//.test(url) || /fb\.com\//.test(url);
     const needsMicrolink = isInstagram || isTiktok || isFacebook;
 
+    // Filtra URLs que NO cargan como imagen en el renderer (devuelven HTML, 302,
+    // etc.). Si un fetcher las devuelve, las anulamos y seguimos en cascada.
+    const sanitize = (result) => {
+      if (!result) return result;
+      const img = result.image;
+      if (img && typeof img === 'string') {
+        const lc = img.toLowerCase();
+        // lookaside.instagram.com/seo/google_widget redirige al HTML del reel
+        if (lc.includes('lookaside.instagram.com')) {
+          return { ...result, image: null };
+        }
+      }
+      return result;
+    };
+
     // Cascada de intentos: el primero que devuelva imagen gana.
+    // PREFERIMOS Microlink porque proxea las imagenes a su CDN (URLs estables
+    // que cargan en el renderer). Los HTTP/Browser embeds devuelven URLs de
+    // cdninstagram.com con tokens firmados que NO cargan en Electron — solo
+    // los usamos como ultimo recurso si Microlink falla del todo. Si todo
+    // devuelve el logo generico de Instagram, lo aceptamos (mejor algo que nada).
     if (needsMicrolink) {
-      // Intento 1: Microlink con la URL original (con prerender JS)
-      const ml = await fetchOgViaMicrolink(url);
+      const ml = sanitize(await fetchOgViaMicrolink(url));
       if (ml && ml.image) return ml;
 
-      // Intento 2: Microlink con la URL del embed publico de Instagram
-      // (los carruseles a veces solo exponen og:image en /embed/captioned/)
+      // Fallback: embed publico de Instagram (los carruseles a veces solo
+      // exponen og:image en /embed/captioned/)
       const igMatch = url.match(/instagram\.com\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
       if (igMatch) {
         const embedUrl = `https://www.instagram.com/p/${igMatch[1]}/embed/captioned/`;
-        const mlEmbed = await fetchOgViaMicrolink(embedUrl);
+        const mlEmbed = sanitize(await fetchOgViaMicrolink(embedUrl));
         if (mlEmbed && mlEmbed.image) return mlEmbed;
-        // Intento 3: HTTP directo del embed
-        const embedHttp = await fetchOgViaHttp(embedUrl);
+        const embedHttp = sanitize(await fetchOgViaHttp(embedUrl));
         if (embedHttp && embedHttp.image) return embedHttp;
-        // Intento 4: BrowserWindow del embed (renderiza JS local)
         try {
-          const browserEmbed = await fetchOgViaBrowser(embedUrl);
+          const browserEmbed = sanitize(await fetchOgViaBrowser(embedUrl));
           if (browserEmbed && browserEmbed.image) return browserEmbed;
         } catch (_) {}
       }
     }
 
     // Sitios normales: HTTP simple con UA de Facebook bot
-    let result = await fetchOgViaHttp(url);
+    let result = sanitize(await fetchOgViaHttp(url));
     if (result && result.image) return result;
 
     // Ultimo recurso: BrowserWindow oculto con Chromium real
     try {
-      const browserResult = await fetchOgViaBrowser(url);
+      const browserResult = sanitize(await fetchOgViaBrowser(url));
       if (browserResult && browserResult.image) {
         return { ...result, ...browserResult };
       }
@@ -977,7 +1085,7 @@ function registerIpcHandlers() {
 
     // Ultimo intento: Microlink para sitios no-sociales
     if (!needsMicrolink) {
-      const ml = await fetchOgViaMicrolink(url);
+      const ml = sanitize(await fetchOgViaMicrolink(url));
       if (ml && ml.image) return ml;
     }
 
@@ -1110,6 +1218,15 @@ app.whenReady().then(() => {
 
   ipcMain.handle('get-app-version', () => {
     return app.getVersion();
+  });
+
+  // Refrescar todas las ventanas abiertas (equivale a un Cmd+R en cada una).
+  // Util cuando el chat o algun listener de Firebase se queda colgado y el
+  // usuario no quiere salir/entrar manualmente.
+  ipcMain.handle('refresh-all-windows', () => {
+    try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.reload(); } catch (_) {}
+    try { if (depositWindow && !depositWindow.isDestroyed()) depositWindow.webContents.reload(); } catch (_) {}
+    try { if (chatWindow && !chatWindow.isDestroyed()) chatWindow.webContents.reload(); } catch (_) {}
   });
 
   app.on('activate', () => {

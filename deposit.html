@@ -96,7 +96,31 @@
       max-height: 200px;
       border-right: none;
       border-bottom: 1px solid var(--border);
+      position: relative;
     }
+    /* Handle para arrastrar y cambiar la altura del sidebar (solo en horizontal) */
+    .sidebar-resize-handle {
+      display: none;
+    }
+    .app.horizontal .sidebar-resize-handle {
+      display: block;
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: -3px;
+      height: 6px;
+      cursor: ns-resize;
+      z-index: 10;
+      background: transparent;
+      transition: background 0.15s;
+    }
+    .app.horizontal .sidebar-resize-handle:hover,
+    .app.horizontal .sidebar-resize-handle.dragging {
+      background: var(--accent);
+      opacity: 0.5;
+    }
+    body.sidebar-resizing { cursor: ns-resize !important; user-select: none; }
+    body.sidebar-resizing * { cursor: ns-resize !important; user-select: none !important; }
     .app.horizontal .sidebar-header {
       padding: 8px 12px 4px;
     }
@@ -321,9 +345,10 @@
       transition: opacity 0.15s;
     }
     .entry-cover:hover { opacity: 0.92; }
-    /* Cards con tipo Carrusel usan aspect-ratio 1:1 cuadrado (formato clasico
-       de carrusel de Instagram). Asi la imagen llena bien sin recortarse y sin
-       letterboxes grandes a los lados. */
+    /* Cards con tipo Carrusel usan aspect-ratio 1:1 cuadrado por default
+       (formato clasico de carrusel de Instagram, que es lo que Microlink
+       devuelve como og:image). Si la imagen tiene dimensiones reales, el
+       inline style del card sobrescribe este default con el ratio nativo. */
     .entry-card.is-carrusel .entry-cover { aspect-ratio: 1 / 1; }
 
     /* Placeholder de portada cuando no hay og:image (ej. Instagram bloquea scraping) */
@@ -774,6 +799,7 @@
   <div class="titlebar">
     <span class="titlebar-title">📦 DEPOSITO DE IDEAS</span>
     <div class="titlebar-buttons">
+      <button id="btnRefreshAll" title="Refrescar la app (recarga las 3 ventanas)" style="-webkit-app-region:no-drag;background:transparent;border:none;color:var(--text-secondary);cursor:pointer;font-size:14px;padding:2px 8px;margin-right:6px;border-radius:4px">&#8635;</button>
       <button class="titlebar-btn btn-minimize" id="btnMinimize" title="Minimizar"></button>
       <button class="titlebar-btn btn-close" id="btnClose" title="Cerrar"></button>
     </div>
@@ -789,6 +815,7 @@
         </button>
       </div>
       <div class="category-list" id="categoryList"></div>
+      <div class="sidebar-resize-handle" id="sidebarResizeHandle" title="Arrastra para cambiar la altura"></div>
     </aside>
 
     <main class="main">

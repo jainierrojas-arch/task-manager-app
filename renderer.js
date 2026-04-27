@@ -70,10 +70,87 @@ if (document.readyState === 'loading') {
 }
 
 // ===== "QUE HAY NUEVO" — modal de changelog tras actualizar =====
-// Mapea version -> { title, features }. Para mostrar nuevo changelog en el
-// futuro, agrega una entrada con la nueva version. Si el usuario abre la app
-// y la version actual tiene un changelog que no ha visto, se muestra el modal.
+// Mapea version -> { title, features }. CADA vez que publiquemos una nueva
+// version DEBE agregarse una entrada aqui — al abrir la app, los usuarios veran
+// las novedades de TODAS las versiones publicadas desde la ultima que vieron
+// (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '2.77.0': {
+    title: 'Nueva pestaña "Ideas" (notas grupales y personales)',
+    features: [
+      '💡 <strong>Pestaña Ideas</strong> nueva en la barra de navegación: un espacio rápido para anotar ideas como tarjetas tipo nota — sin asignaciones, sin proyectos, solo texto.',
+      '👥 <strong>Modo Grupal</strong>: las ideas se comparten con todo el equipo y muestran el nombre del autor en cada tarjeta.',
+      '🔒 <strong>Modo Personal</strong>: las ideas que crees aquí solo las ves tú. Borde violeta para distinguirlas visualmente.',
+      '⌨️ <strong>Atajos</strong>: Ctrl/Cmd+Enter para guardar la idea rápido. Solo el autor puede eliminar sus propias ideas (botón ✕).'
+    ]
+  },
+  '2.76.0': {
+    title: 'Fix definitivo del fetcher de Instagram',
+    features: [
+      '🛡️ <strong>Validador de URLs</strong>: ahora se rechazan automáticamente URLs `lookaside.instagram.com` (que devuelven HTML, no imagen) en cualquier punto del cascade — antes el BrowserWindow las extraía como último fallback y dejaba la card en negro.',
+      '🔍 <strong>BrowserWindow extractor mejorado</strong>: lee el `srcset` del `<img>` para conseguir URLs `scontent.cdninstagram.com` que sí cargan, en vez del `src` (lookaside roto).',
+      '🔄 <strong>Migración v6</strong>: re-procesa todas las entries con URLs rotas para que se descarguen los thumbnails reales.'
+    ]
+  },
+  '2.75.0': {
+    title: 'Fix definitivo de thumbnails de Instagram',
+    features: [
+      '🔍 <strong>Causa raíz encontrada</strong>: el scraper Microlink alcanzaba su cuota gratuita diaria (50 req/día) y cuando fallaba caíamos a un endpoint de IG cuya URL (lookaside.instagram.com) redirige al HTML del reel en vez de devolver la imagen — por eso se veía en negro o con el logo de IG.',
+      '✅ <strong>Fix</strong>: el extractor del embed ahora lee el atributo srcset (que sí tiene URLs scontent.cdninstagram.com reales que cargan como imagen) en vez del src (lookaside). Esto elimina la dependencia de Microlink para Instagram.',
+      '🔄 <strong>Migración automática</strong>: las cards con URLs lookaside o logos genéricos se re-descargan al abrir el depósito.'
+    ]
+  },
+  '2.74.0': {
+    title: 'Fix reels en negro tras v2.72',
+    features: [
+      '🛠️ <strong>Fix reels que se quedaron en negro</strong>: la detección de "fallback" de v2.72 era demasiado agresiva — rechazaba imágenes válidas de Microlink y caía al embed que devuelve URLs que no cargan en el renderer. Volvimos al fetcher original (Microlink primero) que sí muestra el thumbnail.',
+      '🔄 <strong>Migración automática</strong>: las cards que quedaron en negro tras v2.72/v2.73 se re-descargan al abrir el depósito.'
+    ]
+  },
+  '2.73.0': {
+    title: 'ESC para volver atrás + botón Refresh',
+    features: [
+      '⏪ <strong>Tecla ESC para navegar atrás</strong> en el depósito: si estás dentro de una subcategoría te lleva a la grilla de subs; si estás en una categoría te lleva a "Todos las categorías". Si tenías un modal abierto, primero lo cierra.',
+      '🔄 <strong>Botón de Refresh</strong> en la titlebar (icono ⟳) de las 3 ventanas. Al presionarlo recarga la app principal, depósito y chat. Útil cuando el chat o algún listener se queda colgado y no quieres salir/entrar manualmente.'
+    ]
+  },
+  '2.72.0': {
+    title: 'Corrector ortográfico + fix reels con logo de Instagram',
+    features: [
+      '✏️ <strong>Corrector ortográfico al hacer click derecho</strong>: en cualquier campo de texto (depósito, chat, tareas, configuración) ahora puedes click derecho sobre una palabra mal escrita y verás sugerencias para corregirla. Configurado en español + inglés. También puedes "Agregar al diccionario" palabras que uses seguido.',
+      '🖼️ <strong>Fix reels que mostraban el logo de Instagram</strong>: cuando Instagram no exponía el thumbnail real del reel/post, el scraper devolvía el logo genérico de IG como portada. Ahora detectamos ese caso y reintentamos con el endpoint del embed para conseguir la imagen real.',
+      '🔄 <strong>Migración automática</strong>: las cards existentes con logo de IG se re-descargan al abrir el depósito.'
+    ]
+  },
+  '2.71.0': {
+    title: 'Fix carruseles que aparecían en negro',
+    features: [
+      '🛠️ <strong>Fix carruseles negros</strong>: el cambio de v2.70 que intentaba traer la imagen original sin recortar terminaba devolviendo URLs de Instagram que no cargaban (tokens firmados que expiran). Volvimos al fetcher anterior que sí funciona — los carruseles vuelven a mostrar su imagen.',
+      '🔄 Las cards que quedaron en negro se re-descargan automáticamente al abrir el depósito.'
+    ]
+  },
+  '2.70.0': {
+    title: 'Carruseles con imagen original sin recortar',
+    features: [
+      '🖼️ <strong>Imagen completa de carruseles de Instagram</strong>: ahora la portada se obtiene del endpoint de embed (sin el recorte 1:1 que aplicaba antes el scraper). Vas a ver la primera slide entera, en su orientación nativa.',
+      '📐 <strong>Cards de carrusel uniformes 4:5</strong>: todas las cards de carrusel comparten ahora el mismo formato vertical, así la grilla queda alineada y consistente.',
+      '🔄 <strong>Migración automática</strong> de carruseles antiguos con cover cuadrada — al abrir el depósito se re-descarga la portada original sin recortar.'
+    ]
+  },
+  '2.69.0': {
+    title: 'Notas de versión al abrir la app',
+    features: [
+      '🆕 <strong>Aviso automático de novedades</strong>: cada vez que publiquemos una nueva versión, al abrir la app verás un resumen con todo lo que cambió desde tu última versión. Si te saltaste varias, las verás todas acumuladas.',
+      '🔢 <strong>Detección dinámica de versión</strong>: el aviso ahora se basa en la versión real instalada (antes estaba fija en código y por eso dejó de mostrarse).'
+    ]
+  },
+  '2.68.0': {
+    title: 'Layout PRO sin chat 50/50 + redimensionar categorías',
+    features: [
+      '↕️ <strong>Divisor arrastrable en modo horizontal</strong> del depósito: cuando la barra "TAREAS POR HACER" está horizontal, ahora puedes arrastrar su borde inferior para ajustar la altura a tu gusto. Se recuerda entre sesiones.',
+      '🪟 <strong>"PRO SIN CHAT" divide 50/50</strong>: al ocultar el chat, el Depósito y la ventana Principal ocupan exactamente la mitad cada una sobre todo el ancho de la pantalla.'
+    ]
+  },
   '2.62.0': {
     title: 'Tema personalizable y novedades',
     features: [
@@ -88,29 +165,66 @@ const APP_CHANGELOG = {
     ]
   }
 };
-// Version actual de la app (debe coincidir con package.json para que el
-// changelog se muestre solo en builds de esta version).
-const APP_CURRENT_VERSION = '2.62.0';
 const WHATS_NEW_SEEN_KEY = 'whats-new-seen-version';
 
-function maybeShowWhatsNew() {
+function compareSemver(a, b) {
+  const pa = String(a || '0.0.0').split('.').map(n => parseInt(n, 10) || 0);
+  const pb = String(b || '0.0.0').split('.').map(n => parseInt(n, 10) || 0);
+  for (let i = 0; i < 3; i++) {
+    if (pa[i] !== pb[i]) return pa[i] - pb[i];
+  }
+  return 0;
+}
+
+async function maybeShowWhatsNew() {
+  // Lee la version real del paquete (no hardcoded)
+  let currentVersion = null;
+  try { currentVersion = await window.api.getAppVersion(); } catch (e) {}
+  if (!currentVersion) return;
+
   const lastSeen = (() => { try { return localStorage.getItem(WHATS_NEW_SEEN_KEY); } catch (e) { return null; } })();
-  if (lastSeen === APP_CURRENT_VERSION) return;
-  const entry = APP_CHANGELOG[APP_CURRENT_VERSION];
-  if (!entry) return;
+  // Acumula todas las entradas con version <= currentVersion y > lastSeen
+  const versionsToShow = Object.keys(APP_CHANGELOG)
+    .filter(v => compareSemver(v, currentVersion) <= 0)
+    .filter(v => !lastSeen || compareSemver(v, lastSeen) > 0)
+    .sort((a, b) => compareSemver(b, a));
+
+  if (versionsToShow.length === 0) {
+    // Nada que mostrar pero igual marcamos esta version como vista para no recalcular
+    try { localStorage.setItem(WHATS_NEW_SEEN_KEY, currentVersion); } catch (e) {}
+    return;
+  }
+
   const titleEl = document.getElementById('whatsNewTitle');
   const contentEl = document.getElementById('whatsNewContent');
   const modalEl = document.getElementById('whatsNewModal');
   if (!titleEl || !contentEl || !modalEl) return;
-  titleEl.innerHTML = `🎉 v${APP_CURRENT_VERSION} — ${entry.title}`;
-  const items = (entry.features || []).map(f => `<li style="margin-bottom:6px">${f}</li>`).join('');
-  contentEl.innerHTML = `<ul style="padding-left:18px;list-style:disc">${items}</ul>`;
+
+  const headerLabel = versionsToShow.length === 1
+    ? `v${versionsToShow[0]}`
+    : `v${currentVersion} (incluye ${versionsToShow.length} versiones)`;
+  titleEl.innerHTML = `🎉 ¡Novedades! — ${headerLabel}`;
+  const sectionsHtml = versionsToShow.map(v => {
+    const entry = APP_CHANGELOG[v];
+    const items = (entry.features || []).map(f => `<li style="margin-bottom:6px">${f}</li>`).join('');
+    return `
+      <div style="margin-bottom:18px">
+        <div style="font-weight:700;color:var(--text-primary);font-size:13px;margin-bottom:8px;border-bottom:1px solid var(--border);padding-bottom:4px">v${v} — ${entry.title}</div>
+        <ul style="padding-left:18px;list-style:disc;margin:0">${items}</ul>
+      </div>`;
+  }).join('');
+  contentEl.innerHTML = sectionsHtml;
+  // Guardamos la version actual en el modal para usarla al cerrar
+  modalEl.dataset.currentVersion = currentVersion;
   modalEl.classList.add('active');
 }
 
 function dismissWhatsNew() {
-  try { localStorage.setItem(WHATS_NEW_SEEN_KEY, APP_CURRENT_VERSION); } catch (e) {}
   const modalEl = document.getElementById('whatsNewModal');
+  const v = modalEl && modalEl.dataset.currentVersion;
+  if (v) {
+    try { localStorage.setItem(WHATS_NEW_SEEN_KEY, v); } catch (e) {}
+  }
   if (modalEl) modalEl.classList.remove('active');
 }
 
@@ -152,6 +266,9 @@ function playNotificationSound() {
 }
 let unsubscribeDeposit = null;
 let depositEntries = [];
+let unsubscribeIdeas = null;
+let ideas = [];
+let currentIdeasMode = 'team'; // 'team' | 'personal'
 let depositLastViewedAt = null;
 let reminderTimer = null;
 let presenceTimer = null;
@@ -394,6 +511,7 @@ function showLogin() {
   if (unsubscribeUsers) unsubscribeUsers();
   if (unsubscribeChat) { unsubscribeChat(); unsubscribeChat = null; }
   if (unsubscribeDeposit) { unsubscribeDeposit(); unsubscribeDeposit = null; }
+  if (unsubscribeIdeas) { unsubscribeIdeas(); unsubscribeIdeas = null; }
   if (presenceTimer) { clearInterval(presenceTimer); presenceTimer = null; }
 }
 
@@ -502,6 +620,17 @@ function subscribeToData() {
       renderReferencesBadge();
     });
 
+  // Ideas: notas tipo tarjeta. Una sola coleccion para grupales y personales,
+  // diferenciadas por isPersonal. Las personales se filtran client-side por
+  // authorId === currentUser.uid (las del equipo no se ven).
+  unsubscribeIdeas = db.collection('ideas')
+    .orderBy('createdAt', 'desc')
+    .limit(500)
+    .onSnapshot((snapshot) => {
+      ideas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      renderIdeas();
+    });
+
   depositLastViewedAt = currentUserData.depositLastViewedAt || null;
 }
 
@@ -536,6 +665,140 @@ function renderReferencesBadge() {
   }
   badge.textContent = count > 99 ? '99+' : String(count);
   badge.style.display = 'inline-block';
+}
+
+// ===== Ideas (notas tipo tarjeta) =====
+function visibleIdeas() {
+  if (!currentUser) return [];
+  if (currentIdeasMode === 'personal') {
+    return ideas.filter(i => i.isPersonal && i.authorId === currentUser.uid);
+  }
+  return ideas.filter(i => !i.isPersonal);
+}
+
+function renderIdeas() {
+  const list = document.getElementById('ideasList');
+  if (!list) return;
+  const items = visibleIdeas();
+  // Badge de Ideas: cuenta IDEAS GRUPALES de OTROS desde tu ultima visita.
+  // Para simplicidad, badge muestra solo total de ideas grupales no creadas
+  // por ti (es discreto, no rojo de notificacion).
+  const ideasBadge = document.getElementById('ideasBadge');
+  if (ideasBadge) {
+    const teamCount = ideas.filter(i => !i.isPersonal && i.authorId !== currentUser.uid).length;
+    if (teamCount > 0) {
+      ideasBadge.textContent = teamCount > 99 ? '99+' : String(teamCount);
+      ideasBadge.style.display = 'inline-block';
+    } else {
+      ideasBadge.style.display = 'none';
+    }
+  }
+
+  if (items.length === 0) {
+    const emptyMsg = currentIdeasMode === 'personal'
+      ? 'Aun no tienes ideas personales. Escribe una arriba — solo tu las veras.'
+      : 'Aun no hay ideas del equipo. Anota la primera!';
+    list.innerHTML = `<div class="ideas-empty">${emptyMsg}</div>`;
+    return;
+  }
+
+  list.innerHTML = items.map(idea => {
+    const isMine = idea.authorId === currentUser.uid;
+    const personalCls = idea.isPersonal ? ' personal' : '';
+    const titleHtml = idea.title ? `<div class="idea-card-title">${escHtml(idea.title)}</div>` : '';
+    const authorHtml = idea.isPersonal ? '' : `<span class="idea-card-author">Por ${escHtml(idea.authorName || 'Anonimo')}</span>`;
+    const deleteBtn = isMine ? `<button class="idea-card-delete" data-delete-idea="${escHtml(idea.id)}" title="Eliminar">&#10005;</button>` : '<span></span>';
+    return `
+      <div class="idea-card${personalCls}" data-idea-id="${escHtml(idea.id)}">
+        ${titleHtml}
+        <div class="idea-card-text">${escHtml(idea.text || '')}</div>
+        <div class="idea-card-foot">
+          <span>${authorHtml}${authorHtml ? ' &middot; ' : ''}${ideaTimeAgo(idea.createdAt)}</span>
+          ${deleteBtn}
+        </div>
+      </div>`;
+  }).join('');
+
+  list.querySelectorAll('[data-delete-idea]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteIdea(btn.dataset.deleteIdea);
+    });
+  });
+}
+
+function escHtml(s) {
+  if (s == null) return '';
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+}
+
+function ideaTimeAgo(ts) {
+  if (!ts) return 'ahora';
+  const date = ts.toDate ? ts.toDate() : new Date(ts);
+  const diff = Date.now() - date.getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'ahora';
+  if (mins < 60) return `hace ${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `hace ${hrs}h`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `hace ${days}d`;
+  return date.toLocaleDateString('es-ES');
+}
+
+async function addIdea() {
+  if (!currentUser) return;
+  const titleInput = document.getElementById('ideaTitleInput');
+  const textInput = document.getElementById('ideaTextInput');
+  const title = (titleInput.value || '').trim();
+  const text = (textInput.value || '').trim();
+  if (!text) {
+    textInput.focus();
+    return;
+  }
+  const isPersonal = currentIdeasMode === 'personal';
+  try {
+    await db.collection('ideas').add({
+      title: title || null,
+      text,
+      isPersonal,
+      authorId: currentUser.uid,
+      authorName: currentUserData ? (currentUserData.name || currentUser.email) : (currentUser.email || 'Anonimo'),
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    titleInput.value = '';
+    textInput.value = '';
+    textInput.focus();
+  } catch (e) {
+    console.error('[ideas] add:', e);
+    alert('No se pudo guardar la idea: ' + e.message);
+  }
+}
+
+async function deleteIdea(id) {
+  const idea = ideas.find(i => i.id === id);
+  if (!idea) return;
+  if (idea.authorId !== currentUser.uid) return; // solo el autor puede borrar
+  if (!confirm('Eliminar esta idea?')) return;
+  try {
+    await db.collection('ideas').doc(id).delete();
+  } catch (e) {
+    console.error('[ideas] delete:', e);
+  }
+}
+
+function setIdeasMode(mode) {
+  currentIdeasMode = mode === 'personal' ? 'personal' : 'team';
+  document.querySelectorAll('.ideas-mode-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.ideasMode === currentIdeasMode);
+  });
+  const textInput = document.getElementById('ideaTextInput');
+  if (textInput) {
+    textInput.placeholder = currentIdeasMode === 'personal'
+      ? 'Idea personal (solo tu la veras)...'
+      : 'Idea grupal (visible para todo el equipo)...';
+  }
+  renderIdeas();
 }
 
 // ===== RENDER =====
@@ -2868,8 +3131,32 @@ document.querySelectorAll('.nav-tab').forEach(tab => {
     const tabContent = document.getElementById('tab' + capitalize(currentTab));
     if (tabContent) tabContent.classList.add('active');
     if (currentTab === 'calendar') renderCalendar();
+    if (currentTab === 'ideas') renderIdeas();
   });
 });
+
+// ===== Ideas: handlers de UI =====
+document.querySelectorAll('.ideas-mode-btn').forEach(btn => {
+  btn.addEventListener('click', () => setIdeasMode(btn.dataset.ideasMode));
+});
+const addIdeaBtn = document.getElementById('addIdeaBtn');
+if (addIdeaBtn) addIdeaBtn.addEventListener('click', addIdea);
+const ideaTextInputEl = document.getElementById('ideaTextInput');
+if (ideaTextInputEl) {
+  ideaTextInputEl.addEventListener('keydown', (e) => {
+    // Ctrl/Cmd+Enter envia, Enter solo hace nueva linea
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      addIdea();
+    }
+  });
+}
+const ideaTitleInputEl = document.getElementById('ideaTitleInput');
+if (ideaTitleInputEl) {
+  ideaTitleInputEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); document.getElementById('ideaTextInput').focus(); }
+  });
+}
 
 // Nueva tab: toggle Equipo/Personal
 let currentNewMode = 'team';
@@ -2946,6 +3233,19 @@ el.btnPin.addEventListener('click', async () => {
 
 el.btnMinimize.addEventListener('click', () => window.api.minimizeWindow());
 el.btnClose.addEventListener('click', () => window.api.closeWindow());
+
+// Refresh: recarga las 3 ventanas (main, deposito, chat). Util cuando el chat
+// o algun listener se queda colgado y no quieres salir/entrar manualmente.
+const btnRefreshAll = document.getElementById('btnRefreshAll');
+if (btnRefreshAll) {
+  btnRefreshAll.addEventListener('mouseenter', () => { btnRefreshAll.style.color = 'var(--accent)'; });
+  btnRefreshAll.addEventListener('mouseleave', () => { btnRefreshAll.style.color = 'var(--text-secondary)'; });
+  btnRefreshAll.addEventListener('click', () => {
+    btnRefreshAll.style.transition = 'transform 0.6s';
+    btnRefreshAll.style.transform = 'rotate(360deg)';
+    setTimeout(() => { try { window.api.refreshAllWindows(); } catch (e) { location.reload(); } }, 200);
+  });
+}
 
 window.api.getAlwaysOnTop().then(v => {
   alwaysOnTop = v;
@@ -3672,9 +3972,9 @@ if (proModeBtn) {
       proModeBtn.style.background = 'linear-gradient(135deg,#1e90ff,#4a6cf7)';
       proModeBtn.innerHTML = '&#128203; PRO SIN CHAT';
     } else {
-      // currentState === 'no-chat', proxima accion: pasar a SIMPLE (solo main)
+      // currentState === 'no-chat', proxima accion: pasar a PRINCIPAL (solo main)
       proModeBtn.style.background = 'linear-gradient(135deg,#ff9966,#ff5e62)';
-      proModeBtn.innerHTML = '&#9881; SIMPLE';
+      proModeBtn.innerHTML = '&#9881; PRINCIPAL';
     }
   }
   // Inicializar etiqueta con el estado off (proxima accion: PRO 3 VENTANAS)

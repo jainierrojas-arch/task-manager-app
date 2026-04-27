@@ -452,6 +452,14 @@ document.getElementById('btnMinimize').addEventListener('click', () => {
 document.getElementById('btnClose').addEventListener('click', () => {
   if (window.api && window.api.closeWindow) window.api.closeWindow();
 });
+const btnRefreshAllC = document.getElementById('btnRefreshAll');
+if (btnRefreshAllC) {
+  btnRefreshAllC.addEventListener('click', () => {
+    btnRefreshAllC.style.transition = 'transform 0.6s';
+    btnRefreshAllC.style.transform = 'rotate(360deg)';
+    setTimeout(() => { try { window.api.refreshAllWindows(); } catch (e) { location.reload(); } }, 200);
+  });
+}
 
 const MEETING_ROOM_URL = 'https://meet.google.com/gbv-prvk-mfn';
 document.getElementById('btnMeetingRoom').addEventListener('click', () => {
