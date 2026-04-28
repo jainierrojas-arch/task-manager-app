@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '2.90.0': {
+    title: 'Preview de videos en Reels y Carrusel',
+    features: [
+      '🎬 <strong>Videos ahora muestran preview</strong>: cuando subes un video para Reel (o lo pegas como URL), el modal Programar muestra el video reproducible — antes solo se veía vacío.',
+      '🖼️ <strong>Miniaturas de carrusel inteligentes</strong>: si una casilla del carrusel tiene un video de Cloudinary, la miniatura usa el primer frame del video (jpg). Para videos no-Cloudinary se muestra un mini-player con icono ▶.',
+      '📋 <strong>Cards de la pestaña Programación</strong>: los thumbs de posts con video también muestran el primer frame en vez de quedar vacíos.',
+      '⚙️ <strong>Truco técnico</strong>: aprovechamos que Cloudinary genera automáticamente jpgs del primer frame de cualquier video con solo cambiar la URL (<code>so_0,w_600</code>). Cero costo extra.'
+    ]
+  },
   '2.89.0': {
     title: 'Subir archivos directo desde la app (Cloudinary)',
     features: [
@@ -613,6 +622,56 @@ function showApp() {
   syncCloudinaryConfigFromFirestore();
 }
 
+// ===== Helpers de preview de medios =====
+// Renderiza un preview en un contenedor: si es video, mete un <video>;
+// si es imagen, usa background-image. Mantiene el contenedor del CSS.
+function renderMediaInto(containerEl, url) {
+  if (!containerEl) return;
+  containerEl.innerHTML = '';
+  containerEl.style.backgroundImage = '';
+  if (!url) return;
+  if (isVideoUrl(url)) {
+    const v = document.createElement('video');
+    v.src = url;
+    v.controls = true;
+    v.muted = true;
+    v.playsInline = true;
+    v.preload = 'metadata';
+    v.style.width = '100%';
+    v.style.height = '100%';
+    v.style.objectFit = 'contain';
+    containerEl.appendChild(v);
+  } else {
+    containerEl.style.backgroundImage = `url('${url.replace(/'/g, '%27')}')`;
+  }
+}
+// Detectan si una URL es video y, para Cloudinary, generan un thumbnail
+// (primer frame en jpg) usando una transformacion en la URL.
+function isVideoUrl(url) {
+  if (!url || typeof url !== 'string') return false;
+  if (/\/video\/upload\//.test(url)) return true; // Cloudinary video
+  if (/\.(mp4|mov|webm|m4v)(\?.*)?$/i.test(url)) return true;
+  return false;
+}
+// Para Cloudinary videos: transforma la URL para obtener el primer frame
+// como jpg (asi se puede usar como background-image normal).
+// Ej: .../video/upload/v123/file.mp4 -> .../video/upload/so_0,w_600/v123/file.jpg
+function cloudinaryVideoThumb(url) {
+  if (!/\/video\/upload\//.test(url)) return null;
+  return url
+    .replace(/\/video\/upload\//, '/video/upload/so_0,w_600/')
+    .replace(/\.(mp4|mov|webm|m4v)(\?.*)?$/i, '.jpg');
+}
+// Devuelve una URL apta para usar como background-image. Si es video no-Cloudinary,
+// devuelve null y el caller debe renderizar un <video> en su lugar.
+function mediaThumbUrl(url) {
+  if (!url) return '';
+  const videoThumb = cloudinaryVideoThumb(url);
+  if (videoThumb) return videoThumb;
+  if (isVideoUrl(url)) return ''; // video no-Cloudinary, fallback a video tag
+  return url;
+}
+
 // ===== Cloudinary unsigned upload =====
 // Sube un File a Cloudinary y devuelve la URL publica. Modo unsigned: no
 // necesita API secret, solo el cloud_name + upload_preset que el usuario
@@ -1122,7 +1181,8 @@ function renderScheduleListView() {
   container.innerHTML = items.map(p => {
     const norm = scheduleStatusNorm(p.status);
     const cls = norm === 'publicado' ? 'published' : (norm === 'failed' ? 'failed' : '');
-    const thumb = p.mediaUrl ? `style="background-image:url('${esc(p.mediaUrl)}')"` : '';
+    const thumbSrc = p.mediaUrl ? mediaThumbUrl(p.mediaUrl) : '';
+    const thumb = thumbSrc ? `style="background-image:url('${esc(thumbSrc)}')"` : (p.mediaUrl && isVideoUrl(p.mediaUrl) ? 'data-video="1"' : '');
     const cap = (p.caption || '').slice(0, 200);
     const isMine = p.createdBy === currentUser.uid;
     const editBtn = (isMine && norm === 'programado') ? `<button class="btn btn-ghost btn-small" data-edit-sched="${esc(p.id)}" title="Editar">&#9998;</button>` : '';
@@ -1208,15 +1268,19 @@ function renderScheduleCalendarView() {
         </div>`;
       const cardsHtml = dayPosts.length === 0
         ? '<div style="color:var(--text-dim);font-size:12px;padding:12px;text-align:center">Sin posts ese dia</div>'
-        : dayPosts.map(p => `
+        : dayPosts.map(p => {
+            const ts = p.mediaUrl ? mediaThumbUrl(p.mediaUrl) : '';
+            const thumbStyle = ts ? `style="background-image:url('${esc(ts)}')"` : '';
+            return `
             <div class="sched-card ${scheduleStatusNorm(p.status) === 'publicado' ? 'published' : (scheduleStatusNorm(p.status) === 'failed' ? 'failed' : '')}">
-              <div class="sched-card-thumb" ${p.mediaUrl ? `style="background-image:url('${esc(p.mediaUrl)}')"` : ''}></div>
+              <div class="sched-card-thumb" ${thumbStyle}></div>
               <div class="sched-card-body">
                 <div class="sched-card-when">${esc(fmtScheduledDate(p.scheduledAt))}</div>
                 <div class="sched-card-caption">${esc((p.caption || '').slice(0, 200))}</div>
                 <div class="sched-card-meta">${scheduleStatusPill(p.status || 'pending')}</div>
               </div>
-            </div>`).join('');
+            </div>`;
+          }).join('');
       dayList.innerHTML = headerHtml + cardsHtml;
       // Bind boton +Programar este dia
       const addBtn = dayList.querySelector('[data-add-on-day]');
@@ -1290,7 +1354,19 @@ function refreshCarouselInputs() {
     if (num) num.textContent = String(i + 1);
     if (thumb && input) {
       const v = input.value.trim();
-      thumb.style.backgroundImage = v ? `url('${v.replace(/'/g, '%27')}')` : '';
+      // Para videos de Cloudinary se usa thumb generado (jpg del primer frame).
+      // Para videos no-Cloudinary, no hay thumb posible aqui (sale icono play).
+      const thumbUrl = mediaThumbUrl(v);
+      if (thumbUrl) {
+        thumb.style.backgroundImage = `url('${thumbUrl.replace(/'/g, '%27')}')`;
+        thumb.innerHTML = '';
+      } else if (v && isVideoUrl(v)) {
+        thumb.style.backgroundImage = '';
+        thumb.innerHTML = '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--text-dim)">▶</div>';
+      } else {
+        thumb.style.backgroundImage = '';
+        thumb.innerHTML = '';
+      }
     }
     if (removeBtn) removeBtn.disabled = rows.length <= CAROUSEL_MIN;
   });
@@ -1385,10 +1461,25 @@ function renderCarouselGallery() {
     return;
   }
   count.textContent = `(${lines.length} ${lines.length === 1 ? 'imagen' : 'imagenes'})`;
-  thumbs.innerHTML = lines.map((url, i) => `
-    <div style="flex:0 0 auto;width:120px;height:150px;border-radius:6px;overflow:hidden;background:var(--bg-card) center/cover no-repeat;background-image:url('${url.replace(/'/g, '%27')}');border:1px solid var(--border);scroll-snap-align:start;position:relative">
-      <div style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.7);color:white;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">${i + 1}</div>
-    </div>`).join('');
+  thumbs.innerHTML = lines.map((url, i) => {
+    const thumbUrl = mediaThumbUrl(url);
+    const isVid = isVideoUrl(url);
+    const playIcon = isVid ? '<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:32px;color:white;text-shadow:0 2px 8px rgba(0,0,0,0.6)">▶</div>' : '';
+    if (thumbUrl) {
+      return `
+      <div style="flex:0 0 auto;width:120px;height:150px;border-radius:6px;overflow:hidden;background:var(--bg-card) center/cover no-repeat;background-image:url('${thumbUrl.replace(/'/g, '%27')}');border:1px solid var(--border);scroll-snap-align:start;position:relative">
+        <div style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.7);color:white;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">${i + 1}</div>
+        ${playIcon}
+      </div>`;
+    }
+    // Video no-Cloudinary: usar video tag inline (preload metadata para 1er frame)
+    return `
+      <div style="flex:0 0 auto;width:120px;height:150px;border-radius:6px;overflow:hidden;background:var(--bg-card);border:1px solid var(--border);scroll-snap-align:start;position:relative">
+        <video src="${url.replace(/"/g, '%22')}" muted preload="metadata" playsinline style="width:100%;height:100%;object-fit:cover"></video>
+        <div style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.7);color:white;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">${i + 1}</div>
+        ${playIcon}
+      </div>`;
+  }).join('');
 }
 
 async function openScheduleModal(taskId) {
@@ -1490,9 +1581,10 @@ async function openScheduleModalWithContext() {
   const previewImg = document.getElementById('scheduleMediaImg');
   if (previewUrl) {
     previewBox.style.display = 'block';
-    previewImg.style.backgroundImage = `url('${previewUrl}')`;
+    renderMediaInto(previewImg, previewUrl);
   } else {
     previewBox.style.display = 'none';
+    renderMediaInto(previewImg, '');
   }
 
   // Aplicar tipo sugerido
@@ -1559,14 +1651,15 @@ async function editScheduledPost(id) {
   document.getElementById('schedCaption').value = p.caption || '';
   document.getElementById('schedMediaUrl').value = p.mediaUrl || '';
   resetCarouselInputs(Array.isArray(p.mediaUrls) ? p.mediaUrls : (p.mediaUrl ? [p.mediaUrl] : []));
-  // Preview unico
+  // Preview unico (img o video segun sea)
   const previewBox = document.getElementById('scheduleMediaPreview');
   const previewImg = document.getElementById('scheduleMediaImg');
   if (p.mediaUrl) {
     previewBox.style.display = 'block';
-    previewImg.style.backgroundImage = `url('${p.mediaUrl}')`;
+    renderMediaInto(previewImg, p.mediaUrl);
   } else {
     previewBox.style.display = 'none';
+    renderMediaInto(previewImg, '');
   }
   const ptype = p.postType || 'post';
   document.querySelectorAll('input[name="schedPostType"]').forEach(r => { r.checked = r.value === ptype; });
@@ -4042,8 +4135,13 @@ if (schedMediaUrlInput) {
     const url = schedMediaUrlInput.value.trim();
     const previewBox = document.getElementById('scheduleMediaPreview');
     const previewImg = document.getElementById('scheduleMediaImg');
-    if (url) { previewBox.style.display = 'block'; previewImg.style.backgroundImage = `url('${url}')`; }
-    else { previewBox.style.display = 'none'; }
+    if (url) {
+      previewBox.style.display = 'block';
+      renderMediaInto(previewImg, url);
+    } else {
+      previewBox.style.display = 'none';
+      renderMediaInto(previewImg, '');
+    }
   });
 }
 // Cambio de tipo de post: mostrar/ocultar campos segun corresponda
