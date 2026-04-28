@@ -1092,6 +1092,38 @@
     .sched-status-pending { background: rgba(225,48,108,0.15); color: #e1306c; }
     .sched-status-published { background: rgba(46,213,115,0.15); color: var(--success); }
     .sched-status-failed { background: rgba(255,71,87,0.15); color: var(--danger); }
+    /* Filas dinamicas del editor de carrusel */
+    .carousel-input-row {
+      display: flex; align-items: center; gap: 8px;
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 6px; padding: 6px;
+    }
+    .carousel-num {
+      width: 22px; height: 22px; border-radius: 50%;
+      background: var(--accent); color: #fff; font-size: 11px;
+      font-weight: 700; display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .carousel-input-row input {
+      flex: 1; min-width: 0; font-size: 12px; padding: 4px 8px;
+      font-family: monospace; background: var(--bg-secondary);
+      border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary);
+    }
+    .carousel-input-row input:focus { outline: 1px solid var(--accent); }
+    .carousel-thumb {
+      width: 36px; height: 36px; border-radius: 4px; flex-shrink: 0;
+      background: var(--bg-secondary) center/cover no-repeat;
+      border: 1px solid var(--border);
+    }
+    .carousel-remove {
+      width: 26px; height: 26px; flex-shrink: 0; cursor: pointer;
+      background: transparent; border: 1px solid var(--border);
+      border-radius: 4px; color: var(--text-dim);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; transition: all 0.15s;
+    }
+    .carousel-remove:hover { background: rgba(255,71,87,0.1); color: var(--danger); border-color: var(--danger); }
+    .carousel-remove:disabled { opacity: 0.3; cursor: not-allowed; }
   </style>
 </head>
 <body>
@@ -1558,9 +1590,10 @@
       </div>
       <!-- Multiple URLs: solo para carrusel (oculto por default) -->
       <div class="modal-row" id="schedCarouselUrlsRow" style="display:none">
-        <label>URLs de las imagenes (una por linea, minimo 2, maximo 10)</label>
-        <textarea id="schedMediaUrls" rows="6" placeholder="https://imagen1.jpg&#10;https://imagen2.jpg&#10;https://imagen3.jpg" style="font-family:monospace;font-size:11px"></textarea>
-        <div style="font-size:11px;color:var(--text-dim);margin-top:2px">Una URL por linea. Solo imagenes JPEG publicas. La app envia un array <code>mediaUrls</code> a Make.</div>
+        <label>URLs de las imagenes (minimo 2, maximo 10)</label>
+        <div id="schedCarouselInputs" style="display:flex;flex-direction:column;gap:6px;margin-top:4px"></div>
+        <button class="btn btn-ghost" id="schedAddCarouselUrl" type="button" style="margin-top:6px;font-size:12px;padding:4px 10px">&#10133; Añadir imagen</button>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:4px">Una URL por casilla. Solo imagenes/videos publicos. Cada miniatura aparece a la derecha en cuanto pegas la URL.</div>
       </div>
       <div class="modal-buttons">
         <button class="btn btn-ghost" id="schedCancel">Cancelar</button>

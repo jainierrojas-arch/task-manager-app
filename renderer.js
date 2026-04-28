@@ -75,6 +75,17 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '2.87.0': {
+    title: 'Editar posts programados + Carrusel con casillas separadas',
+    features: [
+      '✎ <strong>Editar post programado</strong>: nuevo botón ✎ en cada post en estado "programado" (junto al ✕). Click → el modal se abre con todos los datos pre-llenados (fecha, hora, caption, URLs, tipo). Cambias lo que quieras y le das "Actualizar". El post mantiene su ID en Firestore — no se duplica.',
+      '🛡️ <strong>Solo editable mientras esté programado</strong>: si la Cloud Function ya lo tomó (estado "publishing", "publicado" o "fallo"), el botón ✎ no aparece — para evitar que edites algo que ya está en proceso o publicado.',
+      '🎠 <strong>Carrusel con casillas separadas</strong>: el editor del carrusel ahora tiene una casilla por imagen (numerada 1, 2, 3...) en vez de un único textarea. Visualmente más fácil pegar y editar URLs sin enredarse.',
+      '➕ <strong>Botón "Añadir imagen"</strong>: empiezas con 2 casillas fijas (mínimo de Instagram) y vas agregando hasta 10 con el botón "+ Añadir imagen". También puedes quitar casillas con el ✕ (siempre dejas mínimo 2).',
+      '🖼️ <strong>Miniatura por casilla</strong>: cuando pegas una URL, aparece una miniatura pequeña a la derecha de esa casilla específica para confirmar que es la imagen correcta. La galería grande de arriba sigue mostrando todas en horizontal.',
+      '🔧 Para Make: cero cambios — al guardar, las URLs se siguen mandando como un array <code>mediaUrls</code> y <code>carouselChildren</code> formateados igual que antes.'
+    ]
+  },
   '2.86.0': {
     title: 'Programación respeta hora exacta + notificaciones',
     features: [
@@ -578,6 +589,29 @@ function showApp() {
   loadReminderInterval();
   loadTabsMode();
   subscribeToNotificationQueue();
+  syncMakeWebhookToFirestore();
+}
+
+// Lee la URL del webhook del store local y la sincroniza a Firestore en
+// config/instagram para que la Cloud Function la conozca. Idempotente: solo
+// escribe si la remota difiere de la local. Se llama tras login.
+async function syncMakeWebhookToFirestore() {
+  try {
+    if (!window.api || !window.api.getMakeWebhook || !db || !currentUser) return;
+    const url = await window.api.getMakeWebhook();
+    if (!url) return;
+    const snap = await db.collection('config').doc('instagram').get();
+    const remote = snap.exists ? (snap.data().makeWebhookUrl || null) : null;
+    if (remote === url) return;
+    await db.collection('config').doc('instagram').set({
+      makeWebhookUrl: url,
+      updatedBy: currentUser.email,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+    console.log('[sync] Make webhook URL sincronizado a Firestore');
+  } catch (e) {
+    console.warn('[sync] No se pudo sincronizar webhook a Firestore:', e.message);
+  }
 }
 
 function showLogin() {
@@ -1030,6 +1064,7 @@ function renderScheduleListView() {
     const thumb = p.mediaUrl ? `style="background-image:url('${esc(p.mediaUrl)}')"` : '';
     const cap = (p.caption || '').slice(0, 200);
     const isMine = p.createdBy === currentUser.uid;
+    const editBtn = (isMine && norm === 'programado') ? `<button class="btn btn-ghost btn-small" data-edit-sched="${esc(p.id)}" title="Editar">&#9998;</button>` : '';
     const cancelBtn = (isMine && norm === 'programado') ? `<button class="btn btn-danger btn-small" data-cancel-sched="${esc(p.id)}" title="Cancelar">&#10005;</button>` : '';
     const platformLabel = (p.postType || 'post').toUpperCase();
     return `
@@ -1040,13 +1075,19 @@ function renderScheduleListView() {
           <div class="sched-card-caption">${esc(cap)}</div>
           <div class="sched-card-meta">${scheduleStatusPill(p.status || 'pending')} &middot; por ${esc(p.createdByName || 'Anonimo')}</div>
         </div>
-        <div class="sched-card-actions">${cancelBtn}</div>
+        <div class="sched-card-actions">${editBtn}${cancelBtn}</div>
       </div>`;
   }).join('');
   container.querySelectorAll('[data-cancel-sched]').forEach(b => {
     b.addEventListener('click', (e) => {
       e.stopPropagation();
       cancelScheduledPost(b.dataset.cancelSched);
+    });
+  });
+  container.querySelectorAll('[data-edit-sched]').forEach(b => {
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      editScheduledPost(b.dataset.editSched);
     });
   });
 }
@@ -1127,6 +1168,9 @@ function renderSchedule() {
 //   { type: 'task', taskId, ... }       -> programar desde una tarea completada
 //   { type: 'entry', entryId, ... }     -> programar desde una entry finalizada del deposito
 let schedulingContext = null;
+// Si != null, el modal esta editando un post existente en lugar de crear uno nuevo.
+// Al confirmar, se hace update en vez de add.
+let editingPostId = null;
 
 function applyPostTypeToModal(type) {
   const isCarousel = type === 'carousel';
@@ -1138,10 +1182,86 @@ function applyPostTypeToModal(type) {
   if (isCarousel) renderCarouselGallery();
 }
 
-// Render galeria horizontal de previews del carrusel
+// ===== Carrusel: inputs dinamicos (una casilla por imagen, +/- on demand) =====
+const CAROUSEL_MIN = 2;
+const CAROUSEL_MAX = 10;
+
+// Obtiene todas las URLs ingresadas en las casillas de carrusel (filtradas, no vacias).
+function getCarouselUrls() {
+  const inputs = document.querySelectorAll('#schedCarouselInputs input[type="url"]');
+  return Array.from(inputs).map(i => i.value.trim()).filter(s => s.length > 0);
+}
+
+// Re-numera las filas y actualiza miniaturas + estado del boton remove.
+function refreshCarouselInputs() {
+  const container = document.getElementById('schedCarouselInputs');
+  if (!container) return;
+  const rows = container.querySelectorAll('.carousel-input-row');
+  rows.forEach((row, i) => {
+    const num = row.querySelector('.carousel-num');
+    const input = row.querySelector('input[type="url"]');
+    const thumb = row.querySelector('.carousel-thumb');
+    const removeBtn = row.querySelector('.carousel-remove');
+    if (num) num.textContent = String(i + 1);
+    if (thumb && input) {
+      const v = input.value.trim();
+      thumb.style.backgroundImage = v ? `url('${v.replace(/'/g, '%27')}')` : '';
+    }
+    if (removeBtn) removeBtn.disabled = rows.length <= CAROUSEL_MIN;
+  });
+  // Boton +Anadir desactivado al llegar al max
+  const addBtn = document.getElementById('schedAddCarouselUrl');
+  if (addBtn) addBtn.disabled = rows.length >= CAROUSEL_MAX;
+}
+
+// Crea una fila de input con miniatura + boton remove, y la inserta al container.
+function addCarouselInputRow(prefillUrl) {
+  const container = document.getElementById('schedCarouselInputs');
+  if (!container) return;
+  const rows = container.querySelectorAll('.carousel-input-row');
+  if (rows.length >= CAROUSEL_MAX) return;
+  const row = document.createElement('div');
+  row.className = 'carousel-input-row';
+  row.innerHTML = `
+    <div class="carousel-num">1</div>
+    <input type="url" placeholder="https://...jpg" />
+    <div class="carousel-thumb"></div>
+    <button type="button" class="carousel-remove" title="Quitar">&#10005;</button>
+  `;
+  const input = row.querySelector('input');
+  if (prefillUrl) input.value = prefillUrl;
+  // Preview live + actualizacion de la galeria al teclear/pegar
+  input.addEventListener('input', () => {
+    refreshCarouselInputs();
+    renderCarouselGallery();
+  });
+  // Boton remove
+  row.querySelector('.carousel-remove').addEventListener('click', () => {
+    const all = container.querySelectorAll('.carousel-input-row');
+    if (all.length <= CAROUSEL_MIN) return; // siempre minimo 2
+    row.remove();
+    refreshCarouselInputs();
+    renderCarouselGallery();
+  });
+  container.appendChild(row);
+  refreshCarouselInputs();
+}
+
+// Resetea el container con la cantidad minima (2) y rellena con urls dadas.
+function resetCarouselInputs(urls) {
+  const container = document.getElementById('schedCarouselInputs');
+  if (!container) return;
+  container.innerHTML = '';
+  const arr = Array.isArray(urls) ? urls.slice(0, CAROUSEL_MAX) : [];
+  const total = Math.max(CAROUSEL_MIN, arr.length);
+  for (let i = 0; i < total; i++) addCarouselInputRow(arr[i] || '');
+  renderCarouselGallery();
+}
+
+// Render galeria horizontal de previews del carrusel (debajo del header del modal).
+// Lee desde los inputs dinamicos.
 function renderCarouselGallery() {
-  const text = (document.getElementById('schedMediaUrls').value || '').trim();
-  const lines = text.split(/\r?\n/).map(s => s.trim()).filter(s => /^https?:\/\//i.test(s));
+  const lines = getCarouselUrls().filter(u => /^https?:\/\//i.test(u));
   const thumbs = document.getElementById('scheduleGalleryThumbs');
   const count = document.getElementById('scheduleGalleryCount');
   if (!thumbs || !count) return;
@@ -1220,18 +1340,18 @@ async function openScheduleModalWithContext() {
   if (presetUrls.length >= 2) {
     // 2+ URLs => sugerimos carrusel
     suggestedType = 'carousel';
-    document.getElementById('schedMediaUrls').value = presetUrls.join('\n');
     document.getElementById('schedMediaUrl').value = presetUrls[0];
+    resetCarouselInputs(presetUrls);
   } else if (presetUrls.length === 1) {
     // 1 URL => post (o el usuario puede cambiar a reel/story)
     document.getElementById('schedMediaUrl').value = presetUrls[0];
-    document.getElementById('schedMediaUrls').value = presetUrls[0] + '\n';
+    resetCarouselInputs([presetUrls[0]]);
   } else if (fallbackCover) {
     document.getElementById('schedMediaUrl').value = fallbackCover;
-    document.getElementById('schedMediaUrls').value = fallbackCover + '\n';
+    resetCarouselInputs([fallbackCover]);
   } else {
     document.getElementById('schedMediaUrl').value = '';
-    document.getElementById('schedMediaUrls').value = '';
+    resetCarouselInputs([]);
   }
 
   const previewUrl = (presetUrls[0]) || fallbackCover;
@@ -1247,6 +1367,9 @@ async function openScheduleModalWithContext() {
   // Aplicar tipo sugerido
   document.querySelectorAll('input[name="schedPostType"]').forEach(r => { r.checked = r.value === suggestedType; });
   applyPostTypeToModal(suggestedType);
+  // Reset modo edicion (solo openScheduleModalForEdit lo activa)
+  editingPostId = null;
+  applyScheduleModalLabels();
   modal.classList.add('active');
 }
 
@@ -1254,6 +1377,72 @@ function closeScheduleModal() {
   const m = document.getElementById('scheduleModal');
   if (m) m.classList.remove('active');
   schedulingContext = null;
+  editingPostId = null;
+}
+
+// Cambia titulo del modal y label del boton confirmar segun crear vs editar
+function applyScheduleModalLabels() {
+  const titleEl = document.querySelector('#scheduleModal .modal-title');
+  const confirmBtn = document.getElementById('schedConfirm');
+  if (editingPostId) {
+    if (titleEl) titleEl.innerHTML = '✎ Editar post programado';
+    if (confirmBtn) confirmBtn.innerHTML = '&#128190; Actualizar';
+  } else {
+    if (titleEl) titleEl.innerHTML = '&#128241; Programar en Instagram';
+    if (confirmBtn) confirmBtn.innerHTML = '&#128241; Programar';
+  }
+}
+
+// Abre el modal para EDITAR un post programado existente (no crea uno nuevo).
+async function editScheduledPost(id) {
+  const p = scheduledPosts.find(x => x.id === id);
+  if (!p) { alert('Post no encontrado'); return; }
+  if (scheduleStatusNorm(p.status) !== 'programado') {
+    alert('Solo se pueden editar posts en estado "programado". Este ya esta ' + scheduleStatusNorm(p.status) + '.');
+    return;
+  }
+  // Construir un schedulingContext desde el post existente
+  schedulingContext = {
+    type: p.sourceType || 'manual',
+    taskId: p.taskId || null,
+    entryId: p.entryId || null,
+    title: p.taskTitle || '',
+    description: '',
+    coverImage: p.mediaUrl || '',
+    mediaUrls: Array.isArray(p.mediaUrls) ? p.mediaUrls : []
+  };
+  const modal = document.getElementById('scheduleModal');
+  if (!modal) return;
+  let webhookUrl = '';
+  try { webhookUrl = await window.api.getMakeWebhook(); } catch (e) {}
+  document.getElementById('scheduleNoWebhook').style.display = webhookUrl ? 'none' : 'block';
+  // Pre-llenar con los valores reales del post
+  const dt = p.scheduledAt && p.scheduledAt.toDate ? p.scheduledAt.toDate() : new Date(p.scheduledAt);
+  const yyyy = dt.getFullYear();
+  const mm = String(dt.getMonth() + 1).padStart(2, '0');
+  const dd = String(dt.getDate()).padStart(2, '0');
+  const hh = String(dt.getHours()).padStart(2, '0');
+  const mi = String(dt.getMinutes()).padStart(2, '0');
+  document.getElementById('schedDate').value = `${yyyy}-${mm}-${dd}`;
+  document.getElementById('schedTime').value = `${hh}:${mi}`;
+  document.getElementById('schedCaption').value = p.caption || '';
+  document.getElementById('schedMediaUrl').value = p.mediaUrl || '';
+  resetCarouselInputs(Array.isArray(p.mediaUrls) ? p.mediaUrls : (p.mediaUrl ? [p.mediaUrl] : []));
+  // Preview unico
+  const previewBox = document.getElementById('scheduleMediaPreview');
+  const previewImg = document.getElementById('scheduleMediaImg');
+  if (p.mediaUrl) {
+    previewBox.style.display = 'block';
+    previewImg.style.backgroundImage = `url('${p.mediaUrl}')`;
+  } else {
+    previewBox.style.display = 'none';
+  }
+  const ptype = p.postType || 'post';
+  document.querySelectorAll('input[name="schedPostType"]').forEach(r => { r.checked = r.value === ptype; });
+  applyPostTypeToModal(ptype);
+  editingPostId = id;
+  applyScheduleModalLabels();
+  modal.classList.add('active');
 }
 
 async function confirmSchedulePost() {
@@ -1267,14 +1456,13 @@ async function confirmSchedulePost() {
   const scheduledAt = new Date(`${date}T${time}`);
   if (scheduledAt < new Date()) { alert('La fecha/hora debe ser en el futuro'); return; }
 
-  // URL handling: carousel manda array, otros mandan string
+  // URL handling: carousel manda array (desde inputs dinamicos), otros mandan string
   let mediaUrl = '';
   let mediaUrls = null;
   if (postType === 'carousel') {
-    const text = document.getElementById('schedMediaUrls').value.trim();
-    const lines = text.split(/\r?\n/).map(s => s.trim()).filter(s => s.length > 0);
-    if (lines.length < 2) { alert('Carrusel requiere minimo 2 URLs (una por linea)'); return; }
-    if (lines.length > 10) { alert('Carrusel acepta maximo 10 URLs'); return; }
+    const lines = getCarouselUrls();
+    if (lines.length < CAROUSEL_MIN) { alert(`Carrusel requiere minimo ${CAROUSEL_MIN} URLs`); return; }
+    if (lines.length > CAROUSEL_MAX) { alert(`Carrusel acepta maximo ${CAROUSEL_MAX} URLs`); return; }
     mediaUrls = lines;
     mediaUrl = lines[0]; // primera como fallback compatible
   } else {
@@ -1312,14 +1500,36 @@ async function confirmSchedulePost() {
   // este doc cuando scheduledAt<=now y dispara el webhook a Make. Despues
   // marca status=publicado o failed segun resultado.
   try {
-    await db.collection('scheduledPosts').add({
-      ...payload,
-      scheduledAt: firebase.firestore.Timestamp.fromDate(scheduledAt),
-      status: 'programado',
-      createdBy: currentUser.uid,
-      createdByName: currentUserData ? currentUserData.name : currentUser.email,
-      createdAt: firebase.firestore.FieldValue.serverTimestamp()
-    });
+    if (editingPostId) {
+      // Modo edicion: actualiza el doc existente.
+      // Limpiamos campos de carrusel viejos si el nuevo postType no es carrusel,
+      // para que Make no reciba mediaUrls fantasma del estado anterior.
+      const updateData = {
+        ...payload,
+        scheduledAt: firebase.firestore.Timestamp.fromDate(scheduledAt),
+        status: 'programado',
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        updatedBy: currentUser.uid
+      };
+      if (!mediaUrls) {
+        // Quitar campos de carrusel del doc para evitar arrastrar data vieja
+        updateData.mediaUrls = firebase.firestore.FieldValue.delete();
+        updateData.carouselChildren = firebase.firestore.FieldValue.delete();
+        for (let i = 1; i <= 10; i++) {
+          updateData[`mediaUrl${i}`] = firebase.firestore.FieldValue.delete();
+        }
+      }
+      await db.collection('scheduledPosts').doc(editingPostId).update(updateData);
+    } else {
+      await db.collection('scheduledPosts').add({
+        ...payload,
+        scheduledAt: firebase.firestore.Timestamp.fromDate(scheduledAt),
+        status: 'programado',
+        createdBy: currentUser.uid,
+        createdByName: currentUserData ? currentUserData.name : currentUser.email,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    }
   } catch (e) {
     alert('No se pudo guardar en Firestore: ' + e.message);
     return;
@@ -3709,10 +3919,13 @@ if (schedMediaUrlInput) {
 document.querySelectorAll('input[name="schedPostType"]').forEach(r => {
   r.addEventListener('change', (e) => applyPostTypeToModal(e.target.value));
 });
-// Live preview de la galeria de carrusel mientras se editan URLs
-const schedMediaUrlsInputEl = document.getElementById('schedMediaUrls');
-if (schedMediaUrlsInputEl) {
-  schedMediaUrlsInputEl.addEventListener('input', () => renderCarouselGallery());
+// Boton +Anadir imagen: agrega una nueva fila al final
+const schedAddCarouselBtn = document.getElementById('schedAddCarouselUrl');
+if (schedAddCarouselBtn) {
+  schedAddCarouselBtn.addEventListener('click', () => {
+    addCarouselInputRow('');
+    renderCarouselGallery();
+  });
 }
 
 // Listener IPC: el deposito pide programar una entry → abrir modal pre-llenado
