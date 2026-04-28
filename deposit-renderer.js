@@ -895,6 +895,7 @@ async function scheduleFromEntry(entryId) {
       description: entry.description || '',
       coverImage: entry.coverImage || '',
       links: entry.links || [],
+      mediaUrls: Array.isArray(entry.mediaUrls) ? entry.mediaUrls : [],
       categoryId: entry.categoryId || '',
       subcategoryId: entry.subcategoryId || ''
     });
@@ -1216,6 +1217,14 @@ async function deleteEntry(entryId) {
 
 // Modal: nueva/editar entrada
 document.getElementById('newEntryBtn').addEventListener('click', () => showEntryModal());
+// Preview en vivo de las URLs publicas (Cloudinary) al escribir
+const entryMediaUrlsInputEl = document.getElementById('entryMediaUrlsInput');
+if (entryMediaUrlsInputEl) {
+  entryMediaUrlsInputEl.addEventListener('input', () => {
+    const lines = entryMediaUrlsInputEl.value.split(/\r?\n/).map(s => s.trim()).filter(s => /^https?:\/\//i.test(s));
+    updateMediaUrlsPreview(lines[0] || '');
+  });
+}
 document.getElementById('cancelEntry').addEventListener('click', hideEntryModal);
 document.getElementById('addLinkBtn').addEventListener('click', () => addLinkRow());
 document.getElementById('confirmEntry').addEventListener('click', saveEntry);
@@ -1243,6 +1252,10 @@ function showEntryModal(entryId) {
     document.getElementById('entryDescInput').value = e.description || '';
     if (e.subcategoryId) subSel.value = e.subcategoryId;
     (e.links || []).forEach(l => addLinkRow(l));
+    // Pre-rellenar URLs publicas si la entry ya tiene
+    const urls = Array.isArray(e.mediaUrls) ? e.mediaUrls : [];
+    document.getElementById('entryMediaUrlsInput').value = urls.join('\n');
+    updateMediaUrlsPreview(urls[0] || '');
   } else {
     document.getElementById('entryTitleInput').value = '';
     document.getElementById('entryDescInput').value = '';
@@ -1251,9 +1264,23 @@ function showEntryModal(entryId) {
       subSel.value = selectedSubcategoryId;
     }
     addLinkRow({ type: 'video', url: '', label: '' });
+    document.getElementById('entryMediaUrlsInput').value = '';
+    updateMediaUrlsPreview('');
   }
   document.getElementById('entryModal').classList.add('active');
   setTimeout(() => document.getElementById('entryTitleInput').focus(), 100);
+}
+
+function updateMediaUrlsPreview(firstUrl) {
+  const preview = document.getElementById('entryMediaUrlsPreview');
+  const img = document.getElementById('entryMediaUrlsPreviewImg');
+  if (firstUrl && /^https?:\/\//i.test(firstUrl)) {
+    preview.style.display = 'block';
+    img.src = firstUrl;
+  } else {
+    preview.style.display = 'none';
+    img.src = '';
+  }
 }
 
 function hideEntryModal() {
@@ -1361,10 +1388,23 @@ async function saveEntry() {
     });
   });
 
+  // Parsear URLs publicas (Cloudinary etc.) para programar
+  const mediaUrlsRaw = document.getElementById('entryMediaUrlsInput').value || '';
+  const mediaUrls = mediaUrlsRaw.split(/\r?\n/).map(s => s.trim()).filter(s => /^https?:\/\//i.test(s));
+
   if (editingEntryId) {
     // Editar: cambia campos editables, permite mover entre subcategorias
     const chosenSubId = document.getElementById('entrySubcategorySelect').value;
     const updateData = { title, description, links };
+    // Guardar mediaUrls (array). Si no hay, borrar campo.
+    if (mediaUrls.length > 0) {
+      updateData.mediaUrls = mediaUrls;
+      // Si el usuario pone URLs publicas, usamos la primera como cover (mejor que el OG scrape).
+      updateData.coverImage = mediaUrls[0];
+      updateData.coverFetcherV = 99; // marca para no re-scrapear OG
+    } else {
+      updateData.mediaUrls = firebase.firestore.FieldValue.delete();
+    }
     if (chosenSubId) {
       const subCat = categories.find(c => c.id === chosenSubId);
       updateData.subcategoryId = chosenSubId;
@@ -1389,6 +1429,11 @@ async function saveEntry() {
       createdByName: currentUserData.name,
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     };
+    if (mediaUrls.length > 0) {
+      data.mediaUrls = mediaUrls;
+      data.coverImage = mediaUrls[0];
+      data.coverFetcherV = 99;
+    }
     if (chosenSubId) {
       const subCat = categories.find(c => c.id === chosenSubId);
       data.subcategoryId = chosenSubId;

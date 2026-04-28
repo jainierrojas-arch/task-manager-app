@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '2.83.0': {
+    title: 'URLs públicas en la entry — programación 1-click',
+    features: [
+      '🔗 <strong>Campo "URLs públicas para programar"</strong> al crear/editar una entry del depósito: pega ahí los links de Cloudinary/Imgur de las imágenes o video del contenido a publicar (una URL por línea).',
+      '🖼️ La <strong>primera URL se usa como miniatura</strong> de la card en el depósito — verás el contenido real en lugar del thumbnail OG genérico.',
+      '⚡ <strong>Programar 1-click</strong>: cuando le des "📷 Programar" a esa entry, las URLs ya quedan pre-llenadas en el modal y la app sugiere automáticamente el tipo (Carrusel si hay 2+ URLs, Post si hay 1). Solo eliges fecha/hora y confirmas.',
+      '💡 Esto convierte la entry en un "post listo para publicar" — primero subes a Cloudinary una vez, después solo le das fecha y queda programado en Make → Instagram.'
+    ]
+  },
   '2.82.0': {
     title: 'Editar ideas + Nueva programación independiente + fix modal',
     features: [
@@ -1060,7 +1069,8 @@ async function openScheduleModalForEntry(entryData) {
     entryId: entryData.id,
     title: entryData.title || '',
     description: entryData.description || '',
-    coverImage: entryData.coverImage || ''
+    coverImage: entryData.coverImage || '',
+    mediaUrls: Array.isArray(entryData.mediaUrls) ? entryData.mediaUrls : []
   };
   await openScheduleModalWithContext();
 }
@@ -1091,20 +1101,44 @@ async function openScheduleModalWithContext() {
   document.getElementById('schedTime').value = '09:00';
   const desc = schedulingContext.description ? `\n\n${schedulingContext.description}` : '';
   document.getElementById('schedCaption').value = `${schedulingContext.title || ''}${desc}`.trim();
-  const mediaUrl = schedulingContext.coverImage || '';
-  document.getElementById('schedMediaUrl').value = mediaUrl;
-  document.getElementById('schedMediaUrls').value = mediaUrl ? mediaUrl + '\n' : '';
+
+  // Pre-llenado de URLs:
+  //   - Si la entry tiene mediaUrls (Cloudinary etc.) -> auto-llenar carrusel/single
+  //   - Sino, fallback al coverImage del thumbnail
+  const presetUrls = Array.isArray(schedulingContext.mediaUrls) ? schedulingContext.mediaUrls : [];
+  const fallbackCover = schedulingContext.coverImage || '';
+  let suggestedType = 'post';
+
+  if (presetUrls.length >= 2) {
+    // 2+ URLs => sugerimos carrusel
+    suggestedType = 'carousel';
+    document.getElementById('schedMediaUrls').value = presetUrls.join('\n');
+    document.getElementById('schedMediaUrl').value = presetUrls[0];
+  } else if (presetUrls.length === 1) {
+    // 1 URL => post (o el usuario puede cambiar a reel/story)
+    document.getElementById('schedMediaUrl').value = presetUrls[0];
+    document.getElementById('schedMediaUrls').value = presetUrls[0] + '\n';
+  } else if (fallbackCover) {
+    document.getElementById('schedMediaUrl').value = fallbackCover;
+    document.getElementById('schedMediaUrls').value = fallbackCover + '\n';
+  } else {
+    document.getElementById('schedMediaUrl').value = '';
+    document.getElementById('schedMediaUrls').value = '';
+  }
+
+  const previewUrl = (presetUrls[0]) || fallbackCover;
   const previewBox = document.getElementById('scheduleMediaPreview');
   const previewImg = document.getElementById('scheduleMediaImg');
-  if (mediaUrl) {
+  if (previewUrl) {
     previewBox.style.display = 'block';
-    previewImg.style.backgroundImage = `url('${mediaUrl}')`;
+    previewImg.style.backgroundImage = `url('${previewUrl}')`;
   } else {
     previewBox.style.display = 'none';
   }
-  // Default tipo: post; aplicar visibilidad de campos
-  document.querySelectorAll('input[name="schedPostType"]').forEach(r => { r.checked = r.value === 'post'; });
-  applyPostTypeToModal('post');
+
+  // Aplicar tipo sugerido
+  document.querySelectorAll('input[name="schedPostType"]').forEach(r => { r.checked = r.value === suggestedType; });
+  applyPostTypeToModal(suggestedType);
   modal.classList.add('active');
 }
 

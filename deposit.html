@@ -863,6 +863,14 @@
         <div id="entryLinksWrap"></div>
         <button class="btn btn-ghost btn-small" id="addLinkBtn" style="margin-top:4px">+ Agregar link</button>
       </div>
+      <div class="modal-row">
+        <label>URLs publicas para programar (opcional, una por linea)</label>
+        <textarea id="entryMediaUrlsInput" placeholder="https://res.cloudinary.com/.../foto1.jpg&#10;https://res.cloudinary.com/.../foto2.jpg" rows="3" style="font-family:monospace;font-size:11px"></textarea>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:2px">Pega aqui los links publicos (Cloudinary, Imgur, etc.) del contenido a publicar. La 1ra URL se usa como miniatura. Cuando le des "Programar" estos links se cargan solos.</div>
+        <div id="entryMediaUrlsPreview" style="margin-top:8px;display:none">
+          <img id="entryMediaUrlsPreviewImg" style="max-width:100%;max-height:120px;border-radius:6px;border:1px solid var(--border)" />
+        </div>
+      </div>
       <div class="modal-buttons">
         <button class="btn btn-ghost" id="cancelEntry">Cancelar</button>
         <button class="btn btn-primary" id="confirmEntry">Guardar</button>
