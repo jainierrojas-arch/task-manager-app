@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '2.86.0': {
+    title: 'Programación respeta hora exacta + notificaciones',
+    features: [
+      '⏰ <strong>Fix mayor de programación</strong>: hasta v2.85 los posts se publicaban inmediatamente al programarlos, ignorando la hora elegida. Ahora la app guarda el post en Firestore con <code>status=programado</code> y una Cloud Function corre cada 5 minutos en la nube para disparar el webhook de Make solo cuando llega la hora real. Funciona 24/7 aunque tengas la app cerrada.',
+      '✅ <strong>Confirmación de publicación</strong>: cuando Make publica con éxito, la Cloud Function actualiza el documento a <code>status=publicado</code> y verás el cambio en la pestaña Programación en tiempo real (sin recargar).',
+      '⚠️ <strong>Estado fallo</strong>: si Make devuelve error, el post pasa a <code>status=failed</code> con el detalle del error visible en la card.',
+      '🔔 <strong>Notificaciones nativas del sistema</strong>: cuando tu post se publica recibís alerta del SO (macOS/Windows). Igual si falla — con el motivo. Click en la notificación abre la pestaña Programación. Solo te llegan las notificaciones de TUS posts (admin las recibe todas).',
+      '🔧 <strong>Cero cambios para ti</strong>: el escenario de Make sigue exactamente igual, solo que recibe los webhooks a la hora correcta. La app guarda el webhook URL también en Firestore (<code>config/instagram</code>) para que la Cloud Function lo conozca.'
+    ]
+  },
   '2.85.0': {
     title: 'Carrusel: payload listo para Map mode en Make',
     features: [
@@ -332,6 +342,7 @@ let ideas = [];
 let currentIdeasMode = 'team'; // 'team' | 'personal'
 let unsubscribeScheduled = null;
 let scheduledPosts = [];
+let scheduledPostsInitialized = false; // false en primera carga del snapshot
 let currentScheduleView = 'list'; // 'list' | 'calendar'
 let schedulingTaskId = null;
 let schedCalDate = new Date();
@@ -578,7 +589,7 @@ function showLogin() {
   if (unsubscribeChat) { unsubscribeChat(); unsubscribeChat = null; }
   if (unsubscribeDeposit) { unsubscribeDeposit(); unsubscribeDeposit = null; }
   if (unsubscribeIdeas) { unsubscribeIdeas(); unsubscribeIdeas = null; }
-  if (unsubscribeScheduled) { unsubscribeScheduled(); unsubscribeScheduled = null; }
+  if (unsubscribeScheduled) { unsubscribeScheduled(); unsubscribeScheduled = null; scheduledPostsInitialized = false; }
   if (presenceTimer) { clearInterval(presenceTimer); presenceTimer = null; }
 }
 
@@ -700,11 +711,38 @@ function subscribeToData() {
 
   // Posts programados (envios pendientes/completados a Make.com -> Instagram).
   // Solo el creador o admins ven todos los posts; otros ven solo los suyos.
+  // En cada snapshot detectamos transiciones de estado para notificar al
+  // creador con notificacion nativa del SO cuando se publica o falla.
   unsubscribeScheduled = db.collection('scheduledPosts')
     .orderBy('scheduledAt', 'desc')
     .limit(200)
     .onSnapshot((snapshot) => {
-      scheduledPosts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const newDocs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      // Comparar estados previos para detectar transiciones a publicado/failed
+      const prev = new Map((scheduledPosts || []).map(p => [p.id, p]));
+      const isAdmin = currentUserData && currentUserData.role === 'admin';
+      // Marca primera carga para no notificar lo viejo al abrir la app
+      const firstLoad = !scheduledPostsInitialized;
+      newDocs.forEach(p => {
+        const old = prev.get(p.id);
+        if (!old || firstLoad) return;
+        const oldNorm = scheduleStatusNorm(old.status);
+        const newNorm = scheduleStatusNorm(p.status);
+        if (oldNorm === newNorm) return;
+        // Notificar solo al creador (o admin)
+        const isOwn = p.createdBy === currentUser.uid;
+        if (!isOwn && !isAdmin) return;
+        const cap = (p.caption || '').slice(0, 60);
+        if (newNorm === 'publicado') {
+          notifySchedule('✅ Post publicado en Instagram', cap || 'Tu post salió al aire');
+        } else if (newNorm === 'failed') {
+          notifySchedule('❌ Falló la publicación', (p.error ? p.error.slice(0, 120) : cap) || 'Revisa la pestaña Programación');
+        } else if (newNorm === 'publishing') {
+          notifySchedule('🚀 Publicando ahora...', cap || 'Enviando a Make → Instagram');
+        }
+      });
+      scheduledPosts = newDocs;
+      scheduledPostsInitialized = true;
       renderSchedule();
     });
 
@@ -932,9 +970,40 @@ function setIdeasMode(mode) {
 }
 
 // ===== Programacion de contenido a Instagram (via Make.com webhook) =====
+// Estados:
+//   programado  - guardado, esperando que llegue scheduledAt (set por la app)
+//   publishing  - Cloud Function lo tomo, esta enviando a Make (transitorio)
+//   publicado   - Make confirmo publicacion (success)
+//   failed      - error en cualquier paso
+//   pending/published - legacy, se mapean a programado/publicado
+
+// Notificacion nativa del SO para transiciones de estado de un post.
+// En Electron, new Notification() del renderer dispara la notificacion del
+// sistema (macOS/Windows/Linux) sin necesidad de permisos extra.
+function notifySchedule(title, body) {
+  try {
+    if (typeof Notification === 'undefined') return;
+    const n = new Notification(title, { body, silent: false });
+    n.onclick = () => {
+      try { window.focus(); } catch (e) {}
+      const tab = document.querySelector('.nav-tab[data-tab="schedule"]');
+      if (tab) tab.click();
+    };
+  } catch (e) {
+    console.warn('[notify]', e.message);
+  }
+}
+function scheduleStatusNorm(s) {
+  if (s === 'published' || s === 'publicado') return 'publicado';
+  if (s === 'failed') return 'failed';
+  if (s === 'publishing') return 'publishing';
+  return 'programado';
+}
 function scheduleStatusPill(s) {
-  if (s === 'published') return '<span class="sched-status-pill sched-status-published">publicado</span>';
-  if (s === 'failed') return '<span class="sched-status-pill sched-status-failed">fallo</span>';
+  const norm = scheduleStatusNorm(s);
+  if (norm === 'publicado') return '<span class="sched-status-pill sched-status-published">publicado</span>';
+  if (norm === 'failed') return '<span class="sched-status-pill sched-status-failed">fallo</span>';
+  if (norm === 'publishing') return '<span class="sched-status-pill sched-status-pending">publicando...</span>';
   return '<span class="sched-status-pill sched-status-pending">programado</span>';
 }
 function fmtScheduledDate(ts) {
@@ -956,11 +1025,12 @@ function renderScheduleListView() {
     return;
   }
   container.innerHTML = items.map(p => {
-    const cls = p.status === 'published' ? 'published' : (p.status === 'failed' ? 'failed' : '');
+    const norm = scheduleStatusNorm(p.status);
+    const cls = norm === 'publicado' ? 'published' : (norm === 'failed' ? 'failed' : '');
     const thumb = p.mediaUrl ? `style="background-image:url('${esc(p.mediaUrl)}')"` : '';
     const cap = (p.caption || '').slice(0, 200);
     const isMine = p.createdBy === currentUser.uid;
-    const cancelBtn = (isMine && p.status === 'pending') ? `<button class="btn btn-danger btn-small" data-cancel-sched="${esc(p.id)}" title="Cancelar">&#10005;</button>` : '';
+    const cancelBtn = (isMine && norm === 'programado') ? `<button class="btn btn-danger btn-small" data-cancel-sched="${esc(p.id)}" title="Cancelar">&#10005;</button>` : '';
     const platformLabel = (p.postType || 'post').toUpperCase();
     return `
       <div class="sched-card ${cls}">
@@ -1003,7 +1073,8 @@ function renderScheduleCalendarView() {
     const today = new Date();
     const isToday = today.getFullYear() === year && today.getMonth() === month && today.getDate() === d;
     const dotsHtml = dayPosts.slice(0, 3).map(p => {
-      const cls = p.status === 'published' ? '' : (p.status === 'failed' ? 'overdue' : '');
+      const n = scheduleStatusNorm(p.status);
+      const cls = n === 'publicado' ? '' : (n === 'failed' ? 'overdue' : '');
       const time = (p.scheduledAt && (p.scheduledAt.toDate ? p.scheduledAt.toDate() : new Date(p.scheduledAt))).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
       return `<div class="calendar-task-dot ${cls}" style="background:rgba(225,48,108,0.25)">${time} 📷</div>`;
     }).join('');
@@ -1021,7 +1092,7 @@ function renderScheduleCalendarView() {
       });
       if (dayPosts.length === 0) { dayList.innerHTML = '<div style="color:var(--text-dim);font-size:12px;padding:12px;text-align:center">Sin posts ese dia</div>'; return; }
       dayList.innerHTML = dayPosts.map(p => `
-        <div class="sched-card ${p.status === 'published' ? 'published' : (p.status === 'failed' ? 'failed' : '')}">
+        <div class="sched-card ${scheduleStatusNorm(p.status) === 'publicado' ? 'published' : (scheduleStatusNorm(p.status) === 'failed' ? 'failed' : '')}">
           <div class="sched-card-thumb" ${p.mediaUrl ? `style="background-image:url('${esc(p.mediaUrl)}')"` : ''}></div>
           <div class="sched-card-body">
             <div class="sched-card-when">${esc(fmtScheduledDate(p.scheduledAt))}</div>
@@ -1036,7 +1107,7 @@ function renderSchedule() {
   // Badge: cuenta posts pendientes (programados) del usuario
   const badge = document.getElementById('scheduleBadge');
   if (badge) {
-    const pending = visibleScheduledPosts().filter(p => (p.status || 'pending') === 'pending').length;
+    const pending = visibleScheduledPosts().filter(p => scheduleStatusNorm(p.status) === 'programado').length;
     if (pending > 0) { badge.textContent = pending > 99 ? '99+' : String(pending); badge.style.display = 'inline-block'; }
     else { badge.style.display = 'none'; }
   }
@@ -1236,39 +1307,21 @@ async function confirmSchedulePost() {
       image_url: url
     }));
   }
-  // 1) Guardar en Firestore como pending
-  let docId = null;
+  // Guardar en Firestore con status=programado.
+  // La Cloud Function `publishScheduledPosts` corre cada 5 min, encuentra
+  // este doc cuando scheduledAt<=now y dispara el webhook a Make. Despues
+  // marca status=publicado o failed segun resultado.
   try {
-    const ref = await db.collection('scheduledPosts').add({
+    await db.collection('scheduledPosts').add({
       ...payload,
       scheduledAt: firebase.firestore.Timestamp.fromDate(scheduledAt),
-      status: 'pending',
+      status: 'programado',
       createdBy: currentUser.uid,
       createdByName: currentUserData ? currentUserData.name : currentUser.email,
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
-    docId = ref.id;
   } catch (e) {
     alert('No se pudo guardar en Firestore: ' + e.message);
-    return;
-  }
-  // 2) Enviar al webhook de Make (que lo programa/publica en IG)
-  try {
-    const result = await window.api.sendToMakeWebhook({ ...payload, scheduledPostId: docId });
-    if (!result || !result.ok) {
-      // Marcar como failed
-      await db.collection('scheduledPosts').doc(docId).update({
-        status: 'failed',
-        error: (result && result.error) || `HTTP ${(result && result.status) || '?'}`
-      });
-      alert('Webhook fallo: ' + ((result && result.error) || `HTTP ${result && result.status}`));
-    } else {
-      // Listo: Make recibio el payload. Make luego marcara published cuando publique.
-      // Por defecto dejamos pending hasta que Make confirme (opcional via callback).
-    }
-  } catch (e) {
-    await db.collection('scheduledPosts').doc(docId).update({ status: 'failed', error: e.message });
-    alert('Error enviando webhook: ' + e.message);
     return;
   }
   closeScheduleModal();
@@ -3698,9 +3751,24 @@ function setMakeStatus(connected, msg) {
   if (text) text.textContent = msg;
 }
 if (window.api && window.api.getMakeWebhook && makeWebhookInput) {
-  window.api.getMakeWebhook().then(url => {
+  window.api.getMakeWebhook().then(async url => {
     makeWebhookInput.value = url || '';
     setMakeStatus(!!url, url ? 'Configurado' : 'No configurado');
+    // Sync a Firestore (config/instagram) si la Cloud Function aun no lo conoce.
+    // Asi v2.86.0 levanta sin necesidad de que el usuario reabra Settings.
+    if (url && db && currentUser) {
+      try {
+        const snap = await db.collection('config').doc('instagram').get();
+        const remote = snap.exists ? snap.data().makeWebhookUrl : null;
+        if (remote !== url) {
+          await db.collection('config').doc('instagram').set({
+            makeWebhookUrl: url,
+            updatedBy: currentUser.email,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+          }, { merge: true });
+        }
+      } catch (e) { /* ignorar, no es critico */ }
+    }
   });
 }
 if (saveMakeWebhookBtn) {
@@ -3708,6 +3776,16 @@ if (saveMakeWebhookBtn) {
     const url = makeWebhookInput.value.trim();
     const result = await window.api.setMakeWebhook(url);
     if (result && result.ok) {
+      // Tambien guardar en Firestore para que la Cloud Function lo use
+      try {
+        await db.collection('config').doc('instagram').set({
+          makeWebhookUrl: url,
+          updatedBy: currentUser ? currentUser.email : null,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+      } catch (e) {
+        console.warn('No se pudo guardar webhook en Firestore:', e.message);
+      }
       setMakeStatus(!!url, url ? 'Configurado' : 'No configurado');
       alert('Webhook guardado');
     } else {
