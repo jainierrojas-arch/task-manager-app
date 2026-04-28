@@ -54,7 +54,13 @@ const store = new JsonStore({
   // (Instagram via Graph API). El usuario lo configura en Settings; cuando
   // marca una tarea como "programar", la app envia un POST con los datos del
   // post a este webhook, y Make se encarga de publicar/programar.
-  makeWebhookUrl: ''
+  makeWebhookUrl: '',
+  // Cloudinary unsigned upload: el usuario configura cloud name + preset una
+  // sola vez en Settings. Eso permite subir archivos directos desde la app
+  // sin necesidad de API secret (modo unsigned). Las URLs resultantes se
+  // pegan automaticamente en el modal de Programar.
+  cloudinaryCloudName: '',
+  cloudinaryUploadPreset: ''
 });
 
 let mainWindow;
@@ -759,6 +765,21 @@ function registerIpcHandlers() {
     } catch (e) {
       return { ok: false, error: e.message };
     }
+  });
+
+  // Cloudinary config: cloud name + upload preset (modo unsigned).
+  // Se usa para subir archivos directos desde el modal Programar.
+  ipcMain.handle('get-cloudinary-config', () => ({
+    cloudName: store.get('cloudinaryCloudName') || '',
+    uploadPreset: store.get('cloudinaryUploadPreset') || ''
+  }));
+  ipcMain.handle('set-cloudinary-config', (_, cfg) => {
+    if (!cfg || typeof cfg !== 'object') return { ok: false, error: 'Config invalida' };
+    const cloudName = String(cfg.cloudName || '').trim();
+    const uploadPreset = String(cfg.uploadPreset || '').trim();
+    store.set('cloudinaryCloudName', cloudName);
+    store.set('cloudinaryUploadPreset', uploadPreset);
+    return { ok: true };
   });
 
   ipcMain.handle('get-reminder-interval', () => store.get('reminderIntervalMinutes') || 0);

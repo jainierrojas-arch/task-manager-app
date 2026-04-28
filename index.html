@@ -1124,6 +1124,15 @@
     }
     .carousel-remove:hover { background: rgba(255,71,87,0.1); color: var(--danger); border-color: var(--danger); }
     .carousel-remove:disabled { opacity: 0.3; cursor: not-allowed; }
+    .carousel-upload {
+      width: 26px; height: 26px; flex-shrink: 0; cursor: pointer;
+      background: transparent; border: 1px solid var(--border);
+      border-radius: 4px; color: var(--text-secondary);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; transition: all 0.15s;
+    }
+    .carousel-upload:hover { background: rgba(108,99,255,0.1); color: var(--accent); border-color: var(--accent); }
+    .carousel-upload:disabled { opacity: 0.5; cursor: wait; }
   </style>
 </head>
 <body>
@@ -1478,6 +1487,34 @@
           </div>
 
           <div class="settings-group">
+            <div class="settings-label">Cloudinary (subir imagenes y videos directo desde la app)</div>
+            <div style="display:flex;gap:6px;flex-direction:column">
+              <input type="text" id="cloudinaryCloudName" placeholder="Cloud Name (ej: dcdfsfjha)">
+              <input type="text" id="cloudinaryUploadPreset" placeholder="Upload Preset name (ej: task-manager-uploads)">
+              <button class="btn btn-primary btn-small" id="saveCloudinaryConfig">Guardar</button>
+            </div>
+            <div class="status-indicator" id="cloudinaryStatus" style="margin-top:6px">
+              <span class="status-dot disconnected"></span>
+              <span>No configurado</span>
+            </div>
+            <div class="telegram-instructions">
+              <h4>Como configurar Cloudinary (5 minutos):</h4>
+              <ol>
+                <li>Login a <code>cloudinary.com</code> &rarr; Settings &rarr; Upload &rarr; Upload Presets</li>
+                <li>Click <strong>Add upload preset</strong></li>
+                <li>Name: <code>task-manager-uploads</code> (o el que quieras)</li>
+                <li>Signing mode: <strong>Unsigned</strong></li>
+                <li>Folder: <code>task-manager</code> (opcional, separa tus uploads)</li>
+                <li>Allowed formats: <code>jpg, png, mp4, mov, jpeg, webp</code></li>
+                <li>Max file size: 100 MB (limite de IG para reels)</li>
+                <li>Save</li>
+                <li>Pega arriba el <strong>Cloud Name</strong> (lo ves en el dashboard, ej. <code>dcdfsfjha</code>) y el <strong>Upload Preset name</strong> que creaste, y guarda. Listo.</li>
+              </ol>
+              <p style="margin-top:8px"><strong>Despues de guardar</strong>: en el modal Programar veras un boton <code>📁 Subir archivo</code> al lado del campo de URL. Click, eliges una imagen o video local, se sube automaticamente a Cloudinary y la URL se rellena sola.</p>
+            </div>
+          </div>
+
+          <div class="settings-group">
             <div class="settings-label">Tema de la interfaz</div>
             <div style="display:flex;gap:8px;flex-wrap:wrap">
               <button class="btn btn-ghost theme-option" data-theme="default" style="flex:1;min-width:100px;padding:10px;border:2px solid var(--border)">
@@ -1585,15 +1622,25 @@
       <!-- Single URL: para post/reel/story -->
       <div class="modal-row" id="schedSingleUrlRow">
         <label>URL del medio (imagen/video publica)</label>
-        <input type="url" id="schedMediaUrl" placeholder="https://...jpg o .mp4">
-        <div style="font-size:11px;color:var(--text-dim);margin-top:2px">Auto-rellenada del thumbnail. Para reels usa un .mp4 publico.</div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <input type="url" id="schedMediaUrl" placeholder="https://...jpg o .mp4" style="flex:1;min-width:0">
+          <button class="btn btn-ghost btn-small" id="schedUploadSingleBtn" type="button" title="Subir archivo desde tu computadora a Cloudinary" style="font-size:12px;padding:6px 10px;white-space:nowrap">&#128193; Subir archivo</button>
+          <input type="file" id="schedSingleFileInput" accept="image/*,video/*" style="display:none">
+        </div>
+        <div id="schedSingleUploadStatus" style="font-size:11px;color:var(--text-dim);margin-top:4px;display:none"></div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:2px">Pega una URL O sube un archivo local. Si Cloudinary esta configurado en Settings, se sube ahi automaticamente.</div>
       </div>
       <!-- Multiple URLs: solo para carrusel (oculto por default) -->
       <div class="modal-row" id="schedCarouselUrlsRow" style="display:none">
         <label>URLs de las imagenes (minimo 2, maximo 10)</label>
         <div id="schedCarouselInputs" style="display:flex;flex-direction:column;gap:6px;margin-top:4px"></div>
-        <button class="btn btn-ghost" id="schedAddCarouselUrl" type="button" style="margin-top:6px;font-size:12px;padding:4px 10px">&#10133; Añadir imagen</button>
-        <div style="font-size:11px;color:var(--text-dim);margin-top:4px">Una URL por casilla. Solo imagenes/videos publicos. Cada miniatura aparece a la derecha en cuanto pegas la URL.</div>
+        <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
+          <button class="btn btn-ghost" id="schedAddCarouselUrl" type="button" style="font-size:12px;padding:4px 10px">&#10133; Añadir imagen</button>
+          <button class="btn btn-ghost" id="schedUploadMultiBtn" type="button" title="Subir varias imagenes a la vez" style="font-size:12px;padding:4px 10px">&#128193; Subir varias</button>
+          <input type="file" id="schedMultiFileInput" accept="image/*,video/*" multiple style="display:none">
+        </div>
+        <div id="schedCarouselUploadStatus" style="font-size:11px;color:var(--text-dim);margin-top:6px;display:none"></div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:4px">Pega URLs O sube archivos locales (uno por casilla, o varios a la vez con "Subir varias"). Cada casilla muestra su miniatura.</div>
       </div>
       <div class="modal-buttons">
         <button class="btn btn-ghost" id="schedCancel">Cancelar</button>

@@ -75,6 +75,17 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '2.89.0': {
+    title: 'Subir archivos directo desde la app (Cloudinary)',
+    features: [
+      '📁 <strong>Subir archivos locales</strong>: en el modal Programar ahora hay un botón <code>📁 Subir archivo</code> al lado del campo URL. Click → selector de archivos de tu Mac → la app sube el archivo a Cloudinary y rellena la URL automáticamente. No más pasos manuales en cloudinary.com.',
+      '🎠 <strong>Carrusel: subir varios</strong>: en carrusel hay un botón <code>📁 Subir varias</code> que abre un selector múltiple — eliges 2-10 archivos a la vez y todas las casillas se llenan solas con sus URLs.',
+      '🖼️ <strong>Por casilla también</strong>: cada casilla del carrusel tiene su propio botón 📁 para subir un archivo individual sin afectar las otras.',
+      '⚙️ <strong>Setup en Settings (5 min, una sola vez)</strong>: agrega tu <code>Cloud Name</code> + <code>Upload Preset</code> en Configuración. Las instrucciones detalladas están ahí (cómo crear el preset unsigned en Cloudinary).',
+      '👥 <strong>Compartido con el equipo</strong>: cuando un admin guarda la config de Cloudinary, se sincroniza a Firestore para que todos los miembros la usen automáticamente al abrir la app.',
+      '⚡ <strong>Progreso en vivo</strong>: ves el porcentaje de upload en tiempo real para cada archivo. Si falla, te muestra el error específico (formato no permitido, archivo muy grande, etc.).'
+    ]
+  },
   '2.88.0': {
     title: 'Programar desde el calendario',
     features: [
@@ -599,6 +610,47 @@ function showApp() {
   loadTabsMode();
   subscribeToNotificationQueue();
   syncMakeWebhookToFirestore();
+  syncCloudinaryConfigFromFirestore();
+}
+
+// ===== Cloudinary unsigned upload =====
+// Sube un File a Cloudinary y devuelve la URL publica. Modo unsigned: no
+// necesita API secret, solo el cloud_name + upload_preset que el usuario
+// configura en Settings.
+async function uploadToCloudinary(file, onProgress) {
+  const cfg = await window.api.getCloudinaryConfig();
+  if (!cfg || !cfg.cloudName || !cfg.uploadPreset) {
+    throw new Error('Cloudinary no configurado. Anda a Configuracion y agrega cloud name + upload preset.');
+  }
+  const isVideo = (file.type || '').startsWith('video');
+  const resourceType = isVideo ? 'video' : 'image';
+  const url = `https://api.cloudinary.com/v1_1/${encodeURIComponent(cfg.cloudName)}/${resourceType}/upload`;
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('upload_preset', cfg.uploadPreset);
+  return await new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', url, true);
+    xhr.upload.addEventListener('progress', (e) => {
+      if (e.lengthComputable && typeof onProgress === 'function') {
+        onProgress(Math.round((e.loaded / e.total) * 100));
+      }
+    });
+    xhr.onload = () => {
+      try {
+        const data = JSON.parse(xhr.responseText || '{}');
+        if (xhr.status >= 200 && xhr.status < 300 && data.secure_url) {
+          resolve({ url: data.secure_url, resourceType, bytes: data.bytes, format: data.format, width: data.width, height: data.height, duration: data.duration });
+        } else {
+          reject(new Error(data.error && data.error.message ? data.error.message : `HTTP ${xhr.status}`));
+        }
+      } catch (e) {
+        reject(new Error('Respuesta invalida de Cloudinary: ' + e.message));
+      }
+    };
+    xhr.onerror = () => reject(new Error('Error de red al subir a Cloudinary'));
+    xhr.send(formData);
+  });
 }
 
 // Lee la URL del webhook del store local y la sincroniza a Firestore en
@@ -1247,7 +1299,8 @@ function refreshCarouselInputs() {
   if (addBtn) addBtn.disabled = rows.length >= CAROUSEL_MAX;
 }
 
-// Crea una fila de input con miniatura + boton remove, y la inserta al container.
+// Crea una fila de input con miniatura + boton remove + boton upload por fila,
+// y la inserta al container.
 function addCarouselInputRow(prefillUrl) {
   const container = document.getElementById('schedCarouselInputs');
   if (!container) return;
@@ -1258,15 +1311,43 @@ function addCarouselInputRow(prefillUrl) {
   row.innerHTML = `
     <div class="carousel-num">1</div>
     <input type="url" placeholder="https://...jpg" />
+    <button type="button" class="carousel-upload" title="Subir archivo">&#128193;</button>
+    <input type="file" class="carousel-file-input" accept="image/*,video/*" style="display:none" />
     <div class="carousel-thumb"></div>
     <button type="button" class="carousel-remove" title="Quitar">&#10005;</button>
   `;
-  const input = row.querySelector('input');
+  const input = row.querySelector('input[type="url"]');
+  const fileInput = row.querySelector('.carousel-file-input');
+  const uploadBtn = row.querySelector('.carousel-upload');
   if (prefillUrl) input.value = prefillUrl;
   // Preview live + actualizacion de la galeria al teclear/pegar
   input.addEventListener('input', () => {
     refreshCarouselInputs();
     renderCarouselGallery();
+  });
+  // Upload de un archivo en esta fila
+  uploadBtn.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', async () => {
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) return;
+    const originalTitle = uploadBtn.title;
+    uploadBtn.disabled = true;
+    uploadBtn.title = 'Subiendo...';
+    uploadBtn.innerHTML = '⏳';
+    try {
+      const result = await uploadToCloudinary(file, (pct) => {
+        uploadBtn.title = `Subiendo ${pct}%`;
+      });
+      input.value = result.url;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    } catch (e) {
+      alert('Error subiendo archivo: ' + e.message);
+    } finally {
+      uploadBtn.disabled = false;
+      uploadBtn.title = originalTitle;
+      uploadBtn.innerHTML = '&#128193;';
+      fileInput.value = '';
+    }
   });
   // Boton remove
   row.querySelector('.carousel-remove').addEventListener('click', () => {
@@ -4056,6 +4137,144 @@ if (saveMakeWebhookBtn) {
     }
   });
 }
+// ===== Cloudinary config: cargar al abrir Settings, guardar al click, sync Firestore =====
+const cloudinaryCloudNameInput = document.getElementById('cloudinaryCloudName');
+const cloudinaryUploadPresetInput = document.getElementById('cloudinaryUploadPreset');
+const saveCloudinaryConfigBtn = document.getElementById('saveCloudinaryConfig');
+const cloudinaryStatusEl = document.getElementById('cloudinaryStatus');
+function setCloudinaryStatus(connected, msg) {
+  if (!cloudinaryStatusEl) return;
+  const dot = cloudinaryStatusEl.querySelector('.status-dot');
+  const text = cloudinaryStatusEl.querySelector('span:last-child');
+  if (dot) { dot.classList.toggle('connected', !!connected); dot.classList.toggle('disconnected', !connected); }
+  if (text) text.textContent = msg;
+}
+if (window.api && window.api.getCloudinaryConfig && cloudinaryCloudNameInput) {
+  window.api.getCloudinaryConfig().then(cfg => {
+    if (cfg && cfg.cloudName) cloudinaryCloudNameInput.value = cfg.cloudName;
+    if (cfg && cfg.uploadPreset) cloudinaryUploadPresetInput.value = cfg.uploadPreset;
+    const ok = !!(cfg && cfg.cloudName && cfg.uploadPreset);
+    setCloudinaryStatus(ok, ok ? 'Configurado' : 'No configurado');
+  });
+}
+if (saveCloudinaryConfigBtn) {
+  saveCloudinaryConfigBtn.addEventListener('click', async () => {
+    const cloudName = (cloudinaryCloudNameInput.value || '').trim();
+    const uploadPreset = (cloudinaryUploadPresetInput.value || '').trim();
+    if (!cloudName || !uploadPreset) { alert('Cloud name y Upload preset son obligatorios'); return; }
+    const result = await window.api.setCloudinaryConfig({ cloudName, uploadPreset });
+    if (!result || !result.ok) { alert('Error: ' + (result && result.error)); return; }
+    // Sync a Firestore para que el equipo lo herede
+    try {
+      await db.collection('config').doc('cloudinary').set({
+        cloudName,
+        uploadPreset,
+        updatedBy: currentUser ? currentUser.email : null,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+    } catch (e) { console.warn('No se pudo sincronizar Cloudinary config a Firestore:', e.message); }
+    setCloudinaryStatus(true, 'Configurado');
+    alert('Cloudinary configurado');
+  });
+}
+
+// Sync de Firestore -> local store al login (analogo al de Make webhook).
+// Si Firestore tiene config y el local no, se copia local. Asi cualquier
+// miembro del equipo hereda automaticamente la cuenta de Cloudinary.
+async function syncCloudinaryConfigFromFirestore() {
+  try {
+    if (!window.api || !window.api.getCloudinaryConfig || !db || !currentUser) return;
+    const local = await window.api.getCloudinaryConfig();
+    const snap = await db.collection('config').doc('cloudinary').get();
+    if (!snap.exists) return;
+    const remote = snap.data();
+    const remoteCloudName = (remote && remote.cloudName) || '';
+    const remoteUploadPreset = (remote && remote.uploadPreset) || '';
+    if (!remoteCloudName || !remoteUploadPreset) return;
+    // Si local esta vacio o difiere, actualizar local
+    if (local.cloudName !== remoteCloudName || local.uploadPreset !== remoteUploadPreset) {
+      await window.api.setCloudinaryConfig({ cloudName: remoteCloudName, uploadPreset: remoteUploadPreset });
+      if (cloudinaryCloudNameInput) cloudinaryCloudNameInput.value = remoteCloudName;
+      if (cloudinaryUploadPresetInput) cloudinaryUploadPresetInput.value = remoteUploadPreset;
+      setCloudinaryStatus(true, 'Configurado');
+      console.log('[sync] Cloudinary config sincronizado desde Firestore');
+    }
+  } catch (e) {
+    console.warn('[sync] No se pudo leer Cloudinary config de Firestore:', e.message);
+  }
+}
+
+// ===== Botones de upload en el modal Programar =====
+const schedUploadSingleBtn = document.getElementById('schedUploadSingleBtn');
+const schedSingleFileInput = document.getElementById('schedSingleFileInput');
+const schedSingleUploadStatus = document.getElementById('schedSingleUploadStatus');
+if (schedUploadSingleBtn && schedSingleFileInput) {
+  schedUploadSingleBtn.addEventListener('click', () => schedSingleFileInput.click());
+  schedSingleFileInput.addEventListener('change', async () => {
+    const file = schedSingleFileInput.files && schedSingleFileInput.files[0];
+    if (!file) return;
+    schedSingleUploadStatus.style.display = 'block';
+    schedSingleUploadStatus.textContent = `⏳ Subiendo ${file.name}... 0%`;
+    schedUploadSingleBtn.disabled = true;
+    try {
+      const result = await uploadToCloudinary(file, (pct) => {
+        schedSingleUploadStatus.textContent = `⏳ Subiendo ${file.name}... ${pct}%`;
+      });
+      document.getElementById('schedMediaUrl').value = result.url;
+      // Trigger input event para que el preview se actualice
+      document.getElementById('schedMediaUrl').dispatchEvent(new Event('input', { bubbles: true }));
+      schedSingleUploadStatus.textContent = `✅ Subido (${(result.bytes / 1024).toFixed(0)} KB)`;
+      setTimeout(() => { schedSingleUploadStatus.style.display = 'none'; }, 3000);
+    } catch (e) {
+      schedSingleUploadStatus.textContent = `❌ Error: ${e.message}`;
+      schedSingleUploadStatus.style.color = 'var(--danger)';
+    } finally {
+      schedUploadSingleBtn.disabled = false;
+      schedSingleFileInput.value = ''; // permite volver a elegir el mismo archivo
+    }
+  });
+}
+const schedUploadMultiBtn = document.getElementById('schedUploadMultiBtn');
+const schedMultiFileInput = document.getElementById('schedMultiFileInput');
+const schedCarouselUploadStatus = document.getElementById('schedCarouselUploadStatus');
+if (schedUploadMultiBtn && schedMultiFileInput) {
+  schedUploadMultiBtn.addEventListener('click', () => schedMultiFileInput.click());
+  schedMultiFileInput.addEventListener('change', async () => {
+    const files = Array.from(schedMultiFileInput.files || []);
+    if (files.length === 0) return;
+    if (files.length > CAROUSEL_MAX) {
+      alert(`Maximo ${CAROUSEL_MAX} archivos por carrusel`);
+      return;
+    }
+    schedCarouselUploadStatus.style.display = 'block';
+    schedCarouselUploadStatus.style.color = '';
+    schedUploadMultiBtn.disabled = true;
+    const urls = [];
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      schedCarouselUploadStatus.textContent = `⏳ Subiendo ${i + 1}/${files.length}: ${f.name}... 0%`;
+      try {
+        const result = await uploadToCloudinary(f, (pct) => {
+          schedCarouselUploadStatus.textContent = `⏳ Subiendo ${i + 1}/${files.length}: ${f.name}... ${pct}%`;
+        });
+        urls.push(result.url);
+      } catch (e) {
+        schedCarouselUploadStatus.textContent = `❌ ${f.name}: ${e.message}`;
+        schedCarouselUploadStatus.style.color = 'var(--danger)';
+        schedUploadMultiBtn.disabled = false;
+        schedMultiFileInput.value = '';
+        return;
+      }
+    }
+    // Llenar todas las casillas de carrusel con las URLs subidas
+    resetCarouselInputs(urls);
+    schedCarouselUploadStatus.textContent = `✅ ${urls.length} archivos subidos`;
+    setTimeout(() => { schedCarouselUploadStatus.style.display = 'none'; }, 3000);
+    schedUploadMultiBtn.disabled = false;
+    schedMultiFileInput.value = '';
+  });
+}
+
 if (testMakeWebhookBtn) {
   testMakeWebhookBtn.addEventListener('click', async () => {
     testMakeWebhookBtn.disabled = true;
