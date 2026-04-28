@@ -787,7 +787,7 @@
       box-sizing: border-box;
     }
     .modal-title { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
-    .modal input, .modal select { width: 100%; margin-bottom: 12px; }
+    .modal input, .modal select, .modal textarea { width: 100%; margin-bottom: 12px; box-sizing: border-box; }
     .modal-buttons { display: flex; gap: 8px; justify-content: flex-end; }
 
     .section-header {
@@ -1611,7 +1611,7 @@
 
   <!-- Programar contenido en Instagram (envia a Make.com webhook) -->
   <div class="modal-overlay" id="scheduleModal">
-    <div class="modal" style="max-width:620px;min-width:min(95vw,520px);width:95vw">
+    <div class="modal" style="max-width:820px;min-width:min(95vw,520px);width:95vw">
       <div class="modal-title">&#128241; Programar en Instagram</div>
       <div id="scheduleNoWebhook" style="display:none;background:var(--bg-card);border:1px solid var(--warning);border-radius:6px;padding:10px;margin-bottom:12px;font-size:12px;color:var(--text-secondary)">
         &#9888;&#65039; Primero configura tu webhook de Make.com en Configuracion &rarr; Programacion
@@ -1643,7 +1643,7 @@
       </div>
       <div class="modal-row">
         <label>Caption (descripcion del post)</label>
-        <textarea id="schedCaption" rows="12" placeholder="Caption del post (puedes incluir hashtags y mentions)&#10;&#10;Tip: este campo es resizable — arrastra la esquina inferior derecha para hacerlo aun mas grande." style="font-family:inherit;min-height:200px;resize:vertical;line-height:1.5"></textarea>
+        <textarea id="schedCaption" rows="12" placeholder="Caption del post (puedes incluir hashtags y mentions)&#10;&#10;Tip: este campo es resizable — arrastra la esquina inferior derecha para hacerlo aun mas grande." style="font-family:inherit;width:100%;min-height:200px;box-sizing:border-box;resize:vertical;line-height:1.5;padding:10px"></textarea>
       </div>
       <!-- Single URL: para post/reel/story -->
       <div class="modal-row" id="schedSingleUrlRow">
