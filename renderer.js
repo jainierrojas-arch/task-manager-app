@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '2.93.0': {
+    title: 'Editar tarea completo + Mover desde papelera + thumbnails',
+    features: [
+      '✎ <strong>Editar tarea ahora muestra TODOS los campos</strong>: el modal Editar (botón ✎) ya no edita solo el título — ahora puedes cambiar también <strong>Link de material</strong>, <strong>Link de video</strong> (separadamente, ya no se duplican), <strong>Imagen de portada</strong> con preview en vivo, y <strong>Notas</strong>. Todo en una sola pantalla.',
+      '🗂️ <strong>Botón "Mover a..."</strong> en cada tarea de la papelera: abre un dropdown con todos tus proyectos (equipo o personales según corresponda) y al confirmar restaura la tarea cambiándola al proyecto que elijas. El botón "Restaurar" sigue funcionando para volver al proyecto original.',
+      '🖼️ <strong>Thumbnails en la papelera</strong>: cada tarea eliminada muestra una miniatura de su imagen de portada al lado derecho de la card. Si no tiene imagen, sale un icono indicando si era de equipo o personal.',
+      '🔓 <strong>Tres botones por tarea en papelera</strong>: 📂 Mover a... / ⟳ Restaurar / ✕ Eliminar definitivamente — cada uno con su color para evitar errores.'
+    ]
+  },
   '2.92.1': {
     title: 'Fix: caption ahora ocupa el ancho completo del modal',
     features: [
@@ -2340,19 +2349,27 @@ function renderTrashList() {
     const deletedTime = t.deletedAt ? timeAgo(t.deletedAt) : '';
     const restoreFn = isPersonal ? 'restorePersonalTask' : 'restoreTask';
     const permFn = isPersonal ? 'permanentlyDeletePersonalTask' : 'permanentlyDeleteTask';
+    const moveFn = isPersonal ? 'openMoveTrashModalPersonal' : 'openMoveTrashModalTeam';
+    // Thumbnail derecho: usa coverImage si existe, sino link/videoLink (puede ser imagen)
+    const thumbUrl = t.coverImage || '';
+    const thumbHtml = thumbUrl
+      ? `<div class="trash-thumb" style="background-image:url('${esc(thumbUrl)}')"></div>`
+      : `<div class="trash-thumb trash-thumb-empty">${isPersonal ? '&#128246;' : '&#128203;'}</div>`;
     html += `
-      <div class="task-item" style="border-left-color:${color};opacity:0.85">
-        <div style="flex:1">
+      <div class="task-item trash-item" style="border-left-color:${color};opacity:0.92;display:flex;gap:10px;align-items:flex-start">
+        <div style="flex:1;min-width:0">
           <div class="task-text">${esc(t.text)}</div>
           <div class="task-meta">
             ${badge}
             <span class="task-tag" style="background:rgba(255,107,107,0.15);color:var(--danger)">Eliminada por ${esc(deletedByName)} &middot; ${deletedTime}</span>
           </div>
-          <div style="display:flex;gap:6px;margin-top:8px">
+          <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+            <button class="btn btn-ghost btn-small" onclick="${moveFn}('${t.id}')" style="color:var(--accent);border-color:var(--accent)">&#128194; Mover a...</button>
             <button class="btn btn-ghost btn-small" onclick="${restoreFn}('${t.id}')" style="color:var(--success);border-color:var(--success)">&#8635; Restaurar</button>
-            <button class="btn btn-ghost btn-small" onclick="${permFn}('${t.id}')" style="color:var(--danger);border-color:var(--danger)">&#10005; Eliminar definitivamente</button>
+            <button class="btn btn-ghost btn-small" onclick="${permFn}('${t.id}')" style="color:var(--danger);border-color:var(--danger)">&#10005; Eliminar</button>
           </div>
         </div>
+        ${thumbHtml}
       </div>`;
   });
   el.trashList.innerHTML = html;
@@ -3364,10 +3381,29 @@ async function rejectTask(taskId) {
   }
 }
 
-// Edit task modal (maneja tareas de equipo y personales)
+// Edit task modal (maneja tareas de equipo y personales con TODOS los campos:
+// texto, link, videoLink, coverImage, notes)
 let editingTask = null; // { id, collection }
 const editModal = document.getElementById('editModal');
 const editTaskInput = document.getElementById('editTaskInput');
+const editTaskLink = document.getElementById('editTaskLink');
+const editTaskVideoLink = document.getElementById('editTaskVideoLink');
+const editTaskCoverImage = document.getElementById('editTaskCoverImage');
+const editTaskCoverPreview = document.getElementById('editTaskCoverPreview');
+const editTaskNotes = document.getElementById('editTaskNotes');
+
+function updateEditCoverPreview() {
+  if (!editTaskCoverImage || !editTaskCoverPreview) return;
+  const url = (editTaskCoverImage.value || '').trim();
+  if (url) {
+    editTaskCoverPreview.style.display = 'block';
+    editTaskCoverPreview.style.height = '140px';
+    editTaskCoverPreview.style.backgroundImage = `url('${url.replace(/'/g, '%27')}')`;
+  } else {
+    editTaskCoverPreview.style.display = 'none';
+  }
+}
+if (editTaskCoverImage) editTaskCoverImage.addEventListener('input', updateEditCoverPreview);
 
 document.getElementById('cancelEdit').addEventListener('click', () => {
   editModal.classList.remove('active');
@@ -3375,27 +3411,60 @@ document.getElementById('cancelEdit').addEventListener('click', () => {
 });
 
 document.getElementById('confirmEdit').addEventListener('click', async () => {
+  if (!editingTask) return;
   const newText = editTaskInput.value.trim();
-  if (editingTask && newText) {
-    await db.collection(editingTask.collection).doc(editingTask.id).update({ text: newText });
+  if (!newText) { alert('El titulo no puede estar vacio'); return; }
+  // Set/limpiar campos opcionales: si el input esta vacio, lo borramos del doc
+  // (pasamos firebase.firestore.FieldValue.delete()) para mantener el schema limpio.
+  const link = (editTaskLink.value || '').trim();
+  const videoLink = (editTaskVideoLink.value || '').trim();
+  const coverImage = (editTaskCoverImage.value || '').trim();
+  const notes = (editTaskNotes.value || '').trim();
+  const update = {
+    text: newText,
+    link: link || firebase.firestore.FieldValue.delete(),
+    videoLink: videoLink || firebase.firestore.FieldValue.delete(),
+    coverImage: coverImage || firebase.firestore.FieldValue.delete(),
+    notes: notes || firebase.firestore.FieldValue.delete(),
+    editedAt: firebase.firestore.FieldValue.serverTimestamp()
+  };
+  try {
+    await db.collection(editingTask.collection).doc(editingTask.id).update(update);
+  } catch (e) {
+    alert('Error guardando: ' + e.message);
+    return;
   }
   editModal.classList.remove('active');
   editingTask = null;
 });
 
 editTaskInput.addEventListener('keypress', (e) => {
-  if (e.key === 'Enter') document.getElementById('confirmEdit').click();
+  // Enter en el campo titulo guarda. En los otros inputs/textarea no, para
+  // permitir escribir libremente.
+  if (e.key === 'Enter' && e.target === editTaskInput) {
+    e.preventDefault();
+    document.getElementById('confirmEdit').click();
+  }
 });
 
 editModal.addEventListener('click', (e) => {
   if (e.target === editModal) { editModal.classList.remove('active'); editingTask = null; }
 });
 
+function fillEditModalFromTask(task) {
+  editTaskInput.value = task.text || '';
+  editTaskLink.value = task.link || '';
+  editTaskVideoLink.value = task.videoLink || '';
+  editTaskCoverImage.value = task.coverImage || '';
+  editTaskNotes.value = task.notes || '';
+  updateEditCoverPreview();
+}
+
 async function editTask(taskId) {
   const task = tasks.find(t => t.id === taskId);
   if (!task || !canEdit(task)) return;
   editingTask = { id: taskId, collection: 'tasks' };
-  editTaskInput.value = task.text;
+  fillEditModalFromTask(task);
   editModal.classList.add('active');
   setTimeout(() => editTaskInput.focus(), 100);
 }
@@ -3404,7 +3473,7 @@ async function editPersonalTask(taskId) {
   const task = personalTasks.find(t => t.id === taskId);
   if (!task) return;
   editingTask = { id: taskId, collection: 'personalTasks' };
-  editTaskInput.value = task.text;
+  fillEditModalFromTask(task);
   editModal.classList.add('active');
   setTimeout(() => editTaskInput.focus(), 100);
 }
@@ -3561,6 +3630,88 @@ async function deleteTask(taskId) {
     await syncDepositOnTaskChange(task, 'restore');
   }
 }
+
+// ===== Mover desde papelera (con dropdown de destino) =====
+let movingTrashTask = null; // { id, kind: 'team'|'personal' }
+function buildMoveTrashOptions(kind) {
+  const select = document.getElementById('moveTrashSelect');
+  if (!select) return;
+  select.innerHTML = '';
+  if (kind === 'team') {
+    // Opciones: todos los proyectos de equipo + opcion "Sin proyecto"
+    const opts = [{ value: '', label: 'Sin proyecto', color: '#666' }, ...projects.map(p => ({ value: p.id, label: p.name, color: p.color }))];
+    opts.forEach(o => {
+      const opt = document.createElement('option');
+      opt.value = o.value;
+      opt.textContent = o.label;
+      select.appendChild(opt);
+    });
+  } else {
+    // Personales: General + proyectos personales del usuario
+    allPersonalProjects().forEach(name => {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      select.appendChild(opt);
+    });
+  }
+}
+function openMoveTrashModalTeam(taskId) {
+  movingTrashTask = { id: taskId, kind: 'team' };
+  buildMoveTrashOptions('team');
+  document.getElementById('moveTrashModal').classList.add('active');
+}
+function openMoveTrashModalPersonal(taskId) {
+  movingTrashTask = { id: taskId, kind: 'personal' };
+  buildMoveTrashOptions('personal');
+  document.getElementById('moveTrashModal').classList.add('active');
+}
+window.openMoveTrashModalTeam = openMoveTrashModalTeam;
+window.openMoveTrashModalPersonal = openMoveTrashModalPersonal;
+
+document.getElementById('cancelMoveTrash').addEventListener('click', () => {
+  document.getElementById('moveTrashModal').classList.remove('active');
+  movingTrashTask = null;
+});
+document.getElementById('moveTrashModal').addEventListener('click', (e) => {
+  if (e.target.id === 'moveTrashModal') {
+    document.getElementById('moveTrashModal').classList.remove('active');
+    movingTrashTask = null;
+  }
+});
+document.getElementById('confirmMoveTrash').addEventListener('click', async () => {
+  if (!movingTrashTask) return;
+  const targetValue = document.getElementById('moveTrashSelect').value;
+  try {
+    if (movingTrashTask.kind === 'team') {
+      // Restaurar + cambiar projectId
+      const project = projects.find(p => p.id === targetValue);
+      const update = {
+        deletedAt: firebase.firestore.FieldValue.delete(),
+        deletedBy: firebase.firestore.FieldValue.delete(),
+        deletedByName: firebase.firestore.FieldValue.delete(),
+        projectId: targetValue || firebase.firestore.FieldValue.delete(),
+        projectName: project ? project.name : firebase.firestore.FieldValue.delete(),
+        projectColor: project ? project.color : firebase.firestore.FieldValue.delete()
+      };
+      await db.collection('tasks').doc(movingTrashTask.id).update(update);
+    } else {
+      // Personal: restaurar + cambiar personalProject
+      const update = {
+        deletedAt: firebase.firestore.FieldValue.delete(),
+        deletedBy: firebase.firestore.FieldValue.delete(),
+        deletedByName: firebase.firestore.FieldValue.delete(),
+        personalProject: targetValue || 'General'
+      };
+      await db.collection('personalTasks').doc(movingTrashTask.id).update(update);
+    }
+  } catch (e) {
+    alert('Error moviendo: ' + e.message);
+    return;
+  }
+  document.getElementById('moveTrashModal').classList.remove('active');
+  movingTrashTask = null;
+});
 
 async function restoreTask(taskId) {
   // Buscar la tarea en la papelera para saber si venia del deposito

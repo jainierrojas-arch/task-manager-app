@@ -1089,6 +1089,16 @@
       text-transform: uppercase;
       letter-spacing: 0.4px;
     }
+    .trash-thumb {
+      width: 80px; height: 80px; flex-shrink: 0;
+      border-radius: 6px;
+      background: var(--bg-card) center/cover no-repeat;
+      border: 1px solid var(--border);
+    }
+    .trash-thumb-empty {
+      display: flex; align-items: center; justify-content: center;
+      font-size: 28px; color: var(--text-dim);
+    }
     .sched-status-pending { background: rgba(225,48,108,0.15); color: #e1306c; }
     .sched-status-published { background: rgba(46,213,115,0.15); color: var(--success); }
     .sched-status-failed { background: rgba(255,71,87,0.15); color: var(--danger); }
@@ -1705,12 +1715,50 @@
 
   <!-- Edit Task Modal -->
   <div class="modal-overlay" id="editModal">
-    <div class="modal">
+    <div class="modal" style="max-width:560px;width:95vw">
       <div class="modal-title">Editar Tarea</div>
-      <input type="text" id="editTaskInput" placeholder="Texto de la tarea">
+      <div class="modal-row">
+        <label>Titulo de la tarea</label>
+        <input type="text" id="editTaskInput" placeholder="Texto de la tarea">
+      </div>
+      <div class="modal-row">
+        <label>&#128279; Link de material</label>
+        <input type="url" id="editTaskLink" placeholder="https://... (cualquier URL relacionada)">
+      </div>
+      <div class="modal-row">
+        <label>&#127916; Link de video de referencia</label>
+        <input type="url" id="editTaskVideoLink" placeholder="https://... (puede ser distinto al link de material)">
+      </div>
+      <div class="modal-row">
+        <label>&#127912; Imagen de portada (URL)</label>
+        <input type="url" id="editTaskCoverImage" placeholder="https://... .jpg/.png — se ve como thumbnail">
+        <div id="editTaskCoverPreview" style="margin-top:6px;width:100%;max-height:140px;background:var(--bg-card) center/contain no-repeat;border-radius:6px;display:none"></div>
+      </div>
+      <div class="modal-row">
+        <label>&#128221; Notas (opcional)</label>
+        <textarea id="editTaskNotes" rows="3" placeholder="Notas o instrucciones adicionales" style="font-family:inherit;width:100%;box-sizing:border-box;resize:vertical"></textarea>
+      </div>
       <div class="modal-buttons">
         <button class="btn btn-ghost" id="cancelEdit">Cancelar</button>
-        <button class="btn btn-primary" id="confirmEdit">Guardar</button>
+        <button class="btn btn-primary" id="confirmEdit">&#128190; Guardar todo</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Move from Trash Modal -->
+  <div class="modal-overlay" id="moveTrashModal">
+    <div class="modal" style="max-width:480px;width:95vw">
+      <div class="modal-title">&#128194; Mover de la papelera</div>
+      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">
+        Restaura esta tarea y la mueve al proyecto que elijas. Si quieres mantener su proyecto original, usa "Restaurar" en la papelera.
+      </div>
+      <div class="modal-row">
+        <label>Mover a</label>
+        <select id="moveTrashSelect" style="width:100%"></select>
+      </div>
+      <div class="modal-buttons">
+        <button class="btn btn-ghost" id="cancelMoveTrash">Cancelar</button>
+        <button class="btn btn-primary" id="confirmMoveTrash">&#128194; Mover y restaurar</button>
       </div>
     </div>
   </div>
