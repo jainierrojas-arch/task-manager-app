@@ -1092,6 +1092,8 @@
     .sched-status-pending { background: rgba(225,48,108,0.15); color: #e1306c; }
     .sched-status-published { background: rgba(46,213,115,0.15); color: var(--success); }
     .sched-status-failed { background: rgba(255,71,87,0.15); color: var(--danger); }
+    .sched-status-draft { background: rgba(108,99,255,0.15); color: var(--accent); }
+    .sched-card.draft { border-left-color: var(--accent); opacity: 0.95; }
     /* Filas dinamicas del editor de carrusel */
     .carousel-input-row {
       display: flex; align-items: center; gap: 8px;
@@ -1641,7 +1643,7 @@
       </div>
       <div class="modal-row">
         <label>Caption (descripcion del post)</label>
-        <textarea id="schedCaption" rows="5" placeholder="Caption del post (puedes incluir hashtags y mentions)" style="font-family:inherit"></textarea>
+        <textarea id="schedCaption" rows="12" placeholder="Caption del post (puedes incluir hashtags y mentions)&#10;&#10;Tip: este campo es resizable — arrastra la esquina inferior derecha para hacerlo aun mas grande." style="font-family:inherit;min-height:200px;resize:vertical;line-height:1.5"></textarea>
       </div>
       <!-- Single URL: para post/reel/story -->
       <div class="modal-row" id="schedSingleUrlRow">
@@ -1666,8 +1668,9 @@
         <div id="schedCarouselUploadStatus" style="font-size:11px;color:var(--text-dim);margin-top:6px;display:none"></div>
         <div style="font-size:11px;color:var(--text-dim);margin-top:4px">Pega URLs O sube archivos locales (uno por casilla, o varios a la vez con "Subir varias"). Cada casilla muestra su miniatura.</div>
       </div>
-      <div class="modal-buttons">
+      <div class="modal-buttons" style="flex-wrap:wrap;gap:6px">
         <button class="btn btn-ghost" id="schedCancel">Cancelar</button>
+        <button class="btn btn-ghost" id="schedSaveDraft" title="Guardar lo que tienes ahora como borrador. Lo retomas despues sin perder lo subido." style="color:var(--accent)">&#128190; Guardar borrador</button>
         <button class="btn btn-primary" id="schedConfirm">&#128241; Programar</button>
       </div>
     </div>

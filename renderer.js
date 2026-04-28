@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '2.92.0': {
+    title: 'Borradores de programación + caption más grande',
+    features: [
+      '💾 <strong>Botón "Guardar borrador"</strong> en el modal Programar: si subiste imágenes/videos pero todavía no quieres programar el post, dale a este botón. Se guarda con estado <code>borrador</code> en la pestaña Programación y puedes retomarlo después sin re-subir nada.',
+      '⚠️ <strong>Aviso al cancelar</strong>: si tenías contenido en el modal y le das Cancelar, ahora la app te pregunta si quieres guardar como borrador antes de cerrar. Así nunca pierdes lo que ya subiste a Cloudinary.',
+      '📝 <strong>Borradores en la lista</strong>: aparecen junto a los programados con badge violeta <code>BORRADOR</code> y borde violeta. Click ✎ → editas y le das "Programar ahora" cuando esté listo. Click ✕ → eliminas el borrador.',
+      '🔓 <strong>Validación permisiva para borradores</strong>: solo necesitas algo de contenido (caption, URL, o URLs de carrusel). Para programar de verdad sí se exigen todos los campos como antes.',
+      '📐 <strong>Caption más grande y resizable</strong>: el área de texto del caption ahora tiene 12 líneas por defecto (en vez de 5) y puedes arrastrar la esquina inferior derecha para hacerla todavía más grande. Se aprecia mucho mejor lo que pegues — útil para captions largos con hashtags.'
+    ]
+  },
   '2.91.0': {
     title: 'Botón ManyChat + nav más limpio + fix barrera invisible',
     features: [
@@ -1157,6 +1167,7 @@ function notifySchedule(title, body) {
   }
 }
 function scheduleStatusNorm(s) {
+  if (s === 'draft' || s === 'borrador') return 'draft';
   if (s === 'published' || s === 'publicado') return 'publicado';
   if (s === 'failed') return 'failed';
   if (s === 'publishing') return 'publishing';
@@ -1164,14 +1175,16 @@ function scheduleStatusNorm(s) {
 }
 function scheduleStatusPill(s) {
   const norm = scheduleStatusNorm(s);
+  if (norm === 'draft') return '<span class="sched-status-pill sched-status-draft">borrador</span>';
   if (norm === 'publicado') return '<span class="sched-status-pill sched-status-published">publicado</span>';
   if (norm === 'failed') return '<span class="sched-status-pill sched-status-failed">fallo</span>';
   if (norm === 'publishing') return '<span class="sched-status-pill sched-status-pending">publicando...</span>';
   return '<span class="sched-status-pill sched-status-pending">programado</span>';
 }
 function fmtScheduledDate(ts) {
-  if (!ts) return '';
+  if (!ts) return 'Sin fecha';
   const d = ts.toDate ? ts.toDate() : new Date(ts);
+  if (isNaN(d.getTime())) return 'Sin fecha';
   return d.toLocaleString('es-ES', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 function visibleScheduledPosts() {
@@ -1189,13 +1202,15 @@ function renderScheduleListView() {
   }
   container.innerHTML = items.map(p => {
     const norm = scheduleStatusNorm(p.status);
-    const cls = norm === 'publicado' ? 'published' : (norm === 'failed' ? 'failed' : '');
+    const cls = norm === 'publicado' ? 'published' : (norm === 'failed' ? 'failed' : (norm === 'draft' ? 'draft' : ''));
     const thumbSrc = p.mediaUrl ? mediaThumbUrl(p.mediaUrl) : '';
     const thumb = thumbSrc ? `style="background-image:url('${esc(thumbSrc)}')"` : (p.mediaUrl && isVideoUrl(p.mediaUrl) ? 'data-video="1"' : '');
     const cap = (p.caption || '').slice(0, 200);
     const isMine = p.createdBy === currentUser.uid;
-    const editBtn = (isMine && norm === 'programado') ? `<button class="btn btn-ghost btn-small" data-edit-sched="${esc(p.id)}" title="Editar">&#9998;</button>` : '';
-    const cancelBtn = (isMine && norm === 'programado') ? `<button class="btn btn-danger btn-small" data-cancel-sched="${esc(p.id)}" title="Cancelar">&#10005;</button>` : '';
+    // Editar y cancelar: disponibles para borradores y posts programados
+    const editableNorm = (norm === 'programado' || norm === 'draft');
+    const editBtn = (isMine && editableNorm) ? `<button class="btn btn-ghost btn-small" data-edit-sched="${esc(p.id)}" title="${norm === 'draft' ? 'Editar borrador' : 'Editar'}">&#9998;</button>` : '';
+    const cancelBtn = (isMine && editableNorm) ? `<button class="btn btn-danger btn-small" data-cancel-sched="${esc(p.id)}" title="${norm === 'draft' ? 'Eliminar borrador' : 'Cancelar'}">&#10005;</button>` : '';
     const platformLabel = (p.postType || 'post').toUpperCase();
     return `
       <div class="sched-card ${cls}">
@@ -1616,7 +1631,15 @@ function closeScheduleModal() {
 function applyScheduleModalLabels() {
   const titleEl = document.querySelector('#scheduleModal .modal-title');
   const confirmBtn = document.getElementById('schedConfirm');
+  let isDraftEdit = false;
   if (editingPostId) {
+    const p = scheduledPosts.find(x => x.id === editingPostId);
+    isDraftEdit = p && scheduleStatusNorm(p.status) === 'draft';
+  }
+  if (isDraftEdit) {
+    if (titleEl) titleEl.innerHTML = '📝 Editar borrador';
+    if (confirmBtn) confirmBtn.innerHTML = '&#128241; Programar ahora';
+  } else if (editingPostId) {
     if (titleEl) titleEl.innerHTML = '✎ Editar post programado';
     if (confirmBtn) confirmBtn.innerHTML = '&#128190; Actualizar';
   } else {
@@ -1629,8 +1652,9 @@ function applyScheduleModalLabels() {
 async function editScheduledPost(id) {
   const p = scheduledPosts.find(x => x.id === id);
   if (!p) { alert('Post no encontrado'); return; }
-  if (scheduleStatusNorm(p.status) !== 'programado') {
-    alert('Solo se pueden editar posts en estado "programado". Este ya esta ' + scheduleStatusNorm(p.status) + '.');
+  const norm = scheduleStatusNorm(p.status);
+  if (norm !== 'programado' && norm !== 'draft') {
+    alert('Solo se pueden editar posts en estado "programado" o "borrador". Este ya esta ' + norm + '.');
     return;
   }
   // Construir un schedulingContext desde el post existente
@@ -1648,8 +1672,14 @@ async function editScheduledPost(id) {
   let webhookUrl = '';
   try { webhookUrl = await window.api.getMakeWebhook(); } catch (e) {}
   document.getElementById('scheduleNoWebhook').style.display = webhookUrl ? 'none' : 'block';
-  // Pre-llenar con los valores reales del post
-  const dt = p.scheduledAt && p.scheduledAt.toDate ? p.scheduledAt.toDate() : new Date(p.scheduledAt);
+  // Pre-llenar con los valores reales del post. Drafts pueden no tener
+  // scheduledAt; usar manana 9am como default en ese caso.
+  let dt = null;
+  if (p.scheduledAt) {
+    dt = p.scheduledAt.toDate ? p.scheduledAt.toDate() : new Date(p.scheduledAt);
+    if (isNaN(dt.getTime())) dt = null;
+  }
+  if (!dt) { dt = new Date(); dt.setDate(dt.getDate() + 1); dt.setHours(9, 0, 0, 0); }
   const yyyy = dt.getFullYear();
   const mm = String(dt.getMonth() + 1).padStart(2, '0');
   const dd = String(dt.getDate()).padStart(2, '0');
@@ -1676,6 +1706,99 @@ async function editScheduledPost(id) {
   editingPostId = id;
   applyScheduleModalLabels();
   modal.classList.add('active');
+}
+
+// Comprueba si el modal tiene "data significativa" — usado para decidir si al
+// cancelar conviene preguntar guardar como borrador.
+function scheduleModalHasContent() {
+  try {
+    const cap = (document.getElementById('schedCaption').value || '').trim();
+    const url = (document.getElementById('schedMediaUrl').value || '').trim();
+    const carouselUrls = getCarouselUrls();
+    return cap.length > 0 || url.length > 0 || carouselUrls.length > 0;
+  } catch (e) { return false; }
+}
+
+// Guarda el contenido del modal como BORRADOR (status='draft'). Validacion
+// permisiva: solo necesita algo de contenido (caption, URL, o URLs carrusel).
+// El usuario lo retoma despues sin perder lo subido a Cloudinary.
+async function saveScheduleAsDraft() {
+  if (!schedulingContext) return false;
+  const caption = document.getElementById('schedCaption').value.trim();
+  const postType = document.querySelector('input[name="schedPostType"]:checked')?.value || 'post';
+  const date = document.getElementById('schedDate').value;
+  const time = document.getElementById('schedTime').value;
+  // scheduledAt: si el user no llenó fecha/hora, usar mañana 9am como placeholder
+  // (el doc igual no se publicara porque tiene status='draft', pero nos asegura
+  // que orderBy('scheduledAt') en Firestore no excluya el draft del listado).
+  let scheduledAt = null;
+  if (date && time) {
+    const dt = new Date(`${date}T${time}`);
+    if (!isNaN(dt.getTime())) scheduledAt = dt;
+  }
+  if (!scheduledAt) {
+    scheduledAt = new Date();
+    scheduledAt.setDate(scheduledAt.getDate() + 1);
+    scheduledAt.setHours(9, 0, 0, 0);
+  }
+  let mediaUrl = '';
+  let mediaUrls = null;
+  if (postType === 'carousel') {
+    const lines = getCarouselUrls();
+    if (lines.length > 0) { mediaUrls = lines; mediaUrl = lines[0]; }
+  } else {
+    mediaUrl = document.getElementById('schedMediaUrl').value.trim();
+  }
+  if (!caption && !mediaUrl && !mediaUrls) {
+    alert('Nada que guardar — agrega al menos un caption o una imagen');
+    return false;
+  }
+  const payload = {
+    platform: 'instagram',
+    postType,
+    caption,
+    mediaUrl,
+    scheduledAt: scheduledAt ? scheduledAt.toISOString() : null,
+    triggeredBy: currentUserData ? currentUserData.name : currentUser.email,
+    triggeredByEmail: currentUser.email,
+    sourceType: schedulingContext.type,
+    taskId: schedulingContext.type === 'task' ? schedulingContext.taskId : null,
+    entryId: schedulingContext.type === 'entry' ? schedulingContext.entryId : null,
+    taskTitle: schedulingContext.title || ''
+  };
+  if (mediaUrls) {
+    payload.mediaUrls = mediaUrls;
+    mediaUrls.forEach((u, i) => { payload[`mediaUrl${i + 1}`] = u; });
+    payload.carouselChildren = mediaUrls.map(url => ({ media_type: 'IMAGE', image_url: url }));
+  }
+  try {
+    const docPayload = {
+      ...payload,
+      scheduledAt: firebase.firestore.Timestamp.fromDate(scheduledAt),
+      status: 'draft'
+    };
+    if (editingPostId) {
+      docPayload.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
+      docPayload.updatedBy = currentUser.uid;
+      if (!mediaUrls) {
+        docPayload.mediaUrls = firebase.firestore.FieldValue.delete();
+        docPayload.carouselChildren = firebase.firestore.FieldValue.delete();
+        for (let i = 1; i <= 10; i++) {
+          docPayload[`mediaUrl${i}`] = firebase.firestore.FieldValue.delete();
+        }
+      }
+      await db.collection('scheduledPosts').doc(editingPostId).update(docPayload);
+    } else {
+      docPayload.createdBy = currentUser.uid;
+      docPayload.createdByName = currentUserData ? currentUserData.name : currentUser.email;
+      docPayload.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+      await db.collection('scheduledPosts').add(docPayload);
+    }
+    return true;
+  } catch (e) {
+    alert('No se pudo guardar el borrador: ' + e.message);
+    return false;
+  }
 }
 
 async function confirmSchedulePost() {
@@ -4136,9 +4259,45 @@ document.querySelectorAll('.schedule-view-btn[data-schedule-view]').forEach(b =>
 const newScheduleBtnEl = document.getElementById('newScheduleBtn');
 if (newScheduleBtnEl) newScheduleBtnEl.addEventListener('click', openScheduleModalManual);
 const schedCancelBtn = document.getElementById('schedCancel');
-if (schedCancelBtn) schedCancelBtn.addEventListener('click', closeScheduleModal);
+if (schedCancelBtn) {
+  schedCancelBtn.addEventListener('click', async () => {
+    // Si hay contenido y NO estamos editando un draft (donde "cancelar" mantiene el doc),
+    // preguntar si el usuario quiere guardar antes de cerrar para no perder lo subido.
+    const isEditingDraft = editingPostId && (() => {
+      const p = scheduledPosts.find(x => x.id === editingPostId);
+      return p && scheduleStatusNorm(p.status) === 'draft';
+    })();
+    if (!isEditingDraft && scheduleModalHasContent()) {
+      const choice = confirm('Tienes contenido sin guardar. ¿Guardar como borrador antes de cerrar?\n\nOK = Guardar borrador y cerrar\nCancelar = Cerrar sin guardar (pierdes lo no programado)');
+      if (choice) {
+        const ok = await saveScheduleAsDraft();
+        if (!ok) return; // si fallo, no cerrar
+      }
+    }
+    closeScheduleModal();
+  });
+}
 const schedConfirmBtn = document.getElementById('schedConfirm');
 if (schedConfirmBtn) schedConfirmBtn.addEventListener('click', confirmSchedulePost);
+const schedSaveDraftBtn = document.getElementById('schedSaveDraft');
+if (schedSaveDraftBtn) {
+  schedSaveDraftBtn.addEventListener('click', async () => {
+    schedSaveDraftBtn.disabled = true;
+    const original = schedSaveDraftBtn.innerHTML;
+    schedSaveDraftBtn.innerHTML = '⏳ Guardando...';
+    try {
+      const ok = await saveScheduleAsDraft();
+      if (ok) {
+        closeScheduleModal();
+        const schedTab = document.querySelector('.nav-tab[data-tab="schedule"]');
+        if (schedTab) schedTab.click();
+      }
+    } finally {
+      schedSaveDraftBtn.disabled = false;
+      schedSaveDraftBtn.innerHTML = original;
+    }
+  });
+}
 const schedModal = document.getElementById('scheduleModal');
 if (schedModal) schedModal.addEventListener('click', (e) => { if (e.target === schedModal) closeScheduleModal(); });
 const schedMediaUrlInput = document.getElementById('schedMediaUrl');
