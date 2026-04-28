@@ -76,9 +76,11 @@ if (document.readyState === 'loading') {
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
   '2.91.0': {
-    title: 'Botón ManyChat + fix de "barrera invisible" al arrastrar',
+    title: 'Botón ManyChat + nav más limpio + fix barrera invisible',
     features: [
       '💬 <strong>Botón ManyChat en la titlebar</strong>: arriba al lado del botón de refresh ahora hay un botón <code>ManyChat</code>. Click → abre directo el panel de ManyChat (carpeta CMS) en el navegador.',
+      '🧹 <strong>Nav superior más limpio</strong>: los botones <strong>Papelera</strong>, <strong>Equipo</strong> y <strong>FIJAR Ventana</strong> se movieron a la sección "Atajos rápidos" dentro de Configuración. El nav arriba queda solo con las pestañas de uso diario (Tareas, Calendario, Ideas, Programación, etc.).',
+      '🗑️ La papelera sigue mostrando el badge con el conteo, ahora visible en el botón dentro de Configuración.',
       '🪟 <strong>Fix bug "barrera invisible" al arrastrar</strong>: cuando tenías el Depósito o Chat abierto y arrastrabas la ventana principal hacia un borde, había un código que la empujaba de regreso (intentando reposicionar las otras ventanas para que no se superpusieran). Eso creaba la sensación de un bloqueo invisible. Ahora la ventana principal se queda donde la pongas — el Depósito/Chat se ajustan a su ancho disponible o aceptan overlap parcial, pero nunca empujan tu ventana.'
     ]
   },
@@ -2164,15 +2166,18 @@ function renderTrashList() {
   const myTrashPersonal = trashPersonalTasks; // Las personales ya estan filtradas por ownerId
   const total = myTrashTeam.length + myTrashPersonal.length;
 
-  // Badge en tab
-  if (el.trashBadge) {
+  // Badge en tab (oculto) + badge en boton de Settings (visible)
+  const setBadge = (elBadge) => {
+    if (!elBadge) return;
     if (total > 0) {
-      el.trashBadge.textContent = total > 99 ? '99+' : String(total);
-      el.trashBadge.style.display = 'inline-block';
+      elBadge.textContent = total > 99 ? '99+' : String(total);
+      elBadge.style.display = 'inline-block';
     } else {
-      el.trashBadge.style.display = 'none';
+      elBadge.style.display = 'none';
     }
-  }
+  };
+  setBadge(el.trashBadge);
+  setBadge(document.getElementById('settingsTrashBadge'));
 
   if (total === 0) {
     el.trashList.innerHTML = `
@@ -4530,6 +4535,42 @@ if (btnRefreshAll) {
   });
 }
 
+// Atajos rapidos en Configuracion: Papelera, Equipo, Fijar ventana
+// (movidos del nav-tabs arriba para liberar espacio)
+const settingsGoTrash = document.getElementById('settingsGoTrash');
+const settingsGoTeam = document.getElementById('settingsGoTeam');
+const settingsTogglePin = document.getElementById('settingsTogglePin');
+const settingsPinIcon = document.getElementById('settingsPinIcon');
+const settingsPinLabel = document.getElementById('settingsPinLabel');
+const settingsTrashBadge = document.getElementById('settingsTrashBadge');
+function switchToTab(tabName) {
+  const tab = document.querySelector(`.nav-tab[data-tab="${tabName}"]`);
+  if (tab) tab.click();
+}
+if (settingsGoTrash) settingsGoTrash.addEventListener('click', () => switchToTab('trash'));
+if (settingsGoTeam) settingsGoTeam.addEventListener('click', () => switchToTab('team'));
+if (settingsTogglePin) {
+  settingsTogglePin.addEventListener('click', async () => {
+    alwaysOnTop = await window.api.toggleAlwaysOnTop();
+    if (el.btnPin) el.btnPin.classList.toggle('unpinned', !alwaysOnTop);
+    refreshSettingsPinUi();
+  });
+}
+function refreshSettingsPinUi() {
+  if (!settingsPinIcon || !settingsPinLabel) return;
+  if (alwaysOnTop) {
+    settingsPinIcon.innerHTML = '&#128205;';
+    settingsPinLabel.textContent = 'Fijada — click para desfijar';
+    settingsTogglePin.style.borderColor = 'var(--accent)';
+    settingsTogglePin.style.color = 'var(--accent)';
+  } else {
+    settingsPinIcon.innerHTML = '&#128205;';
+    settingsPinLabel.textContent = 'Fijar ventana';
+    settingsTogglePin.style.borderColor = '';
+    settingsTogglePin.style.color = '';
+  }
+}
+
 // Boton ManyChat — abre el panel de ManyChat en el navegador del sistema
 const btnManyChat = document.getElementById('btnManyChat');
 if (btnManyChat) {
@@ -4552,7 +4593,8 @@ if (btnManyChat) {
 
 window.api.getAlwaysOnTop().then(v => {
   alwaysOnTop = v;
-  el.btnPin.classList.toggle('unpinned', !v);
+  if (el.btnPin) el.btnPin.classList.toggle('unpinned', !v);
+  refreshSettingsPinUi();
 });
 
 document.addEventListener('keydown', (e) => {

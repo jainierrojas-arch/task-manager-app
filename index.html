@@ -1227,14 +1227,17 @@
       <div class="nav-tab" data-tab="completed">
         &#9989; Hechas
       </div>
-      <div class="nav-tab" data-tab="trash">
+      <!-- Papelera, Equipo y FIJAR Ventana movidos a Configuracion para
+           liberar espacio arriba. Quedan ocultos pero los tabs siguen
+           funcionando si algo los activa programaticamente. -->
+      <div class="nav-tab" data-tab="trash" style="display:none">
         &#128465; Papelera
         <span class="tab-badge" id="trashBadge" style="display:none">0</span>
       </div>
-      <div class="nav-tab" data-tab="team">
+      <div class="nav-tab" data-tab="team" style="display:none">
         &#128101; Equipo
       </div>
-      <button class="pin-toggle-btn" id="btnPin" title="Fijar ventana siempre visible">
+      <button class="pin-toggle-btn" id="btnPin" title="Fijar ventana siempre visible" style="display:none">
         <span class="pin-dot"></span>
         FIJAR Ventana
       </button>
@@ -1403,6 +1406,26 @@
       <!-- Settings -->
       <div class="tab-content" id="tabSettings">
         <div class="settings-panel">
+
+          <!-- Atajos rapidos: papelera, equipo, fijar ventana (movidos del nav arriba) -->
+          <div class="settings-group">
+            <div class="settings-label">Atajos rapidos</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button class="btn btn-ghost btn-small" id="settingsGoTrash" style="flex:1;min-width:140px;display:flex;align-items:center;justify-content:center;gap:6px">
+                &#128465; Papelera
+                <span class="tab-badge" id="settingsTrashBadge" style="display:none;background:var(--danger);color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700">0</span>
+              </button>
+              <button class="btn btn-ghost btn-small" id="settingsGoTeam" style="flex:1;min-width:140px;display:flex;align-items:center;justify-content:center;gap:6px">
+                &#128101; Equipo
+              </button>
+              <button class="btn btn-ghost btn-small" id="settingsTogglePin" style="flex:1;min-width:140px;display:flex;align-items:center;justify-content:center;gap:6px">
+                <span id="settingsPinIcon">&#128205;</span>
+                <span id="settingsPinLabel">Fijar ventana</span>
+              </button>
+            </div>
+            <div style="font-size:11px;color:var(--text-dim);margin-top:6px">Click en Papelera o Equipo para abrir esa vista. El boton Fijar ventana mantiene la app siempre visible sobre otras ventanas.</div>
+          </div>
+
           <div class="settings-group">
             <div class="settings-label">Bot de Telegram</div>
             <div class="settings-input-group">
