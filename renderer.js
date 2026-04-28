@@ -75,6 +75,13 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '2.92.1': {
+    title: 'Fix: caption ahora ocupa el ancho completo del modal',
+    features: [
+      '📐 <strong>Caption a ancho completo</strong>: en v2.92 el área del caption quedaba pequeña centrada con espacios en blanco a los lados. Ahora ocupa todo el ancho del modal — escribes y ves mucho más texto a la vez.',
+      '↔️ <strong>Modal Programar más ancho</strong>: max-width subió de 620px a 820px, así aprovecha mejor las pantallas grandes.'
+    ]
+  },
   '2.92.0': {
     title: 'Borradores de programación + caption más grande',
     features: [
