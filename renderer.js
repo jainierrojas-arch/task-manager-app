@@ -75,6 +75,12 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '2.85.0': {
+    title: 'Carrusel: payload listo para Map mode en Make',
+    features: [
+      '🎠 <strong>Carrusel funcional en Make</strong>: la app ahora envía un campo <code>carouselChildren</code> con el array ya formateado <code>[{media_type, image_url}, ...]</code>. En Make solo activas "Map" en el campo Children del módulo Carousel y lo mapeas a esta variable — funciona con 2-10 imágenes dinámicas.'
+    ]
+  },
   '2.84.0': {
     title: 'Modal Programar: galería de carrusel + fix de ventanas',
     features: [
@@ -1220,8 +1226,15 @@ async function confirmSchedulePost() {
   };
   if (mediaUrls) {
     payload.mediaUrls = mediaUrls;
-    // Tambien individuales mediaUrl1..mediaUrl10 para mapeo simple en Make sin iterator
+    // Individuales mediaUrl1..mediaUrl10 para mapeo simple en Make sin iterator
     mediaUrls.forEach((u, i) => { payload[`mediaUrl${i + 1}`] = u; });
+    // Array ya estructurado para Make: cada item con media_type + image_url.
+    // En el modulo "Create a Carousel Post" se activa "Map" en Children y se
+    // mapea esta variable directamente. Maneja 2-10 URLs dinamico.
+    payload.carouselChildren = mediaUrls.map(url => ({
+      media_type: 'IMAGE',
+      image_url: url
+    }));
   }
   // 1) Guardar en Firestore como pending
   let docId = null;
