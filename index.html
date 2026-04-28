@@ -780,6 +780,11 @@
       width: 90%;
       max-width: 340px;
       border: 1px solid var(--border);
+      /* Ventana principal puede ser pequena (Windows con escalado alto) — el
+         modal NO debe exceder el viewport. Si el contenido es largo, scroll. */
+      max-height: 90vh;
+      overflow-y: auto;
+      box-sizing: border-box;
     }
     .modal-title { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
     .modal input, .modal select { width: 100%; margin-bottom: 12px; }
@@ -1264,6 +1269,7 @@
         <div class="schedule-view-bar">
           <button class="schedule-view-btn active" data-schedule-view="list">&#128203; Lista</button>
           <button class="schedule-view-btn" data-schedule-view="calendar">&#128197; Calendario</button>
+          <button class="schedule-view-btn" id="newScheduleBtn" style="background:var(--accent);color:white;border-color:var(--accent)">&#10133; Nueva programacion</button>
           <span style="flex:1"></span>
           <span id="scheduleConfigStatus" style="font-size:11px;color:var(--text-dim)"></span>
         </div>
@@ -1292,7 +1298,10 @@
         <div class="ideas-input-row">
           <input type="text" id="ideaTitleInput" placeholder="Titulo (opcional)" maxlength="80">
           <textarea id="ideaTextInput" placeholder="Escribe tu idea aqui..." rows="2"></textarea>
-          <button class="btn btn-primary" id="addIdeaBtn">&#10133; Agregar idea</button>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-primary" id="addIdeaBtn" style="flex:1">&#10133; Agregar idea</button>
+            <button class="btn btn-ghost" id="cancelEditIdeaBtn" style="display:none">Cancelar</button>
+          </div>
         </div>
         <div class="ideas-grid" id="ideasList"></div>
       </div>

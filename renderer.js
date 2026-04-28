@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '2.82.0': {
+    title: 'Editar ideas + Nueva programación independiente + fix modal',
+    features: [
+      '🪟 <strong>Fix modal Programar en Windows</strong>: cuando la ventana es chica el modal salía cortado/superpuesto. Ahora tiene altura máxima 90vh con scroll interno — siempre cabe.',
+      '✎ <strong>Editar ideas</strong>: nuevo botón ✎ en cada idea propia. Click → el form de arriba se rellena con el contenido actual y el botón cambia a "Guardar cambios". También sale botón "Cancelar" para abortar.',
+      '➕ <strong>Botón + Nueva programación</strong> en la pestaña Programación: abre el modal vacío para programar contenido manualmente sin partir de una tarea o entry — pegas caption, URL del medio, fecha y listo.'
+    ]
+  },
   '2.81.0': {
     title: 'Programación: carrusel + botón en Trabajos Finalizados',
     features: [
@@ -753,6 +761,7 @@ function renderIdeas() {
     const personalCls = idea.isPersonal ? ' personal' : '';
     const titleHtml = idea.title ? `<div class="idea-card-title">${escHtml(idea.title)}</div>` : '';
     const authorHtml = idea.isPersonal ? '' : `<span class="idea-card-author">Por ${escHtml(idea.authorName || 'Anonimo')}</span>`;
+    const editBtn = isMine ? `<button class="idea-card-delete" data-edit-idea="${escHtml(idea.id)}" title="Editar" style="margin-right:4px">&#9998;</button>` : '';
     const deleteBtn = isMine ? `<button class="idea-card-delete" data-delete-idea="${escHtml(idea.id)}" title="Eliminar">&#10005;</button>` : '<span></span>';
     return `
       <div class="idea-card${personalCls}" data-idea-id="${escHtml(idea.id)}">
@@ -760,7 +769,7 @@ function renderIdeas() {
         <div class="idea-card-text">${escHtml(idea.text || '')}</div>
         <div class="idea-card-foot">
           <span>${authorHtml}${authorHtml ? ' &middot; ' : ''}${ideaTimeAgo(idea.createdAt)}</span>
-          ${deleteBtn}
+          <span style="display:inline-flex;gap:2px">${editBtn}${deleteBtn}</span>
         </div>
       </div>`;
   }).join('');
@@ -769,6 +778,12 @@ function renderIdeas() {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       deleteIdea(btn.dataset.deleteIdea);
+    });
+  });
+  list.querySelectorAll('[data-edit-idea]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      startEditIdea(btn.dataset.editIdea);
     });
   });
 }
@@ -792,6 +807,36 @@ function ideaTimeAgo(ts) {
   return date.toLocaleDateString('es-ES');
 }
 
+// Estado de edicion: null = modo crear nueva, id = modo edicion de esa idea
+let editingIdeaId = null;
+
+function startEditIdea(id) {
+  const idea = ideas.find(i => i.id === id);
+  if (!idea || idea.authorId !== currentUser.uid) return;
+  editingIdeaId = id;
+  document.getElementById('ideaTitleInput').value = idea.title || '';
+  document.getElementById('ideaTextInput').value = idea.text || '';
+  document.getElementById('ideaTextInput').focus();
+  // Cambiar la etiqueta del boton para indicar modo edicion
+  const btn = document.getElementById('addIdeaBtn');
+  if (btn) btn.innerHTML = '✎ Guardar cambios';
+  // Mostrar boton cancelar
+  const cancelBtn = document.getElementById('cancelEditIdeaBtn');
+  if (cancelBtn) cancelBtn.style.display = 'inline-block';
+  // Scroll al form
+  document.getElementById('ideaTextInput').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function cancelEditIdea() {
+  editingIdeaId = null;
+  document.getElementById('ideaTitleInput').value = '';
+  document.getElementById('ideaTextInput').value = '';
+  const btn = document.getElementById('addIdeaBtn');
+  if (btn) btn.innerHTML = '➕ Agregar idea';
+  const cancelBtn = document.getElementById('cancelEditIdeaBtn');
+  if (cancelBtn) cancelBtn.style.display = 'none';
+}
+
 async function addIdea() {
   if (!currentUser) return;
   const titleInput = document.getElementById('ideaTitleInput');
@@ -802,6 +847,22 @@ async function addIdea() {
     textInput.focus();
     return;
   }
+  // Modo edicion: actualizar la idea existente
+  if (editingIdeaId) {
+    try {
+      await db.collection('ideas').doc(editingIdeaId).update({
+        title: title || null,
+        text,
+        editedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      cancelEditIdea();
+    } catch (e) {
+      console.error('[ideas] update:', e);
+      alert('No se pudo actualizar la idea: ' + e.message);
+    }
+    return;
+  }
+  // Modo creacion
   const isPersonal = currentIdeasMode === 'personal';
   try {
     await db.collection('ideas').add({
@@ -1000,6 +1061,17 @@ async function openScheduleModalForEntry(entryData) {
     title: entryData.title || '',
     description: entryData.description || '',
     coverImage: entryData.coverImage || ''
+  };
+  await openScheduleModalWithContext();
+}
+
+// Programacion manual (sin task ni entry asociado): el usuario carga todo a mano
+async function openScheduleModalManual() {
+  schedulingContext = {
+    type: 'manual',
+    title: '',
+    description: '',
+    coverImage: ''
   };
   await openScheduleModalWithContext();
 }
@@ -3481,9 +3553,11 @@ document.querySelectorAll('.nav-tab').forEach(tab => {
 });
 
 // ===== Programacion: handlers de UI =====
-document.querySelectorAll('.schedule-view-btn').forEach(b => {
+document.querySelectorAll('.schedule-view-btn[data-schedule-view]').forEach(b => {
   b.addEventListener('click', () => setScheduleView(b.dataset.scheduleView));
 });
+const newScheduleBtnEl = document.getElementById('newScheduleBtn');
+if (newScheduleBtnEl) newScheduleBtnEl.addEventListener('click', openScheduleModalManual);
 const schedCancelBtn = document.getElementById('schedCancel');
 if (schedCancelBtn) schedCancelBtn.addEventListener('click', closeScheduleModal);
 const schedConfirmBtn = document.getElementById('schedConfirm');
@@ -3600,6 +3674,8 @@ document.querySelectorAll('.ideas-mode-btn').forEach(btn => {
 });
 const addIdeaBtn = document.getElementById('addIdeaBtn');
 if (addIdeaBtn) addIdeaBtn.addEventListener('click', addIdea);
+const cancelEditIdeaBtnEl = document.getElementById('cancelEditIdeaBtn');
+if (cancelEditIdeaBtnEl) cancelEditIdeaBtnEl.addEventListener('click', cancelEditIdea);
 const ideaTextInputEl = document.getElementById('ideaTextInput');
 if (ideaTextInputEl) {
   ideaTextInputEl.addEventListener('keydown', (e) => {
