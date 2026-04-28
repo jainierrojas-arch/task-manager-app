@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '2.88.0': {
+    title: 'Programar desde el calendario',
+    features: [
+      '📅 <strong>Click en cualquier día del calendario</strong> en la pestaña Programación → ahora ves la lista de posts ese día Y un botón <code>➕ Programar este día</code>.',
+      '⚡ <strong>Fecha pre-llenada</strong>: al darle click, el modal Programar abre con esa fecha ya cargada. Solo eliges la hora, escribes el caption y la URL — y listo.',
+      '🛡️ <strong>Días pasados protegidos</strong>: si haces click en un día anterior a hoy, no aparece el botón (no tiene sentido programar al pasado).',
+      '👥 <strong>Encabezado del día</strong>: cuando seleccionas un día verás un mini-header con el nombre del día (ej. "lunes, 5 de mayo") y la lista de posts para ese día debajo.'
+    ]
+  },
   '2.87.0': {
     title: 'Editar posts programados + Carrusel con casillas separadas',
     features: [
@@ -1131,16 +1140,40 @@ function renderScheduleCalendarView() {
         const dt = p.scheduledAt.toDate ? p.scheduledAt.toDate() : new Date(p.scheduledAt);
         return dt.getFullYear() === year && dt.getMonth() === month && dt.getDate() === d;
       });
-      if (dayPosts.length === 0) { dayList.innerHTML = '<div style="color:var(--text-dim);font-size:12px;padding:12px;text-align:center">Sin posts ese dia</div>'; return; }
-      dayList.innerHTML = dayPosts.map(p => `
-        <div class="sched-card ${scheduleStatusNorm(p.status) === 'publicado' ? 'published' : (scheduleStatusNorm(p.status) === 'failed' ? 'failed' : '')}">
-          <div class="sched-card-thumb" ${p.mediaUrl ? `style="background-image:url('${esc(p.mediaUrl)}')"` : ''}></div>
-          <div class="sched-card-body">
-            <div class="sched-card-when">${esc(fmtScheduledDate(p.scheduledAt))}</div>
-            <div class="sched-card-caption">${esc((p.caption || '').slice(0, 200))}</div>
-            <div class="sched-card-meta">${scheduleStatusPill(p.status || 'pending')}</div>
-          </div>
-        </div>`).join('');
+      // Determinar si el dia es hoy o futuro (no permitir programar en pasado)
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const dayDate = new Date(year, month, d);
+      const isPastDay = dayDate < today;
+      // Header: dia formateado + boton "+ Programar este dia" (solo si no es pasado)
+      const dayLabel = dayDate.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
+      const addBtnHtml = isPastDay
+        ? ''
+        : `<button class="btn btn-primary btn-small" data-add-on-day="${year}-${month}-${d}" style="font-size:11px;padding:4px 10px">&#10133; Programar este dia</button>`;
+      const headerHtml = `
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-card);border-radius:6px;margin-bottom:8px">
+          <div style="font-size:12px;font-weight:600;color:var(--text-primary);text-transform:capitalize">${esc(dayLabel)}</div>
+          ${addBtnHtml}
+        </div>`;
+      const cardsHtml = dayPosts.length === 0
+        ? '<div style="color:var(--text-dim);font-size:12px;padding:12px;text-align:center">Sin posts ese dia</div>'
+        : dayPosts.map(p => `
+            <div class="sched-card ${scheduleStatusNorm(p.status) === 'publicado' ? 'published' : (scheduleStatusNorm(p.status) === 'failed' ? 'failed' : '')}">
+              <div class="sched-card-thumb" ${p.mediaUrl ? `style="background-image:url('${esc(p.mediaUrl)}')"` : ''}></div>
+              <div class="sched-card-body">
+                <div class="sched-card-when">${esc(fmtScheduledDate(p.scheduledAt))}</div>
+                <div class="sched-card-caption">${esc((p.caption || '').slice(0, 200))}</div>
+                <div class="sched-card-meta">${scheduleStatusPill(p.status || 'pending')}</div>
+              </div>
+            </div>`).join('');
+      dayList.innerHTML = headerHtml + cardsHtml;
+      // Bind boton +Programar este dia
+      const addBtn = dayList.querySelector('[data-add-on-day]');
+      if (addBtn) {
+        addBtn.addEventListener('click', () => {
+          const [y, m, dd] = addBtn.dataset.addOnDay.split('-').map(n => parseInt(n, 10));
+          openScheduleModalForDate(y, m, dd);
+        });
+      }
     });
   });
 }
@@ -1314,19 +1347,36 @@ async function openScheduleModalManual() {
   await openScheduleModalWithContext();
 }
 
+// Programacion manual con fecha pre-llenada (desde calendario):
+// el usuario hace click en un dia y la modal abre con esa fecha ya puesta.
+async function openScheduleModalForDate(year, month, day) {
+  schedulingContext = {
+    type: 'manual',
+    title: '',
+    description: '',
+    coverImage: '',
+    presetDate: new Date(year, month, day, 9, 0, 0, 0) // 9am del dia clickeado
+  };
+  await openScheduleModalWithContext();
+}
+
 async function openScheduleModalWithContext() {
   const modal = document.getElementById('scheduleModal');
   if (!modal || !schedulingContext) return;
   let webhookUrl = '';
   try { webhookUrl = await window.api.getMakeWebhook(); } catch (e) {}
   document.getElementById('scheduleNoWebhook').style.display = webhookUrl ? 'none' : 'block';
-  // Fecha default: manana 9am
-  const future = new Date(); future.setDate(future.getDate() + 1); future.setHours(9, 0, 0, 0);
+  // Fecha default: manana 9am, salvo que el contexto traiga una presetDate
+  // (se usa cuando programas haciendo click en un dia del calendario)
+  const presetDate = schedulingContext.presetDate instanceof Date ? schedulingContext.presetDate : null;
+  const future = presetDate || (() => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0); return d; })();
   const yyyy = future.getFullYear();
   const mm = String(future.getMonth() + 1).padStart(2, '0');
   const dd = String(future.getDate()).padStart(2, '0');
+  const hh = String(future.getHours()).padStart(2, '0');
+  const mi = String(future.getMinutes()).padStart(2, '0');
   document.getElementById('schedDate').value = `${yyyy}-${mm}-${dd}`;
-  document.getElementById('schedTime').value = '09:00';
+  document.getElementById('schedTime').value = `${hh}:${mi}`;
   const desc = schedulingContext.description ? `\n\n${schedulingContext.description}` : '';
   document.getElementById('schedCaption').value = `${schedulingContext.title || ''}${desc}`.trim();
 
