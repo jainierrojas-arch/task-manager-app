@@ -75,6 +75,13 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '2.91.0': {
+    title: 'Botón ManyChat + fix de "barrera invisible" al arrastrar',
+    features: [
+      '💬 <strong>Botón ManyChat en la titlebar</strong>: arriba al lado del botón de refresh ahora hay un botón <code>ManyChat</code>. Click → abre directo el panel de ManyChat (carpeta CMS) en el navegador.',
+      '🪟 <strong>Fix bug "barrera invisible" al arrastrar</strong>: cuando tenías el Depósito o Chat abierto y arrastrabas la ventana principal hacia un borde, había un código que la empujaba de regreso (intentando reposicionar las otras ventanas para que no se superpusieran). Eso creaba la sensación de un bloqueo invisible. Ahora la ventana principal se queda donde la pongas — el Depósito/Chat se ajustan a su ancho disponible o aceptan overlap parcial, pero nunca empujan tu ventana.'
+    ]
+  },
   '2.90.0': {
     title: 'Preview de videos en Reels y Carrusel',
     features: [
@@ -4520,6 +4527,26 @@ if (btnRefreshAll) {
     btnRefreshAll.style.transition = 'transform 0.6s';
     btnRefreshAll.style.transform = 'rotate(360deg)';
     setTimeout(() => { try { window.api.refreshAllWindows(); } catch (e) { location.reload(); } }, 200);
+  });
+}
+
+// Boton ManyChat — abre el panel de ManyChat en el navegador del sistema
+const btnManyChat = document.getElementById('btnManyChat');
+if (btnManyChat) {
+  btnManyChat.addEventListener('mouseenter', () => {
+    btnManyChat.style.background = 'var(--accent)';
+    btnManyChat.style.color = '#fff';
+    btnManyChat.style.borderColor = 'var(--accent)';
+  });
+  btnManyChat.addEventListener('mouseleave', () => {
+    btnManyChat.style.background = 'transparent';
+    btnManyChat.style.color = 'var(--text-secondary)';
+    btnManyChat.style.borderColor = 'var(--border)';
+  });
+  btnManyChat.addEventListener('click', () => {
+    if (window.api && window.api.openExternal) {
+      window.api.openExternal('https://app.manychat.com/fb3090869/cms?path=/&field=modified&order=desc');
+    }
   });
 }
 

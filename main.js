@@ -137,12 +137,18 @@ function computeDepositBounds(width, height) {
   } else if (rightX + bounds.width <= wa.x + wa.width) {
     bounds.x = rightX;
   } else {
-    // No cabe en ningun lado: anclar deposito a la izquierda del area visible
-    // y empujar la ventana principal a la derecha para que no se superpongan.
-    bounds.x = wa.x;
-    const newMainX = wa.x + bounds.width + 4;
-    const maxMainX = wa.x + wa.width - mb.width;
-    mainWindow.setBounds({ x: Math.min(newMainX, maxMainX), y: mb.y, width: mb.width, height: mb.height });
+    // No cabe a los lados: encoger el deposito para que quepa en el espacio
+    // a la derecha de la ventana principal. NUNCA empujar la ventana principal —
+    // eso causa la sensacion de "barrera invisible" cuando el usuario arrastra
+    // main a los bordes (el deposito lo empuja de vuelta).
+    bounds.x = rightX;
+    bounds.width = Math.max(300, wa.x + wa.width - rightX - 4);
+    if (bounds.width < 300) {
+      // Ni siquiera asi cabe: anclar a la izquierda del area visible y aceptar
+      // overlap parcial con main (el usuario decide si reduce el ancho).
+      bounds.x = wa.x;
+      bounds.width = Math.min(width, wa.width - 40);
+    }
   }
   return bounds;
 }
@@ -236,11 +242,16 @@ function computeChatBounds(width, height) {
   } else if (leftX >= wa.x) {
     bounds.x = leftX;
   } else {
-    // No cabe a los lados: anclar chat a la derecha y empujar la ventana
-    // principal a la izquierda para evitar superposicion.
-    bounds.x = wa.x + wa.width - bounds.width;
-    const newMainX = bounds.x - mb.width - 4;
-    mainWindow.setBounds({ x: Math.max(wa.x, newMainX), y: mb.y, width: mb.width, height: mb.height });
+    // No cabe a los lados: encoger el chat para que quepa a la izquierda de
+    // la ventana principal. NUNCA empujar main — eso crea "barrera invisible"
+    // al arrastrar.
+    bounds.x = wa.x;
+    bounds.width = Math.max(300, mb.x - wa.x - 4);
+    if (bounds.width < 300) {
+      // Ni siquiera asi cabe: anclar a la derecha y aceptar overlap parcial.
+      bounds.width = Math.min(width, wa.width - 40);
+      bounds.x = wa.x + wa.width - bounds.width;
+    }
   }
   return bounds;
 }
