@@ -1275,13 +1275,22 @@ app.whenReady().then(() => {
   });
 
   // El deposito quiere programar una entry finalizada: forwardear data al main
-  // window y traerla al frente. El modal de Programacion vive ahi.
+  // window y traerla al frente del z-order. Como depositWindow tiene parent
+  // mainWindow, focus() solo NO basta — usamos truco de alwaysOnTop temporal
+  // para forzar a la principal sobre la del deposito.
   ipcMain.handle('open-schedule-from-entry', (_, data) => {
     if (!mainWindow || mainWindow.isDestroyed()) return { ok: false, error: 'mainWindow no disponible' };
     try {
       mainWindow.show();
+      const wasAlwaysOnTop = mainWindow.isAlwaysOnTop();
+      mainWindow.setAlwaysOnTop(true);
       mainWindow.focus();
+      mainWindow.moveTop && mainWindow.moveTop();
       mainWindow.webContents.send('schedule-from-entry', data || {});
+      // Restaurar el estado original tras un instante (suficiente para que el modal aparezca arriba)
+      setTimeout(() => {
+        try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setAlwaysOnTop(wasAlwaysOnTop); } catch (_) {}
+      }, 250);
       return { ok: true };
     } catch (e) {
       return { ok: false, error: e.message };

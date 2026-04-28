@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '2.84.0': {
+    title: 'Modal Programar: galería de carrusel + fix de ventanas',
+    features: [
+      '🖼️ <strong>Vista previa del carrusel</strong>: cuando el tipo es Carrusel, ves todas las imágenes como una galería horizontal numerada (1, 2, 3...). Se actualiza en vivo mientras pegas/editas las URLs.',
+      '📐 <strong>Modal Programar más ancho</strong>: ahora ocupa más espacio (max 620px, 95vw) — el preview se ve grande y los campos cómodos.',
+      '🪟 <strong>Fix bug</strong>: cuando programabas desde el Depósito, el modal se abría detrás de la ventana de Depósito. Ahora la ventana principal se trae al frente automáticamente.'
+    ]
+  },
   '2.83.0': {
     title: 'URLs públicas en la entry — programación 1-click',
     features: [
@@ -1047,6 +1055,29 @@ function applyPostTypeToModal(type) {
   const isCarousel = type === 'carousel';
   document.getElementById('schedSingleUrlRow').style.display = isCarousel ? 'none' : '';
   document.getElementById('schedCarouselUrlsRow').style.display = isCarousel ? '' : 'none';
+  // Preview: galeria para carrusel, imagen unica para los demas
+  document.getElementById('scheduleCarouselGallery').style.display = isCarousel ? '' : 'none';
+  document.getElementById('scheduleMediaPreview').style.display = isCarousel ? 'none' : '';
+  if (isCarousel) renderCarouselGallery();
+}
+
+// Render galeria horizontal de previews del carrusel
+function renderCarouselGallery() {
+  const text = (document.getElementById('schedMediaUrls').value || '').trim();
+  const lines = text.split(/\r?\n/).map(s => s.trim()).filter(s => /^https?:\/\//i.test(s));
+  const thumbs = document.getElementById('scheduleGalleryThumbs');
+  const count = document.getElementById('scheduleGalleryCount');
+  if (!thumbs || !count) return;
+  if (lines.length === 0) {
+    thumbs.innerHTML = '<div style="color:var(--text-dim);font-size:11px;padding:20px;text-align:center;width:100%">Pega las URLs abajo para ver la vista previa</div>';
+    count.textContent = '';
+    return;
+  }
+  count.textContent = `(${lines.length} ${lines.length === 1 ? 'imagen' : 'imagenes'})`;
+  thumbs.innerHTML = lines.map((url, i) => `
+    <div style="flex:0 0 auto;width:120px;height:150px;border-radius:6px;overflow:hidden;background:var(--bg-card) center/cover no-repeat;background-image:url('${url.replace(/'/g, '%27')}');border:1px solid var(--border);scroll-snap-align:start;position:relative">
+      <div style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.7);color:white;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">${i + 1}</div>
+    </div>`).join('');
 }
 
 async function openScheduleModal(taskId) {
@@ -3612,6 +3643,11 @@ if (schedMediaUrlInput) {
 document.querySelectorAll('input[name="schedPostType"]').forEach(r => {
   r.addEventListener('change', (e) => applyPostTypeToModal(e.target.value));
 });
+// Live preview de la galeria de carrusel mientras se editan URLs
+const schedMediaUrlsInputEl = document.getElementById('schedMediaUrls');
+if (schedMediaUrlsInputEl) {
+  schedMediaUrlsInputEl.addEventListener('input', () => renderCarouselGallery());
+}
 
 // Listener IPC: el deposito pide programar una entry → abrir modal pre-llenado
 if (window.api && window.api.onScheduleFromEntry) {

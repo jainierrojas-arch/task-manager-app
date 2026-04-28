@@ -1516,13 +1516,19 @@
 
   <!-- Programar contenido en Instagram (envia a Make.com webhook) -->
   <div class="modal-overlay" id="scheduleModal">
-    <div class="modal" style="max-width:520px">
+    <div class="modal" style="max-width:620px;min-width:min(95vw,520px);width:95vw">
       <div class="modal-title">&#128241; Programar en Instagram</div>
       <div id="scheduleNoWebhook" style="display:none;background:var(--bg-card);border:1px solid var(--warning);border-radius:6px;padding:10px;margin-bottom:12px;font-size:12px;color:var(--text-secondary)">
         &#9888;&#65039; Primero configura tu webhook de Make.com en Configuracion &rarr; Programacion
       </div>
+      <!-- Preview unico (post/reel/story) -->
       <div id="scheduleMediaPreview" style="margin-bottom:12px;border-radius:8px;overflow:hidden;display:none">
-        <div id="scheduleMediaImg" style="width:100%;aspect-ratio:4/5;background:var(--bg-card) center/contain no-repeat"></div>
+        <div id="scheduleMediaImg" style="width:100%;aspect-ratio:4/5;max-height:400px;background:var(--bg-card) center/contain no-repeat"></div>
+      </div>
+      <!-- Galeria horizontal (carrusel) -->
+      <div id="scheduleCarouselGallery" style="display:none;margin-bottom:12px">
+        <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px">Vista previa del carrusel <span id="scheduleGalleryCount" style="color:var(--accent);font-weight:600"></span></div>
+        <div id="scheduleGalleryThumbs" style="display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;scroll-snap-type:x mandatory"></div>
       </div>
       <div class="modal-row">
         <label>Tipo de post</label>
