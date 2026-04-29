@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '2.99.6': {
+    title: 'Editar/eliminar borradores y programaciones del equipo',
+    features: [
+      '✎ <strong>Botón Editar y ✕ Eliminar visibles para más miembros</strong>: cuando una programación o borrador viene de una multi-tarea, ahora TODOS los miembros que participaron pueden editar/eliminar ese post (no solo el que apretó "Programar").',
+      '👑 <strong>Admins siempre pueden</strong>: si tienes rol admin, ves los botones ✎ y ✕ en todas las programaciones y borradores del equipo, sin importar quién los creó.',
+      '🤝 Útil cuando uno crea el borrador y otro miembro quiere terminarlo o corregirlo.'
+    ]
+  },
   '2.99.5': {
     title: 'Multi-tarea: botón "Ver entregado" por miembro con color',
     features: [
@@ -1322,11 +1330,16 @@ function renderScheduleListView() {
     const thumbSrc = p.mediaUrl ? mediaThumbUrl(p.mediaUrl) : '';
     const thumb = thumbSrc ? `style="background-image:url('${esc(thumbSrc)}')"` : (p.mediaUrl && isVideoUrl(p.mediaUrl) ? 'data-video="1"' : '');
     const cap = (p.caption || '').slice(0, 200);
+    const isAdminUser = currentUserData && currentUserData.role === 'admin';
     const isMine = p.createdBy === currentUser.uid;
+    // Si es post de multi-tarea, todos los miembros que participaron pueden
+    // editarlo/eliminarlo. Tambien admins siempre pueden.
+    const isMultiMember = Array.isArray(p.multiTaskMembers) && p.multiTaskMembers.includes(currentUser.uid);
+    const canEditPost = isAdminUser || isMine || isMultiMember;
     // Editar y cancelar: disponibles para borradores y posts programados
     const editableNorm = (norm === 'programado' || norm === 'draft');
-    const editBtn = (isMine && editableNorm) ? `<button class="btn btn-ghost btn-small" data-edit-sched="${esc(p.id)}" title="${norm === 'draft' ? 'Editar borrador' : 'Editar'}">&#9998;</button>` : '';
-    const cancelBtn = (isMine && editableNorm) ? `<button class="btn btn-danger btn-small" data-cancel-sched="${esc(p.id)}" title="${norm === 'draft' ? 'Eliminar borrador' : 'Cancelar'}">&#10005;</button>` : '';
+    const editBtn = (canEditPost && editableNorm) ? `<button class="btn btn-ghost btn-small" data-edit-sched="${esc(p.id)}" title="${norm === 'draft' ? 'Editar borrador' : 'Editar'}">&#9998;</button>` : '';
+    const cancelBtn = (canEditPost && editableNorm) ? `<button class="btn btn-danger btn-small" data-cancel-sched="${esc(p.id)}" title="${norm === 'draft' ? 'Eliminar borrador' : 'Cancelar'}">&#10005;</button>` : '';
     const platformLabel = (p.postType || 'post').toUpperCase();
     return `
       <div class="sched-card ${cls}">
