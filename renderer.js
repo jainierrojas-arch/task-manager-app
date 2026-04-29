@@ -75,6 +75,13 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '2.99.1': {
+    title: 'Multi-tarea: programación visible para TODOS los miembros',
+    features: [
+      '👥 <strong>Fix visibilidad en Programación</strong>: cuando programas (o guardas como borrador) un post desde una multi-tarea, ahora TODOS los miembros que participaron en la multi-tarea pueden verlo en su pestaña Programación. Antes solo lo veía la persona que apretó "Programar". Ahora la lista de miembros (<code>multiTaskMembers</code>) se guarda en el doc del post para que el filtro los incluya a todos.',
+      '🔁 También aplica al estado <strong>borrador</strong> guardado desde multi-tarea — todos los miembros lo ven y pueden retomarlo.'
+    ]
+  },
   '2.99.0': {
     title: 'Multi-tarea: subir entregables + visibilidad arreglada',
     features: [
@@ -1261,7 +1268,13 @@ function fmtScheduledDate(ts) {
 function visibleScheduledPosts() {
   if (!currentUser) return [];
   const isAdmin = currentUserData && currentUserData.role === 'admin';
-  return scheduledPosts.filter(p => isAdmin || p.createdBy === currentUser.uid);
+  return scheduledPosts.filter(p => {
+    if (isAdmin) return true;
+    if (p.createdBy === currentUser.uid) return true;
+    // Si el post vino de una multi-tarea, todos los miembros lo ven
+    if (Array.isArray(p.multiTaskMembers) && p.multiTaskMembers.includes(currentUser.uid)) return true;
+    return false;
+  });
 }
 function renderScheduleListView() {
   const container = document.getElementById('scheduleListView');
@@ -1863,6 +1876,14 @@ async function saveScheduleAsDraft() {
       docPayload.createdBy = currentUser.uid;
       docPayload.createdByName = currentUserData ? currentUserData.name : currentUser.email;
       docPayload.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+      // Si vino de multi-tarea: guardar miembros para que TODOS lo vean
+      if (schedulingContext && schedulingContext.fromMultiTaskId) {
+        const multiTask = tasks.find(t => t.id === schedulingContext.fromMultiTaskId);
+        if (multiTask && Array.isArray(multiTask.assignedToMulti)) {
+          docPayload.multiTaskMembers = multiTask.assignedToMulti;
+          docPayload.fromMultiTaskId = schedulingContext.fromMultiTaskId;
+        }
+      }
       await db.collection('scheduledPosts').add(docPayload);
     }
     return true;
@@ -1948,14 +1969,24 @@ async function confirmSchedulePost() {
       }
       await db.collection('scheduledPosts').doc(editingPostId).update(updateData);
     } else {
-      await db.collection('scheduledPosts').add({
+      const newDoc = {
         ...payload,
         scheduledAt: firebase.firestore.Timestamp.fromDate(scheduledAt),
         status: 'programado',
         createdBy: currentUser.uid,
         createdByName: currentUserData ? currentUserData.name : currentUser.email,
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
-      });
+      };
+      // Si el post viene de una multi-tarea, guardar la lista de miembros para
+      // que TODOS la vean en su pestana Programacion (no solo el creador).
+      if (schedulingContext && schedulingContext.fromMultiTaskId) {
+        const multiTask = tasks.find(t => t.id === schedulingContext.fromMultiTaskId);
+        if (multiTask) {
+          if (Array.isArray(multiTask.assignedToMulti)) newDoc.multiTaskMembers = multiTask.assignedToMulti;
+          newDoc.fromMultiTaskId = schedulingContext.fromMultiTaskId;
+        }
+      }
+      await db.collection('scheduledPosts').add(newDoc);
     }
   } catch (e) {
     alert('No se pudo guardar en Firestore: ' + e.message);
