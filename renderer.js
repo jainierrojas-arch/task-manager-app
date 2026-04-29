@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '2.95.0': {
+    title: 'Mover de papelera a CUALQUIER categoría del Depósito',
+    features: [
+      '📥 <strong>Mover desde papelera a CUALQUIER categoría del Depósito de Ideas</strong>: el dropdown del modal "Mover a..." ahora tiene 2 secciones — <strong>📥 Depósito de Ideas</strong> (con todas tus categorías: Referencias, Reels, Carruseles y las que hayas creado) y <strong>👥 Proyectos del equipo</strong>.',
+      '🔁 <strong>Si la tarea vino del Depósito</strong>, aparece la opción <strong>"↩️ Categoría original (re-asignable)"</strong> arriba — restaura la entry a su categoría original como pendiente. También puedes elegir cualquier OTRA categoría para reorganizar.',
+      '✨ <strong>Si la tarea NO vino del Depósito</strong> y eliges una categoría del Depósito, la app crea automáticamente una nueva entry en el Depósito con todos los datos de la tarea (título, link, video, imagen, notas) en la categoría elegida.',
+      '📚 <strong>Categoría Referencias</strong> también disponible para enviar tareas eliminadas como material de referencia.'
+    ]
+  },
   '2.94.0': {
     title: 'Mover de papelera al Depósito + notificación Telegram al borrar',
     features: [
@@ -3651,27 +3660,56 @@ async function deleteTask(taskId) {
 
 // ===== Mover desde papelera (con dropdown de destino) =====
 // movingTrashTask incluye fromDeposit=true si la tarea vino del deposito.
-// El destino especial '__deposit__' devuelve la tarea al deposito como idea (re-asignable).
+// Los valores del select tienen prefijo:
+//   project:<id>   - mover a un proyecto (mismo flow que antes)
+//   deposit:<catId> - enviar al Deposito de Ideas con esa categoria, status=idea
+//   deposit:__original__ - solo si vino del deposito, regresa a su categoria original
 let movingTrashTask = null; // { id, kind: 'team'|'personal', fromDeposit?: bool }
-function buildMoveTrashOptions(kind, taskHasDeposit) {
+async function buildMoveTrashOptions(kind, taskHasDeposit) {
   const select = document.getElementById('moveTrashSelect');
   if (!select) return;
   select.innerHTML = '';
   if (kind === 'team') {
-    // Opciones: si vino del deposito, primer opcion es "Deposito de Ideas".
-    // Luego todos los proyectos de equipo + opcion "Sin proyecto".
-    const opts = [];
+    // Optgroup 1: Deposito de Ideas (con todas las categorias)
+    const grpDep = document.createElement('optgroup');
+    grpDep.label = '📥 Depósito de Ideas';
     if (taskHasDeposit) {
-      opts.push({ value: '__deposit__', label: '📥 Depósito de Ideas (re-asignable)' });
-    }
-    opts.push({ value: '', label: 'Sin proyecto' });
-    projects.forEach(p => opts.push({ value: p.id, label: p.name }));
-    opts.forEach(o => {
       const opt = document.createElement('option');
-      opt.value = o.value;
+      opt.value = 'deposit:__original__';
+      opt.textContent = '↩️ Categoría original (re-asignable)';
+      grpDep.appendChild(opt);
+    }
+    // Categoria especial Referencias
+    const refOpt = document.createElement('option');
+    refOpt.value = 'deposit:referencias';
+    refOpt.textContent = '📚 Referencias';
+    grpDep.appendChild(refOpt);
+    // Categorias dinamicas desde Firestore (excepto subcategorias y trabajos-finalizados)
+    try {
+      const snap = await db.collection('depositCategories').orderBy('name').get();
+      snap.docs.forEach(d => {
+        const data = d.data();
+        if (data.parentId) return; // saltar subcategorias
+        if (d.id === 'trabajos-finalizados') return; // no enviar a finalizados (ya lo borraste)
+        const opt = document.createElement('option');
+        opt.value = `deposit:${d.id}`;
+        opt.textContent = `📂 ${data.name}`;
+        grpDep.appendChild(opt);
+      });
+    } catch (e) { console.warn('No se cargaron categorias de deposito', e); }
+    select.appendChild(grpDep);
+
+    // Optgroup 2: Proyectos del equipo
+    const grpProj = document.createElement('optgroup');
+    grpProj.label = '👥 Proyectos del equipo';
+    const projOpts = [{ value: '', label: 'Sin proyecto' }, ...projects.map(p => ({ value: p.id, label: p.name }))];
+    projOpts.forEach(o => {
+      const opt = document.createElement('option');
+      opt.value = `project:${o.value}`;
       opt.textContent = o.label;
-      select.appendChild(opt);
+      grpProj.appendChild(opt);
     });
+    select.appendChild(grpProj);
   } else {
     // Personales: General + proyectos personales del usuario
     allPersonalProjects().forEach(name => {
@@ -3711,16 +3749,72 @@ document.getElementById('confirmMoveTrash').addEventListener('click', async () =
   if (!movingTrashTask) return;
   const targetValue = document.getElementById('moveTrashSelect').value;
   try {
-    if (movingTrashTask.kind === 'team' && targetValue === '__deposit__') {
-      // Caso especial: enviar la tarea al Deposito de Ideas (re-asignable).
-      // Equivale a eliminacion permanente de la tarea + restauracion de la
-      // entry del deposito a su categoria original como 'idea' (pendiente).
-      const task = trashTasks.find(t => t.id === movingTrashTask.id);
+    const task = trashTasks.find(t => t.id === movingTrashTask.id);
+    if (movingTrashTask.kind === 'team' && targetValue === 'deposit:__original__') {
+      // Re-asignable a categoria original: borra la tarea + restaura entry existente
       if (!task) throw new Error('Tarea no encontrada');
       await db.collection('tasks').doc(movingTrashTask.id).delete();
       await syncDepositOnTaskChange(task, 'restore');
-    } else if (movingTrashTask.kind === 'team') {
+    } else if (movingTrashTask.kind === 'team' && targetValue.startsWith('deposit:')) {
+      // Mover al Deposito en una categoria especifica (no la original).
+      // Si la tarea tenia depositEntryId existente, ACTUALIZA ese doc.
+      // Si no, CREA un nuevo doc en depositEntries con la data de la tarea.
+      const catId = targetValue.slice('deposit:'.length);
+      const isReferencias = catId === 'referencias';
+      // Resolver nombre de la categoria (referencias es especial)
+      let catName = isReferencias ? 'Referencias' : '';
+      if (!isReferencias) {
+        try {
+          const cs = await db.collection('depositCategories').doc(catId).get();
+          if (cs.exists) catName = cs.data().name || '';
+        } catch (e) { /* ignore */ }
+      }
+      if (task && task.depositEntryId) {
+        // Actualiza el deposito entry existente
+        const update = {
+          status: 'idea',
+          categoryId: catId,
+          categoryName: catName,
+          subcategoryId: firebase.firestore.FieldValue.delete(),
+          subcategoryName: firebase.firestore.FieldValue.delete(),
+          finalizedAt: firebase.firestore.FieldValue.delete(),
+          finalizedTaskId: firebase.firestore.FieldValue.delete()
+        };
+        await db.collection('depositEntries').doc(task.depositEntryId).update(update);
+      } else if (task) {
+        // Crear nuevo entry en deposito desde la data de la tarea
+        await db.collection('depositEntries').add({
+          text: task.text || '',
+          link: task.link || '',
+          videoLink: task.videoLink || '',
+          coverImage: task.coverImage || '',
+          notes: task.notes || '',
+          status: 'idea',
+          categoryId: catId,
+          categoryName: catName,
+          createdBy: currentUser.uid,
+          createdByName: currentUserData.name,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          fromTrashedTaskId: task.id
+        });
+      }
+      // Borrar la tarea (ya esta en el deposito ahora)
+      await db.collection('tasks').doc(movingTrashTask.id).delete();
+    } else if (movingTrashTask.kind === 'team' && targetValue.startsWith('project:')) {
       // Restaurar + cambiar projectId
+      const projectId = targetValue.slice('project:'.length);
+      const project = projects.find(p => p.id === projectId);
+      const update = {
+        deletedAt: firebase.firestore.FieldValue.delete(),
+        deletedBy: firebase.firestore.FieldValue.delete(),
+        deletedByName: firebase.firestore.FieldValue.delete(),
+        projectId: projectId || firebase.firestore.FieldValue.delete(),
+        projectName: project ? project.name : firebase.firestore.FieldValue.delete(),
+        projectColor: project ? project.color : firebase.firestore.FieldValue.delete()
+      };
+      await db.collection('tasks').doc(movingTrashTask.id).update(update);
+    } else if (movingTrashTask.kind === 'team') {
+      // Backwards compat: si no tiene prefijo, asumir project
       const project = projects.find(p => p.id === targetValue);
       const update = {
         deletedAt: firebase.firestore.FieldValue.delete(),
