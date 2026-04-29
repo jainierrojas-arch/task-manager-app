@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '2.96.0': {
+    title: 'Fix data al mover desde papelera + botón Retornar tareas',
+    features: [
+      '🛠️ <strong>Fix: data completa al mover desde papelera al Depósito</strong>: las tareas eliminadas ya no llegan vacías al Depósito. Ahora se mapean correctamente: <code>text → title</code>, <code>notes → description</code>, <code>link/videoLink → links[]</code>, <code>coverImage</code> se mantiene. Si la tarea venía del Depósito y la editaste, esos cambios también se sincronizan.',
+      '↩️ <strong>Botón Retornar en cada tarea asignada</strong>: nuevo botón ↩️ (amarillo) entre Editar y Eliminar. Click → confirma → la tarea se borra y vuelve al Depósito como pendiente para re-asignar.',
+      '🔁 Si la tarea vino del Depósito → vuelve a su categoría original. Si NO vino → crea nueva entry con todos los datos.',
+      '🔔 <strong>Notificación Telegram al asignado</strong> cuando se retorna su tarea: "↩️ X retornó al Depósito una tarea que tenías asignada: [título]". No aplica si tú mismo eres quien retorna.'
+    ]
+  },
   '2.95.0': {
     title: 'Mover de papelera a CUALQUIER categoría del Depósito',
     features: [
@@ -2738,10 +2747,14 @@ function renderTaskList(container, taskList, mode) {
         checkBtn = `<div class="task-check" style="cursor:not-allowed;opacity:0.5" title="Solo el asignado o el creador puede marcar terminada"></div>`;
       }
 
-      // Edit and delete buttons (only creator and admin)
+      // Edit, retornar (al deposito) y delete buttons (solo creator y admin)
       let taskActions = '';
       if (!isPendingApproval && canEdit(task)) {
         taskActions += `<button class="task-delete" onclick="editTask('${task.id}')" title="Editar" style="color:var(--accent)">&#9998;</button>`;
+      }
+      if (!isPendingApproval && canDelete(task) && task.status !== 'completed') {
+        // Retornar al Deposito de Ideas (re-asignable). Notifica al asignado.
+        taskActions += `<button class="task-delete" onclick="returnTaskToDeposit('${task.id}')" title="Retornar al Deposito de Ideas (libera la asignacion)" style="color:#f6c544">&#8617;</button>`;
       }
       if (!isPendingApproval && canDelete(task)) {
         taskActions += `<button class="task-delete" onclick="deleteTask('${task.id}')" title="Eliminar">&#10005;</button>`;
@@ -3630,6 +3643,70 @@ async function syncDepositOnTaskChange(task, action) {
   }
 }
 
+// Retornar una tarea asignada al Deposito de Ideas (re-asignable).
+// Si vino del deposito: restaura la entry a su categoria original como 'idea'.
+// Si no: crea un nuevo entry desde la data de la tarea.
+// En ambos casos elimina la tarea y notifica al asignado por Telegram.
+async function returnTaskToDeposit(taskId) {
+  const task = tasks.find(t => t.id === taskId);
+  if (!task) return;
+  if (!canDelete(task)) return;
+  const assignee = teamMembers.find(m => m.id === task.assignedTo);
+  const assigneeMsg = assignee ? `\n\n${assignee.name} sera notificada por Telegram.` : '';
+  const targetMsg = task.depositEntryId
+    ? 'Volvera a su categoria original en el Deposito como pendiente para que cualquiera del equipo la pueda re-asignar.'
+    : 'Se creara una entry en el Deposito de Ideas con todos los datos de la tarea (titulo, links, imagen, notas) en la categoria que elijas despues.';
+  if (!confirm(`Retornar la tarea "${task.text}" al Deposito de Ideas?\n\n${targetMsg}${assigneeMsg}`)) return;
+
+  try {
+    if (task.depositEntryId) {
+      // Restaura la entry existente y elimina la tarea
+      await db.collection('tasks').doc(taskId).delete();
+      await syncDepositOnTaskChange(task, 'restore');
+    } else {
+      // Crear nuevo entry en el Deposito (categoria por defecto: la primera no-finalizada)
+      // Usamos la primera categoria del deposito que no sea trabajos-finalizados.
+      let catId = '';
+      let catName = '';
+      try {
+        const snap = await db.collection('depositCategories').orderBy('name').get();
+        const firstCat = snap.docs.find(d => d.id !== 'trabajos-finalizados' && !d.data().parentId);
+        if (firstCat) { catId = firstCat.id; catName = firstCat.data().name || ''; }
+      } catch (e) { /* ignore */ }
+      const linksArr = [];
+      if (task.link) linksArr.push({ type: 'material', url: task.link, label: '' });
+      if (task.videoLink) linksArr.push({ type: 'video', url: task.videoLink, label: '' });
+      await db.collection('depositEntries').add({
+        title: task.text || '',
+        description: (typeof task.notes === 'string') ? task.notes : '',
+        links: linksArr,
+        coverImage: task.coverImage || '',
+        status: 'idea',
+        categoryId: catId,
+        categoryName: catName,
+        createdBy: currentUser.uid,
+        createdByName: currentUserData.name,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        fromReturnedTaskId: task.id
+      });
+      await db.collection('tasks').doc(taskId).delete();
+    }
+  } catch (e) {
+    alert('Error retornando la tarea: ' + e.message);
+    return;
+  }
+
+  // Notificar al asignado (si no es el mismo que retorna)
+  try {
+    if (task.assignedTo && task.assignedTo !== currentUser.uid && assignee) {
+      const projName = task.projectName || 'sin proyecto';
+      const msg = `↩️ *${currentUserData.name}* retornó al Depósito una tarea que tenías asignada:\n*${task.text}*\nProyecto: *${projName}*\n\nLa tarea fue removida y la idea quedó disponible para re-asignar.`;
+      notifyAssignedOrWarn(assignee, msg);
+    }
+  } catch (e) { console.warn('[notif return]', e.message); }
+}
+window.returnTaskToDeposit = returnTaskToDeposit;
+
 async function deleteTask(taskId) {
   const task = tasks.find(t => t.id === taskId);
   if (!task) return;
@@ -3757,11 +3834,12 @@ document.getElementById('confirmMoveTrash').addEventListener('click', async () =
       await syncDepositOnTaskChange(task, 'restore');
     } else if (movingTrashTask.kind === 'team' && targetValue.startsWith('deposit:')) {
       // Mover al Deposito en una categoria especifica (no la original).
-      // Si la tarea tenia depositEntryId existente, ACTUALIZA ese doc.
-      // Si no, CREA un nuevo doc en depositEntries con la data de la tarea.
+      // Si la tarea tenia depositEntryId existente, ACTUALIZA ese doc + sincroniza
+      // los campos editados de la tarea (link/videoLink/coverImage/notes/text).
+      // Si no, CREA un nuevo doc en depositEntries con la data de la tarea
+      // mapeada al schema del deposito (title/description/links/coverImage).
       const catId = targetValue.slice('deposit:'.length);
       const isReferencias = catId === 'referencias';
-      // Resolver nombre de la categoria (referencias es especial)
       let catName = isReferencias ? 'Referencias' : '';
       if (!isReferencias) {
         try {
@@ -3769,8 +3847,12 @@ document.getElementById('confirmMoveTrash').addEventListener('click', async () =
           if (cs.exists) catName = cs.data().name || '';
         } catch (e) { /* ignore */ }
       }
+      // Construir array de links desde los campos sueltos de la tarea
+      const linksArr = [];
+      if (task && task.link) linksArr.push({ type: 'material', url: task.link, label: '' });
+      if (task && task.videoLink) linksArr.push({ type: 'video', url: task.videoLink, label: '' });
       if (task && task.depositEntryId) {
-        // Actualiza el deposito entry existente
+        // Actualiza el doc existente Y sincroniza campos editables al deposito
         const update = {
           status: 'idea',
           categoryId: catId,
@@ -3780,15 +3862,19 @@ document.getElementById('confirmMoveTrash').addEventListener('click', async () =
           finalizedAt: firebase.firestore.FieldValue.delete(),
           finalizedTaskId: firebase.firestore.FieldValue.delete()
         };
+        // Sincronizar texto, links, cover y notas desde la tarea editada
+        if (task.text) update.title = task.text;
+        if (linksArr.length > 0) update.links = linksArr;
+        if (task.coverImage) update.coverImage = task.coverImage;
+        if (task.notes && typeof task.notes === 'string') update.description = task.notes;
         await db.collection('depositEntries').doc(task.depositEntryId).update(update);
       } else if (task) {
-        // Crear nuevo entry en deposito desde la data de la tarea
-        await db.collection('depositEntries').add({
-          text: task.text || '',
-          link: task.link || '',
-          videoLink: task.videoLink || '',
+        // Crear nuevo entry en deposito mapeando al schema del deposito
+        const entryData = {
+          title: task.text || '',
+          description: (typeof task.notes === 'string') ? task.notes : '',
+          links: linksArr,
           coverImage: task.coverImage || '',
-          notes: task.notes || '',
           status: 'idea',
           categoryId: catId,
           categoryName: catName,
@@ -3796,7 +3882,8 @@ document.getElementById('confirmMoveTrash').addEventListener('click', async () =
           createdByName: currentUserData.name,
           createdAt: firebase.firestore.FieldValue.serverTimestamp(),
           fromTrashedTaskId: task.id
-        });
+        };
+        await db.collection('depositEntries').add(entryData);
       }
       // Borrar la tarea (ya esta en el deposito ahora)
       await db.collection('tasks').doc(movingTrashTask.id).delete();
