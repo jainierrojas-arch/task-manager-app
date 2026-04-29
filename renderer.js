@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '2.99.4': {
+    title: 'Fix: tarea fantasma (notes.forEach is not a function)',
+    features: [
+      '🐛 <strong>Fix definitivo del bug v2.99.3</strong>: las tareas que se editaron desde v2.93 con texto en el campo "Notas" sobre-escribían un campo array (subnotas con autor) con un string. Al renderizar, <code>string.forEach</code> tiraba error y la tarea desaparecía.',
+      '✏️ <strong>Edit modal ahora usa <code>description</code></strong>: el campo "Notas (opcional)" del modal Editar guarda ahora en <code>task.description</code>, dejando intacto el array <code>task.notes</code> para subnotas con autor.',
+      '🛡️ <strong>Render compatible con datos legacy</strong>: si una tarea ya tiene <code>notes</code> como string (datos viejos antes de este fix), ahora se renderiza correctamente como nota del creador en lugar de tirar error.',
+      '🔍 La try/catch defensiva de v2.99.3 sigue activa por si aparece otro bug raro — ya sirvió para encontrar este.'
+    ]
+  },
   '2.99.3': {
     title: 'Fix defensivo: lista de tareas no se vacía si una tarea falla',
     features: [
@@ -2872,15 +2881,22 @@ function renderTaskList(container, taskList, mode) {
         taskActions += `<button class="task-delete" onclick="deleteTask('${task.id}')" title="Eliminar">&#10005;</button>`;
       }
 
-      // Subnotes
-      const notes = task.notes || [];
+      // Subnotes — pueden ser array (subnotas con autor) o string (descripcion del editar modal).
+      // Si es string, lo mostramos como una nota del creador.
       let notesHtml = '';
-      if (notes.length > 0) {
+      const rawNotes = task.notes;
+      if (Array.isArray(rawNotes) && rawNotes.length > 0) {
         notesHtml = '<div class="task-notes">';
-        notes.forEach(n => {
+        rawNotes.forEach(n => {
           notesHtml += `<div class="task-note"><span class="note-author">${esc(n.authorName)}:</span> ${esc(n.text)}</div>`;
         });
         notesHtml += '</div>';
+      } else if (typeof rawNotes === 'string' && rawNotes.trim()) {
+        notesHtml = `<div class="task-notes"><div class="task-note"><span class="note-author">${esc(task.createdByName || 'Nota')}:</span> ${esc(rawNotes)}</div></div>`;
+      }
+      // Tambien soportar campo `description` (separado del array notes)
+      if (typeof task.description === 'string' && task.description.trim()) {
+        notesHtml += `<div class="task-notes"><div class="task-note"><span class="note-author">${esc(task.createdByName || 'Descripcion')}:</span> ${esc(task.description)}</div></div>`;
       }
 
       // Add note button (assignee, creator, or admin)
@@ -3611,13 +3627,15 @@ document.getElementById('confirmEdit').addEventListener('click', async () => {
   const link = (editTaskLink.value || '').trim();
   const videoLink = (editTaskVideoLink.value || '').trim();
   const coverImage = (editTaskCoverImage.value || '').trim();
-  const notes = (editTaskNotes.value || '').trim();
+  const description = (editTaskNotes.value || '').trim();
+  // IMPORTANTE: NO tocar el campo `notes` (es el array de subnotas con autor).
+  // Usar `description` (string) en su lugar para no romper el render.
   const update = {
     text: newText,
     link: link || firebase.firestore.FieldValue.delete(),
     videoLink: videoLink || firebase.firestore.FieldValue.delete(),
     coverImage: coverImage || firebase.firestore.FieldValue.delete(),
-    notes: notes || firebase.firestore.FieldValue.delete(),
+    description: description || firebase.firestore.FieldValue.delete(),
     editedAt: firebase.firestore.FieldValue.serverTimestamp()
   };
   try {
@@ -3648,7 +3666,14 @@ function fillEditModalFromTask(task) {
   editTaskLink.value = task.link || '';
   editTaskVideoLink.value = task.videoLink || '';
   editTaskCoverImage.value = task.coverImage || '';
-  editTaskNotes.value = task.notes || '';
+  // notes puede ser array (subnotas) o string (legacy v2.93). Preferimos description.
+  if (typeof task.description === 'string') {
+    editTaskNotes.value = task.description;
+  } else if (typeof task.notes === 'string') {
+    editTaskNotes.value = task.notes;
+  } else {
+    editTaskNotes.value = '';
+  }
   updateEditCoverPreview();
 }
 
