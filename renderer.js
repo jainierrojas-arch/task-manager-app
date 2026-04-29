@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '2.99.5': {
+    title: 'Multi-tarea: botón "Ver entregado" por miembro con color',
+    features: [
+      '📎 <strong>Un botón por cada miembro que subió entregable</strong>: cuando es multi-tarea, en vez de un solo botón "Ver entregado" ahora aparece un botón por cada miembro. Cada uno con el color de ese miembro (mismo color del chip arriba) para distinguir rápidamente quién subió qué.',
+      '🎯 El botón muestra el nombre del miembro + su rol (ej: "📎 Pedro (guion)" / "📎 María (edicion)"). Click → abre el URL específico de esa persona.',
+      '✅ Para tareas individuales sigue igual — un solo botón "📎 Ver entregado" verde.'
+    ]
+  },
   '2.99.4': {
     title: 'Fix: tarea fantasma (notes.forEach is not a function)',
     features: [
@@ -2940,9 +2948,26 @@ function renderTaskList(container, taskList, mode) {
         }
       }
 
-      // Chip del trabajo entregado por el asignado
+      // Chip del trabajo entregado.
+      // Para multi-tareas: un boton por cada miembro que subio entregable,
+      // coloreado con su color de usuario para distinguirlos.
+      // Para tareas individuales: un solo boton si hay submittedLink.
       let submittedBadge = '';
-      if (task.submittedLink) {
+      if (task.assignmentType === 'multi' && task.multiSubmissions && typeof task.multiSubmissions === 'object') {
+        const members = Object.keys(task.multiSubmissions);
+        if (members.length > 0) {
+          submittedBadge = members.map(memberId => {
+            const url = task.multiSubmissions[memberId];
+            if (!url) return '';
+            const member = teamMembers.find(m => m.id === memberId);
+            const memberName = member ? member.name : 'Miembro';
+            const c = getUserColor(memberId);
+            const role = (task.multiRoles && task.multiRoles[memberId]) || '';
+            const roleTxt = role ? ` (${role})` : '';
+            return `<span class="task-tag" style="background:${hexToRgba(c, 0.22)};color:${c};border:1px solid ${hexToRgba(c, 0.5)};cursor:pointer;font-weight:600" onclick="window.api.openExternal('${esc(url)}')" title="${esc(memberName)}${esc(roleTxt)} — ${esc(url)}">📎 ${esc(memberName)}${esc(roleTxt)}</span>`;
+          }).filter(s => s).join(' ');
+        }
+      } else if (task.submittedLink) {
         submittedBadge = `<span class="task-tag" style="background:rgba(78,205,196,0.2);color:#4ecdc4;cursor:pointer;font-weight:600" onclick="window.api.openExternal('${esc(task.submittedLink)}')" title="${esc(task.submittedLink)}">📎 Ver entregado</span>`;
       }
 
