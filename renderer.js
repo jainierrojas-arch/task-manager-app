@@ -75,6 +75,13 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '2.99.3': {
+    title: 'Fix defensivo: lista de tareas no se vacía si una tarea falla',
+    features: [
+      '🛡️ <strong>Render aislado por tarea</strong>: si una tarea (típicamente una multi-tarea con campo faltante) lanza error al renderizar, ya no rompe la lista entera. La tarea problemática aparece como una card roja con mensaje de error y las otras se renderizan normales.',
+      '🔍 <strong>Logging</strong>: errores de render se imprimen en la consola con el ID de la tarea — abre DevTools (Cmd+Opt+I) → Console para ver detalles si una tarea sale roja.'
+    ]
+  },
   '2.99.2': {
     title: 'Multi-tarea: tipo de contenido (Post/Reel/Story/Carrusel) al subir',
     features: [
@@ -2810,6 +2817,7 @@ function renderTaskList(container, taskList, mode) {
       </div>`;
 
     group.tasks.forEach(task => {
+      try { // wrap entire task render so una tarea rota no oculta las demas
       const assignee = task.assignedToName || 'Sin asignar';
       const source = task.source === 'telegram' ? 'Telegram' : 'App';
       const time = timeAgo(task.createdAt);
@@ -2987,6 +2995,10 @@ function renderTaskList(container, taskList, mode) {
           ${coverPreview}
           ${taskActions}
         </div>`;
+      } catch (e) {
+        console.error('[renderTaskList] error rendering task', task && task.id, e);
+        html += `<div class="task-item" style="border-left-color:#ff4757;padding:8px"><div style="color:#ff4757;font-size:11px">⚠ Error al renderizar tarea ${esc(task && task.id || 'unknown')} — ${esc(task && task.text || '')}: ${esc(e.message)}</div></div>`;
+      }
     });
 
     html += '</div>';
