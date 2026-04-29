@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '2.99.8': {
+    title: 'Programación visible y editable para TODO el equipo',
+    features: [
+      '👀 <strong>Todos los miembros ven todas las programaciones y borradores</strong>: antes, si tú (admin) programabas un post o dejabas un borrador manualmente, los demás miembros NO lo veían en su pestaña Programación. Solo se compartían los que venían de multi-tareas. Ahora cualquier programación / borrador / publicado / fallo aparece para todo el equipo.',
+      '✏️ <strong>Cualquier miembro puede finalizar un borrador</strong>: si dejaste 2 borradores a medias, cualquier miembro del equipo puede abrirlos con ✎, completar lo que falte (caption, URLs, fecha) y darle "Programar ahora". Pueden también eliminarlos con ✕ si ya no aplican.',
+      '🛡️ <strong>Programados siguen protegidos</strong>: para evitar accidentes, los posts ya programados (no borradores) solo los puede editar / cancelar el admin, el creador, o miembros de la multi-tarea original. Borradores son colaborativos; programados quedan en quien los lanzó.',
+      '🤝 Útil cuando preparas varios posts y quieres que el equipo te ayude a terminarlos sin tener que reasignar cada uno como multi-tarea.'
+    ]
+  },
   '2.99.7': {
     title: 'Librería de copys con carpetas (templates de captions)',
     features: [
@@ -1495,14 +1504,11 @@ function fmtScheduledDate(ts) {
 }
 function visibleScheduledPosts() {
   if (!currentUser) return [];
-  const isAdmin = currentUserData && currentUserData.role === 'admin';
-  return scheduledPosts.filter(p => {
-    if (isAdmin) return true;
-    if (p.createdBy === currentUser.uid) return true;
-    // Si el post vino de una multi-tarea, todos los miembros lo ven
-    if (Array.isArray(p.multiTaskMembers) && p.multiTaskMembers.includes(currentUser.uid)) return true;
-    return false;
-  });
+  // Todo el equipo ve todos los posts (programados, borradores, publicados, fallos).
+  // La idea: si el admin deja borradores, cualquier miembro puede retomarlos y
+  // terminarlos. Programaciones del equipo son visibles para todos para que el
+  // calendario sea coherente.
+  return scheduledPosts.slice();
 }
 function renderScheduleListView() {
   const container = document.getElementById('scheduleListView');
@@ -1523,7 +1529,10 @@ function renderScheduleListView() {
     // Si es post de multi-tarea, todos los miembros que participaron pueden
     // editarlo/eliminarlo. Tambien admins siempre pueden.
     const isMultiMember = Array.isArray(p.multiTaskMembers) && p.multiTaskMembers.includes(currentUser.uid);
-    const canEditPost = isAdminUser || isMine || isMultiMember;
+    // Para BORRADORES: cualquier miembro del equipo puede editarlos / eliminarlos
+    // para colaborar en finalizarlos. Para programados/publicados/fallos
+    // mantenemos la regla restrictiva (admin / creador / multi-miembro).
+    const canEditPost = (norm === 'draft') ? true : (isAdminUser || isMine || isMultiMember);
     // Editar y cancelar: disponibles para borradores y posts programados
     const editableNorm = (norm === 'programado' || norm === 'draft');
     const editBtn = (canEditPost && editableNorm) ? `<button class="btn btn-ghost btn-small" data-edit-sched="${esc(p.id)}" title="${norm === 'draft' ? 'Editar borrador' : 'Editar'}">&#9998;</button>` : '';
