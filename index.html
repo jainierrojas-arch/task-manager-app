@@ -1751,6 +1751,16 @@
       <div class="modal-title">&#9989; Marcar mi parte como hecha</div>
       <div id="multiSubmitTaskInfo" style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;padding:8px;background:var(--bg-card);border-radius:6px"></div>
       <div class="modal-row">
+        <label>Tipo de contenido final (lo que se programara en Instagram)</label>
+        <div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap">
+          <label style="flex:1;min-width:80px"><input type="radio" name="multiSubmitPostType" value="post" checked> Post</label>
+          <label style="flex:1;min-width:80px"><input type="radio" name="multiSubmitPostType" value="reel"> Reel</label>
+          <label style="flex:1;min-width:80px"><input type="radio" name="multiSubmitPostType" value="story"> Story</label>
+          <label style="flex:1;min-width:80px"><input type="radio" name="multiSubmitPostType" value="carousel"> Carrusel</label>
+        </div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:4px">El último miembro que marque puede cambiarlo. Se usa para pre-llenar el modal Programar al final.</div>
+      </div>
+      <div class="modal-row">
         <label>Tu entregable (opcional, se acumula con lo de otros miembros)</label>
         <div style="display:flex;gap:6px;align-items:center;margin-top:4px">
           <input type="url" id="multiSubmitUrl" placeholder="https://... .jpg / .mp4 / link a doc" style="flex:1;min-width:0">

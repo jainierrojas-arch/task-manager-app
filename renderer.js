@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '2.99.2': {
+    title: 'Multi-tarea: tipo de contenido (Post/Reel/Story/Carrusel) al subir',
+    features: [
+      '🎯 <strong>Selector de tipo en el modal "Marcar mi parte"</strong>: ahora cuando un miembro sube su entregable, también puede indicar qué tipo de contenido es (Post / Reel / Story / Carrusel). El último miembro que marque puede cambiarlo. Se guarda en <code>task.postType</code>.',
+      '🔁 <strong>Sincronizado con Programar ahora</strong>: cuando le das al botón "📅 Programar ahora" en una multi-tarea lista, el modal Programar ya tiene seleccionado el tipo correcto, no tienes que cambiarlo manualmente. Si no lo eligen, queda en Post por defecto.',
+      'ℹ️ Nota: si subes 2+ URLs y dejaste tipo "Post", al programar la heuristica anterior preferia Carrusel. Ahora el valor explícito que elegiste prevalece — confía en lo que el equipo marcó.'
+    ]
+  },
   '2.99.1': {
     title: 'Multi-tarea: programación visible para TODOS los miembros',
     features: [
@@ -1695,6 +1703,11 @@ async function openScheduleModalWithContext() {
     renderMediaInto(previewImg, '');
   }
 
+  // Si el contexto trae suggestedPostType (viene de multi-tarea), usarlo
+  // por encima de la heuristica basada en cantidad de URLs.
+  if (schedulingContext.suggestedPostType) {
+    suggestedType = schedulingContext.suggestedPostType;
+  }
   // Aplicar tipo sugerido
   document.querySelectorAll('input[name="schedPostType"]').forEach(r => { r.checked = r.value === suggestedType; });
   applyPostTypeToModal(suggestedType);
@@ -3858,6 +3871,11 @@ function openMultiSubmitModal(task) {
   document.getElementById('multiSubmitUrl').value = '';
   document.getElementById('multiSubmitNote').value = '';
   document.getElementById('multiSubmitUploadStatus').style.display = 'none';
+  // Pre-seleccionar el postType ya guardado en la tarea (default: post)
+  const currentPostType = task.postType || 'post';
+  document.querySelectorAll('input[name="multiSubmitPostType"]').forEach(r => {
+    r.checked = r.value === currentPostType;
+  });
   // Mostrar URLs ya subidas por otros miembros (si hay)
   const existing = Array.isArray(task.mediaUrls) ? task.mediaUrls : [];
   const existingEl = document.getElementById('multiSubmitExisting');
@@ -3917,6 +3935,7 @@ document.getElementById('confirmMultiSubmit').addEventListener('click', async ()
   if (!task) { multiSubmitTaskId = null; return; }
   const url = document.getElementById('multiSubmitUrl').value.trim();
   const note = document.getElementById('multiSubmitNote').value.trim();
+  const chosenPostType = document.querySelector('input[name="multiSubmitPostType"]:checked')?.value || 'post';
   // Acumular URL en task.mediaUrls (si se proporciono)
   const existing = Array.isArray(task.mediaUrls) ? task.mediaUrls : [];
   const newMediaUrls = [...existing];
@@ -3928,7 +3947,8 @@ document.getElementById('confirmMultiSubmit').addEventListener('click', async ()
   // Acumular nota por miembro en task.multiNotes (objeto)
   const update = {
     [`multiCompletions.${currentUser.uid}`]: true,
-    [`multiCompletedAt.${currentUser.uid}`]: firebase.firestore.FieldValue.serverTimestamp()
+    [`multiCompletedAt.${currentUser.uid}`]: firebase.firestore.FieldValue.serverTimestamp(),
+    postType: chosenPostType // ultimo en marcar puede cambiarlo
   };
   if (url) {
     update.mediaUrls = newMediaUrls;
@@ -4003,7 +4023,8 @@ function buildSchedulingContextFromTask(task) {
     title: task.text || '',
     description,
     coverImage: task.coverImage || '',
-    mediaUrls: urls
+    mediaUrls: urls,
+    suggestedPostType: task.postType || null // viene de los miembros marcando
   };
 }
 
