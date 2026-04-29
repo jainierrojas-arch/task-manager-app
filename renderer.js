@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '2.97.0': {
+    title: 'Multi-tarea: asignar a varios miembros simultáneamente',
+    features: [
+      '👥 <strong>Modo Multi-tarea en el Depósito</strong>: al asignar una idea como tarea, ahora hay 3 modos: <strong>Individual</strong>, <strong>Multi-tarea</strong> (nuevo), y <strong>Cadena multi-paso</strong>. En modo multi seleccionas 2+ miembros con checkbox y opcionalmente describes el rol de cada uno (ej: guion, edicion, animacion).',
+      '🔔 <strong>Notificación Telegram a TODOS los miembros</strong>: cuando se asigna una multi-tarea, cada miembro recibe el mensaje con la info de la tarea, sus colaboradores y su rol específico.',
+      '✅ <strong>Cada miembro marca SU parte como hecha</strong>: en la card de la tarea aparecen todos los asignados con su estado (⏳ pendiente / ✓ completado). Cada miembro hace click en el botón de completar y marca solamente SU contribución. Recibes notif Telegram cuando otro miembro completa su parte.',
+      '🎯 <strong>Tarea queda completa solo cuando TODOS terminan</strong>: hasta que el último miembro marque su parte, la tarea sigue activa. Una vez todos completaron, sale el flujo normal de submit del link entregado y queda lista para aprobación.',
+      '🛡️ Multi-tareas no pueden ser completadas por un solo miembro saltándose a los otros — el admin puede forzar si es necesario.'
+    ]
+  },
   '2.96.0': {
     title: 'Fix data al mover desde papelera + botón Retornar tareas',
     features: [
@@ -2660,6 +2670,22 @@ function assigneeChips(task) {
   const creatorName = task.createdByName;
   const assigneeId = task.assignedTo;
   const assigneeName = task.assignedToName || 'Sin asignar';
+  // Multi-tarea: mostrar todos los asignados con su estado de completion
+  if (task.assignmentType === 'multi' && Array.isArray(task.assignedToMulti)) {
+    const completions = task.multiCompletions || {};
+    const roles = task.multiRoles || {};
+    const chips = task.assignedToMulti.map((id, i) => {
+      const name = (task.assignedToMultiNames && task.assignedToMultiNames[i]) || 'Miembro';
+      const done = !!completions[id];
+      const c = getUserColor(id);
+      const roleTxt = roles[id] ? ` <span style="opacity:0.7">(${esc(roles[id])})</span>` : '';
+      const checkIcon = done ? '✓ ' : '⏳ ';
+      const opacity = done ? 1 : 0.6;
+      return `<span class="task-assignee" style="background:${hexToRgba(c, 0.32)};color:${c};border:1px solid ${hexToRgba(c, 0.5)};opacity:${opacity}">${checkIcon}${esc(name)}${roleTxt}</span>`;
+    }).join(' ');
+    const creatorChip = creatorName ? `${userChip(creatorId, creatorName)}<span style="opacity:0.55;margin:0 2px;font-size:11px">→</span>` : '';
+    return `${creatorChip}<span style="display:inline-flex;flex-wrap:wrap;gap:4px">${chips}</span>`;
+  }
   if (!creatorName || creatorId === assigneeId) {
     return userChip(assigneeId, assigneeName);
   }
@@ -3082,6 +3108,53 @@ async function completeTask(taskId) {
   if (!task) return;
   if (!canComplete(task)) {
     alert('Solo el asignado, el creador de la tarea o el admin pueden marcarla como terminada.');
+    return;
+  }
+  // Multi-tarea: cada miembro marca SU parte. Cuando todos completan, sigue
+  // el flujo normal (modal de submit link).
+  if (task.assignmentType === 'multi') {
+    const completions = task.multiCompletions || {};
+    const isAssignee = Array.isArray(task.assignedToMulti) && task.assignedToMulti.includes(currentUser.uid);
+    if (!isAssignee && currentUserData.role !== 'admin') {
+      alert('Solo los miembros asignados a esta multi-tarea pueden marcar partes como hechas.');
+      return;
+    }
+    if (isAssignee && !completions[currentUser.uid]) {
+      // Marcar mi parte como hecha
+      const myRole = (task.multiRoles && task.multiRoles[currentUser.uid]) || '';
+      const roleLine = myRole ? ` (${myRole})` : '';
+      if (!confirm(`Marcar TU parte${roleLine} como terminada?\n\nEsto NO completa la tarea — solo marca tu contribucion. La tarea queda completa cuando todos los miembros marcan su parte.`)) return;
+      const update = {
+        [`multiCompletions.${currentUser.uid}`]: true,
+        [`multiCompletedAt.${currentUser.uid}`]: firebase.firestore.FieldValue.serverTimestamp()
+      };
+      await db.collection('tasks').doc(taskId).update(update);
+      // Notificar al creador y otros miembros
+      const otherIds = (task.assignedToMulti || []).filter(id => id !== currentUser.uid);
+      otherIds.forEach(id => {
+        const m = teamMembers.find(x => x.id === id);
+        if (m && m.telegramChatId) {
+          sendTelegramNotif(m.telegramChatId, `*${currentUserData.name}* completo su parte de la multi-tarea:\n*${task.text}*\nProyecto: *${task.projectName}*`);
+        }
+      });
+      return;
+    }
+    // Si todos los demas ya marcaron y ahora me marco yo, o si admin esta forzando completar:
+    const allDone = Array.isArray(task.assignedToMulti)
+      && task.assignedToMulti.every(id => id === currentUser.uid || completions[id]);
+    if (!allDone && currentUserData.role !== 'admin') {
+      alert('La tarea queda completa cuando TODOS marquen su parte. Pendientes: ' +
+        (task.assignedToMulti || []).filter(id => id !== currentUser.uid && !completions[id]).map(id => {
+          const m = teamMembers.find(x => x.id === id); return m ? m.name : id;
+        }).join(', '));
+      return;
+    }
+    // Todos done → flujo normal de submit link
+    submittingTaskId = taskId;
+    document.getElementById('submitTaskTitle').textContent = task.text + ' (multi-tarea — todos completaron)';
+    document.getElementById('submitTaskLinkInput').value = '';
+    document.getElementById('submitTaskModal').classList.add('active');
+    setTimeout(() => document.getElementById('submitTaskLinkInput').focus(), 100);
     return;
   }
   // Publicador: no requiere aprobacion ni material entregado.
@@ -3577,6 +3650,8 @@ function canComplete(task) {
   if (currentUserData.role === 'admin') return true;
   if (task.createdBy === currentUser.uid) return true;
   if (task.assignedTo === currentUser.uid) return true;
+  // Multi-tarea: cualquier miembro asignado puede marcar SU parte
+  if (Array.isArray(task.assignedToMulti) && task.assignedToMulti.includes(currentUser.uid)) return true;
   return false;
 }
 

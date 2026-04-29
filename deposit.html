@@ -907,9 +907,10 @@
       </div>
       <div class="modal-row">
         <label>Tipo</label>
-        <div style="display:flex;gap:6px">
-          <button class="btn btn-ghost btn-small assign-mode-btn active" data-mode="single" style="flex:1">Asignacion individual</button>
-          <button class="btn btn-ghost btn-small assign-mode-btn" data-mode="chain" style="flex:1">Cadena multi-paso</button>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-small assign-mode-btn active" data-mode="single" style="flex:1;min-width:130px">Individual</button>
+          <button class="btn btn-ghost btn-small assign-mode-btn" data-mode="multi" style="flex:1;min-width:130px">Multi-tarea</button>
+          <button class="btn btn-ghost btn-small assign-mode-btn" data-mode="chain" style="flex:1;min-width:130px">Cadena multi-paso</button>
         </div>
       </div>
       <div class="modal-row" id="assignSingleWrap">
@@ -924,6 +925,20 @@
             <option value="minutes">Minutos</option>
           </select>
         </div>
+      </div>
+      <div class="modal-row" id="assignMultiWrap" style="display:none">
+        <label>Asignar a varios miembros (cada uno hace su parte; la tarea queda completada cuando TODOS terminan)</label>
+        <div id="multiMembersList" style="display:flex;flex-direction:column;gap:6px;margin-top:6px;max-height:240px;overflow-y:auto"></div>
+        <label style="margin-top:8px">Plazo (opcional)</label>
+        <div style="display:flex;gap:6px">
+          <input type="number" id="assignMultiAmount" placeholder="Cantidad" min="1" style="flex:1">
+          <select id="assignMultiUnit" style="flex:1">
+            <option value="days">Dias</option>
+            <option value="hours">Horas</option>
+            <option value="minutes">Minutos</option>
+          </select>
+        </div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:6px">Marca a 2 o más miembros y opcionalmente describe el rol de cada uno (ej. "guion", "edicion"). Todos reciben notificación por Telegram. Solo cuando los TODOS marcan terminada su parte, la tarea queda completa.</div>
       </div>
       <div class="modal-row" id="assignChainWrap" style="display:none">
         <label>Pasos en secuencia</label>

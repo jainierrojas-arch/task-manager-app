@@ -1485,6 +1485,9 @@ document.querySelectorAll('.assign-mode-btn').forEach(btn => {
     });
     document.getElementById('assignSingleWrap').style.display = assignMode === 'single' ? 'block' : 'none';
     document.getElementById('assignChainWrap').style.display = assignMode === 'chain' ? 'block' : 'none';
+    const multiWrap = document.getElementById('assignMultiWrap');
+    if (multiWrap) multiWrap.style.display = assignMode === 'multi' ? 'block' : 'none';
+    if (assignMode === 'multi') renderMultiMembersList();
     // Si entro a modo cadena en "Tomar Tarea", pre-cargar el primer paso con el usuario actual
     if (assignMode === 'chain') {
       const chainWrap = document.getElementById('chainSteps');
@@ -1499,6 +1502,20 @@ document.querySelectorAll('.assign-mode-btn').forEach(btn => {
     }
   });
 });
+
+// Render lista de miembros con checkbox + input rol para modo multi-tarea
+function renderMultiMembersList() {
+  const wrap = document.getElementById('multiMembersList');
+  if (!wrap) return;
+  if (wrap.children.length > 0) return; // ya renderizado
+  wrap.innerHTML = teamMembers.map(m => `
+    <label style="display:flex;align-items:center;gap:8px;padding:6px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;cursor:pointer">
+      <input type="checkbox" class="multi-member-check" value="${esc(m.id)}" data-name="${esc(m.name)}" style="margin:0">
+      <span style="flex:1;font-size:13px">${esc(m.name)}</span>
+      <input type="text" class="multi-member-role" placeholder="Rol (ej: guion, edicion)" style="flex:1;min-width:140px;font-size:12px;padding:4px 8px">
+    </label>
+  `).join('');
+}
 
 document.getElementById('addChainStep').addEventListener('click', () => addChainStep());
 
@@ -1620,6 +1637,83 @@ document.getElementById('confirmAssign').addEventListener('click', async () => {
     const ref = await db.collection('tasks').add(taskData);
     createdTaskIds.push(ref.id);
     toast(`Tarea asignada a ${member.name}`);
+  } else if (assignMode === 'multi') {
+    // Multi-tarea: una sola tarea con varios asignados. Cada uno marca su parte.
+    const checks = Array.from(document.querySelectorAll('.multi-member-check:checked'));
+    if (checks.length < 2) { toast('Selecciona al menos 2 miembros para multi-tarea', 'error'); return; }
+    const memberIds = checks.map(c => c.value);
+    const memberNames = checks.map(c => c.dataset.name);
+    const roles = {};
+    const completions = {};
+    checks.forEach(c => {
+      const role = c.parentElement.querySelector('.multi-member-role').value.trim();
+      if (role) roles[c.value] = role;
+      completions[c.value] = false;
+    });
+    const amount = parseInt(document.getElementById('assignMultiAmount').value);
+    const unit = document.getElementById('assignMultiUnit').value || 'days';
+    // El primer asignado va en assignedTo (compat con UI existente).
+    const firstId = memberIds[0];
+    const firstName = memberNames[0];
+    const taskData = {
+      text: baseText,
+      projectId,
+      projectName: project.name,
+      projectColor: project.color || '#666',
+      assignedTo: firstId,
+      assignedToName: firstName,
+      assignmentType: 'multi',
+      assignedToMulti: memberIds,
+      assignedToMultiNames: memberNames,
+      multiCompletions: completions,
+      multiRoles: roles,
+      createdBy: currentUser.uid,
+      createdByName: currentUserData.name,
+      status: 'pending',
+      source: 'deposito',
+      notes: [],
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
+    if (videoLink) taskData.videoLink = videoLink;
+    if (materialLink) taskData.link = materialLink;
+    taskData.depositEntryId = assigningEntry.id;
+    if (assigningEntry.coverImage) {
+      taskData.coverImage = assigningEntry.coverImage;
+      if (assigningEntry.coverWidth) taskData.coverWidth = assigningEntry.coverWidth;
+      if (assigningEntry.coverHeight) taskData.coverHeight = assigningEntry.coverHeight;
+    }
+    if (assigningEntry.mediaUrls) taskData.mediaUrls = assigningEntry.mediaUrls;
+    if (amount && amount > 0) {
+      const deadline = new Date();
+      if (unit === 'minutes') deadline.setMinutes(deadline.getMinutes() + amount);
+      else if (unit === 'hours') deadline.setHours(deadline.getHours() + amount);
+      else deadline.setDate(deadline.getDate() + amount);
+      taskData.deadline = firebase.firestore.Timestamp.fromDate(deadline);
+      taskData.deadlineUnit = unit;
+      taskData.deadlineAmount = amount;
+    }
+    const ref = await db.collection('tasks').add(taskData);
+    createdTaskIds.push(ref.id);
+    // Notificar a TODOS via Telegram (encolar via Firestore notif queue)
+    for (const memberId of memberIds) {
+      const m = teamMembers.find(x => x.id === memberId);
+      if (m && m.telegramChatId && m.id !== currentUser.uid) {
+        const role = roles[memberId];
+        const otherNames = memberNames.filter(n => n !== m.name).join(', ');
+        const roleLine = role ? `\nTu rol: *${role}*` : '';
+        const msg = `*${currentUserData.name}* te asigno una multi-tarea junto a ${otherNames}:\n*${baseText}*\nProyecto: *${project.name}*${roleLine}\n\nLa tarea queda completada cuando TODOS marquen su parte como hecha.`;
+        try {
+          await db.collection('notifications').add({
+            chatId: String(m.telegramChatId),
+            message: msg,
+            status: 'pending',
+            createdBy: currentUser.uid,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+          });
+        } catch (e) { /* fallback silenciosamente */ }
+      }
+    }
+    toast(`Multi-tarea asignada a ${memberIds.length} miembros`);
   } else {
     // Cadena multi-paso
     const steps = [];
