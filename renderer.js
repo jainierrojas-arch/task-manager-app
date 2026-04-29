@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '2.98.0': {
+    title: 'Multi-tarea: 3 botones cuando todos completan',
+    features: [
+      '🎬 <strong>Multi-tarea con flujo final hacia Programación</strong>: cuando todos los miembros marcan su parte como hecha, la tarea pasa al estado <code>multi-ready</code> (lista para programar). En la card aparecen 3 botones grandes:',
+      '📅 <strong>Programar ahora</strong>: abre el modal Programar pre-llenado con el caption (título + notas), las URLs (mediaUrls/videoLink/link), e imagen de portada. Al confirmar la programación, la multi-tarea automáticamente se marca como completada y se archiva en Trabajos Finalizados.',
+      '👤 <strong>Asignar publicador</strong>: crea una nueva tarea individual de tipo <code>publicador</code> con todos los recursos acumulados, asignada al miembro que elijas. La multi-tarea original se cierra. El publicador recibe notif Telegram. Cuando él programe el contenido, también cierra su tarea.',
+      '💾 <strong>Borrador</strong>: guarda el contenido como borrador en la pestaña Programación (sin programar todavía) y archiva la multi-tarea. Lo retomas después desde Programación → Borradores.',
+      '✓ <strong>"Marcar mi parte" feedback claro</strong>: el botón ahora dice "✓ Marcar mi parte hecha" mientras estás en multi-tarea. Cuando ya marcaste, queda en gris diciendo "Mi parte ya esta hecha". Telegram avisa a los demás miembros + al creador cuando todos completan.'
+    ]
+  },
   '2.97.0': {
     title: 'Multi-tarea: asignar a varios miembros simultáneamente',
     features: [
@@ -1941,6 +1951,14 @@ async function confirmSchedulePost() {
     alert('No se pudo guardar en Firestore: ' + e.message);
     return;
   }
+  // Si veniamos de una multi-tarea, marcar la tarea original como completada
+  // y archivarla en Trabajos Finalizados (cierra el ciclo).
+  if (schedulingContext && schedulingContext.fromMultiTaskId) {
+    const multiTask = tasks.find(t => t.id === schedulingContext.fromMultiTaskId);
+    if (multiTask) {
+      try { await finalizeMultiTaskAfterAction(multiTask); } catch (e) { /* ignore */ }
+    }
+  }
   closeScheduleModal();
   // Cambiar a la pestana Programacion
   const schedTab = document.querySelector('.nav-tab[data-tab="schedule"]');
@@ -2846,9 +2864,23 @@ function renderTaskList(container, taskList, mode) {
 
       // Boton llamativo "Tarea completada" - asignado, creador o admin pueden marcar
       let markDoneBtn = '';
-      if (!isPendingApproval && task.status !== 'completed' && canComplete(task)) {
-        const label = task.submittedLink ? '✏️ Cambiar entregado' : '✓ Tarea completada';
-        markDoneBtn = `<button class="btn-mark-done" onclick="completeTask('${task.id}')" title="Sube el resultado y manda a aprobacion">${label}</button>`;
+      if (task.status === 'multi-ready') {
+        // Multi-tarea lista: 3 botones de accion final (Programar / Asignar publicador / Borrador)
+        markDoneBtn = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;width:100%">
+          <button class="btn btn-primary btn-small" onclick="multiTaskSchedule('${task.id}')" title="Abrir modal Programar con la data ya pre-llenada">&#128241; Programar ahora</button>
+          <button class="btn btn-ghost btn-small" onclick="multiTaskAssignPublisher('${task.id}')" title="Crear una sub-tarea de tipo Publicador y asignarla a alguien">&#128100; Asignar publicador</button>
+          <button class="btn btn-ghost btn-small" onclick="multiTaskSaveDraft('${task.id}')" title="Guardar como borrador en Programacion para retomar despues">&#128190; Borrador</button>
+        </div>`;
+      } else if (!isPendingApproval && task.status !== 'completed' && canComplete(task)) {
+        // Multi-tareas en progreso: boton dice "Marcar mi parte"
+        const isMulti = task.assignmentType === 'multi';
+        const myDone = isMulti && task.multiCompletions && task.multiCompletions[currentUser.uid];
+        let label;
+        if (isMulti && !myDone) label = '✓ Marcar mi parte hecha';
+        else if (isMulti && myDone) label = '✓ Mi parte ya esta hecha';
+        else label = task.submittedLink ? '✏️ Cambiar entregado' : '✓ Tarea completada';
+        const disabledAttr = (isMulti && myDone) ? 'disabled style="opacity:0.5;cursor:not-allowed"' : '';
+        markDoneBtn = `<button class="btn-mark-done" onclick="completeTask('${task.id}')" title="${isMulti ? 'Marca solo TU parte' : 'Sube el resultado y manda a aprobacion'}" ${disabledAttr}>${label}</button>`;
       }
 
       // Preview/portada del link copiado del deposito (se ve en el espacio
@@ -3123,38 +3155,59 @@ async function completeTask(taskId) {
       // Marcar mi parte como hecha
       const myRole = (task.multiRoles && task.multiRoles[currentUser.uid]) || '';
       const roleLine = myRole ? ` (${myRole})` : '';
-      if (!confirm(`Marcar TU parte${roleLine} como terminada?\n\nEsto NO completa la tarea — solo marca tu contribucion. La tarea queda completa cuando todos los miembros marcan su parte.`)) return;
+      if (!confirm(`Marcar TU parte${roleLine} como terminada?\n\nEsto NO completa la tarea — solo marca tu contribucion. Cuando todos los miembros completen, aparecen los botones para Programar / Asignar publicador / Borrador.`)) return;
+      // Calcular si esto completa a TODOS los miembros
+      const allOthersDone = Array.isArray(task.assignedToMulti)
+        && task.assignedToMulti.every(id => id === currentUser.uid || completions[id]);
       const update = {
         [`multiCompletions.${currentUser.uid}`]: true,
         [`multiCompletedAt.${currentUser.uid}`]: firebase.firestore.FieldValue.serverTimestamp()
       };
+      // Si este es el ultimo en marcar, transicionar a 'multi-ready' para
+      // mostrar los 3 botones de acciones finales en la card.
+      if (allOthersDone) {
+        update.status = 'multi-ready';
+        update.multiReadyAt = firebase.firestore.FieldValue.serverTimestamp();
+      }
       await db.collection('tasks').doc(taskId).update(update);
-      // Notificar al creador y otros miembros
+      // Notificar a otros miembros
       const otherIds = (task.assignedToMulti || []).filter(id => id !== currentUser.uid);
       otherIds.forEach(id => {
         const m = teamMembers.find(x => x.id === id);
         if (m && m.telegramChatId) {
-          sendTelegramNotif(m.telegramChatId, `*${currentUserData.name}* completo su parte de la multi-tarea:\n*${task.text}*\nProyecto: *${task.projectName}*`);
+          const extra = allOthersDone
+            ? `\n\n✓ Todos completamos. La tarea esta lista — alguien la puede programar / asignar publicador / dejar como borrador.`
+            : '';
+          sendTelegramNotif(m.telegramChatId, `*${currentUserData.name}* completo su parte de la multi-tarea:\n*${task.text}*\nProyecto: *${task.projectName}*${extra}`);
         }
       });
+      // Notificar al creador tambien si todos terminaron
+      if (allOthersDone) {
+        const creator = teamMembers.find(m => m.id === task.createdBy);
+        if (creator && creator.telegramChatId && creator.id !== currentUser.uid) {
+          sendTelegramNotif(creator.telegramChatId,
+            `Multi-tarea lista para programar:\n*${task.text}*\nProyecto: *${task.projectName}*\n\nTodos los miembros completaron sus partes.`);
+        }
+      }
       return;
     }
-    // Si todos los demas ya marcaron y ahora me marco yo, o si admin esta forzando completar:
+    // Si todos los demas ya marcaron pero yo no estoy en la lista (admin):
+    // permitir transicionar a multi-ready directamente
     const allDone = Array.isArray(task.assignedToMulti)
-      && task.assignedToMulti.every(id => id === currentUser.uid || completions[id]);
+      && task.assignedToMulti.every(id => completions[id]);
     if (!allDone && currentUserData.role !== 'admin') {
       alert('La tarea queda completa cuando TODOS marquen su parte. Pendientes: ' +
-        (task.assignedToMulti || []).filter(id => id !== currentUser.uid && !completions[id]).map(id => {
+        (task.assignedToMulti || []).filter(id => !completions[id]).map(id => {
           const m = teamMembers.find(x => x.id === id); return m ? m.name : id;
         }).join(', '));
       return;
     }
-    // Todos done → flujo normal de submit link
-    submittingTaskId = taskId;
-    document.getElementById('submitTaskTitle').textContent = task.text + ' (multi-tarea — todos completaron)';
-    document.getElementById('submitTaskLinkInput').value = '';
-    document.getElementById('submitTaskModal').classList.add('active');
-    setTimeout(() => document.getElementById('submitTaskLinkInput').focus(), 100);
+    // Admin forzando o caso edge: marcar multi-ready
+    if (!confirm(`Marcar la multi-tarea como lista para programar?\n\n"${task.text}"\n\nEsto saltara los marcadores individuales pendientes.`)) return;
+    await db.collection('tasks').doc(taskId).update({
+      status: 'multi-ready',
+      multiReadyAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
     return;
   }
   // Publicador: no requiere aprobacion ni material entregado.
@@ -3781,6 +3834,139 @@ async function returnTaskToDeposit(taskId) {
   } catch (e) { console.warn('[notif return]', e.message); }
 }
 window.returnTaskToDeposit = returnTaskToDeposit;
+
+// ===== Multi-tarea: acciones post-completion =====
+// Las multi-tareas en estado 'multi-ready' (todos completaron) tienen 3 botones:
+// Programar / Asignar publicador / Borrador. Cada uno cierra el ciclo.
+function buildSchedulingContextFromTask(task) {
+  // Recopila TODA la data util de la tarea para pre-llenar el modal Programar.
+  // Captura prioritaria de URLs: mediaUrls (carrusel), videoLink (editor),
+  // link (material). Caption: titulo + notas concatenadas.
+  const urls = [];
+  if (Array.isArray(task.mediaUrls) && task.mediaUrls.length > 0) {
+    task.mediaUrls.forEach(u => { if (u && !urls.includes(u)) urls.push(u); });
+  }
+  if (task.videoLink && !urls.includes(task.videoLink)) urls.push(task.videoLink);
+  if (task.link && !urls.includes(task.link)) urls.push(task.link);
+  // Notas: las notas en tasks son array de objetos {authorName, text}.
+  // Concatenamos texto para usar como caption.
+  let notesText = '';
+  if (Array.isArray(task.notes) && task.notes.length > 0) {
+    notesText = task.notes.map(n => (n.text || '')).filter(s => s).join('\n');
+  } else if (typeof task.notes === 'string') {
+    notesText = task.notes;
+  }
+  const description = notesText;
+  return {
+    type: 'task',
+    taskId: task.id,
+    title: task.text || '',
+    description,
+    coverImage: task.coverImage || '',
+    mediaUrls: urls
+  };
+}
+
+async function multiTaskSchedule(taskId) {
+  const task = tasks.find(t => t.id === taskId);
+  if (!task) return;
+  schedulingContext = buildSchedulingContextFromTask(task);
+  schedulingContext.fromMultiTaskId = task.id; // marca para cerrar la tarea al programar
+  await openScheduleModalWithContext();
+}
+window.multiTaskSchedule = multiTaskSchedule;
+
+async function multiTaskSaveDraft(taskId) {
+  // Guarda la data de la tarea como borrador en scheduledPosts.
+  // Marca la tarea como completed y la mueve a Trabajos Finalizados.
+  const task = tasks.find(t => t.id === taskId);
+  if (!task) return;
+  if (!confirm(`Guardar como BORRADOR en Programacion?\n\n"${task.text}"\n\nLa multi-tarea se marca como completada y se archiva en Trabajos Finalizados. El borrador queda en Programacion para que retomes y termines de programar despues.`)) return;
+  schedulingContext = buildSchedulingContextFromTask(task);
+  // Pre-poblar campos del modal sin abrirlo, para usar saveScheduleAsDraft
+  // Cargar en variables globales temporales:
+  // Mejor: simulamos abrir/cerrar el modal con la data pre-cargada.
+  await openScheduleModalWithContext();
+  // El modal ya esta abierto con todo pre-llenado. Disparamos guardar borrador:
+  const ok = await saveScheduleAsDraft();
+  if (ok) {
+    // Cerrar modal sin preguntar
+    closeScheduleModal();
+    // Marcar la tarea como completed + mover a Trabajos Finalizados
+    await finalizeMultiTaskAfterAction(task);
+  }
+}
+window.multiTaskSaveDraft = multiTaskSaveDraft;
+
+async function multiTaskAssignPublisher(taskId) {
+  // Crea una nueva tarea individual tipo 'publicador' con la data acumulada
+  // de la multi-tarea, asignada al miembro elegido.
+  const task = tasks.find(t => t.id === taskId);
+  if (!task) return;
+  // Pedir miembro (prompt simple por ahora — en v2.99 podriamos hacer un modal)
+  const memberOptions = teamMembers.map((m, i) => `${i + 1}. ${m.name}`).join('\n');
+  const choice = prompt(`Asignar publicador a quien? Escribe el numero:\n\n${memberOptions}`);
+  const idx = parseInt(choice, 10) - 1;
+  const member = teamMembers[idx];
+  if (!member) { alert('Seleccion invalida'); return; }
+  if (!confirm(`Crear tarea Publicador para ${member.name}?\n\n"${task.text}"\n\nLa multi-tarea original se marcara como completada y se creara una tarea individual de tipo Publicador con todos los recursos para que ${member.name} programe el contenido.`)) return;
+  // Crear la nueva tarea
+  try {
+    const linksArr = [];
+    if (task.link) linksArr.push(task.link);
+    if (task.videoLink && !linksArr.includes(task.videoLink)) linksArr.push(task.videoLink);
+    const pubTaskData = {
+      text: `📅 Programar: ${task.text}`,
+      projectId: task.projectId,
+      projectName: task.projectName,
+      projectColor: task.projectColor,
+      assignedTo: member.id,
+      assignedToName: member.name,
+      assignmentType: 'publicador',
+      createdBy: currentUser.uid,
+      createdByName: currentUserData.name,
+      status: 'pending',
+      source: 'multi-task',
+      notes: [],
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      fromMultiTaskId: task.id
+    };
+    if (task.link) pubTaskData.link = task.link;
+    if (task.videoLink) pubTaskData.videoLink = task.videoLink;
+    if (task.coverImage) pubTaskData.coverImage = task.coverImage;
+    if (task.mediaUrls) pubTaskData.mediaUrls = task.mediaUrls;
+    if (task.depositEntryId) pubTaskData.depositEntryId = task.depositEntryId;
+    await db.collection('tasks').add(pubTaskData);
+    // Notificar al publicador
+    if (member.telegramChatId && member.id !== currentUser.uid) {
+      sendTelegramNotif(member.telegramChatId,
+        `*${currentUserData.name}* te asigno una tarea de Publicador:\n*${task.text}*\nProyecto: *${task.projectName}*\n\nTienes los recursos listos — solo programa el contenido.`);
+    }
+  } catch (e) {
+    alert('Error creando tarea publicador: ' + e.message);
+    return;
+  }
+  // Marcar la multi-tarea como completada y archivar
+  await finalizeMultiTaskAfterAction(task);
+}
+window.multiTaskAssignPublisher = multiTaskAssignPublisher;
+
+// Marca la multi-tarea como completed y sincroniza con el deposito.
+// Se llama tras programar / asignar publicador / guardar borrador.
+async function finalizeMultiTaskAfterAction(task) {
+  try {
+    await db.collection('tasks').doc(task.id).update({
+      status: 'completed',
+      completedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      completedBy: currentUser.uid,
+      completedByName: currentUserData.name
+    });
+    // Si vino del deposito, mueve la entry a Trabajos Finalizados
+    await syncDepositOnTaskChange(task, 'complete');
+  } catch (e) {
+    console.error('[multi-task finalize]', e);
+  }
+}
 
 async function deleteTask(taskId) {
   const task = tasks.find(t => t.id === taskId);
