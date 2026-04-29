@@ -75,6 +75,13 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '2.94.0': {
+    title: 'Mover de papelera al Depósito + notificación Telegram al borrar',
+    features: [
+      '📥 <strong>Mover a "Depósito de Ideas"</strong>: si una tarea eliminada vino originalmente del Depósito (creada desde una entry), ahora aparece como primera opción en el dropdown de "Mover a..." en la papelera. Al elegirla, la tarea se borra definitivamente Y la entry del Depósito vuelve a su categoría original como pendiente — lista para volver a asignar a otra persona.',
+      '🔔 <strong>Notificación Telegram al asignado cuando se elimina su tarea</strong>: cuando alguien elimina una tarea que tenías asignada, recibes mensaje en Telegram igual que cuando te asignan o aprueban una tarea. Mensaje: "🗑️ X eliminó una tarea que tenías asignada: [título] / Proyecto: Y". No te llega notif si tú mismo eres quien elimina (lógico).'
+    ]
+  },
   '2.93.0': {
     title: 'Editar tarea completo + Mover desde papelera + thumbnails',
     features: [
@@ -3629,17 +3636,36 @@ async function deleteTask(taskId) {
   if (task.status !== 'completed') {
     await syncDepositOnTaskChange(task, 'restore');
   }
+  // Notificar por Telegram al asignado (si no es el mismo que elimina)
+  try {
+    if (task.assignedTo && task.assignedTo !== currentUser.uid) {
+      const assignee = teamMembers.find(m => m.id === task.assignedTo);
+      if (assignee) {
+        const projName = task.projectName || 'sin proyecto';
+        const msg = `🗑️ *${currentUserData.name}* eliminó una tarea que tenías asignada:\n*${task.text}*\nProyecto: *${projName}*`;
+        notifyAssignedOrWarn(assignee, msg);
+      }
+    }
+  } catch (e) { console.warn('[notif delete]', e.message); }
 }
 
 // ===== Mover desde papelera (con dropdown de destino) =====
-let movingTrashTask = null; // { id, kind: 'team'|'personal' }
-function buildMoveTrashOptions(kind) {
+// movingTrashTask incluye fromDeposit=true si la tarea vino del deposito.
+// El destino especial '__deposit__' devuelve la tarea al deposito como idea (re-asignable).
+let movingTrashTask = null; // { id, kind: 'team'|'personal', fromDeposit?: bool }
+function buildMoveTrashOptions(kind, taskHasDeposit) {
   const select = document.getElementById('moveTrashSelect');
   if (!select) return;
   select.innerHTML = '';
   if (kind === 'team') {
-    // Opciones: todos los proyectos de equipo + opcion "Sin proyecto"
-    const opts = [{ value: '', label: 'Sin proyecto', color: '#666' }, ...projects.map(p => ({ value: p.id, label: p.name, color: p.color }))];
+    // Opciones: si vino del deposito, primer opcion es "Deposito de Ideas".
+    // Luego todos los proyectos de equipo + opcion "Sin proyecto".
+    const opts = [];
+    if (taskHasDeposit) {
+      opts.push({ value: '__deposit__', label: '📥 Depósito de Ideas (re-asignable)' });
+    }
+    opts.push({ value: '', label: 'Sin proyecto' });
+    projects.forEach(p => opts.push({ value: p.id, label: p.name }));
     opts.forEach(o => {
       const opt = document.createElement('option');
       opt.value = o.value;
@@ -3657,13 +3683,15 @@ function buildMoveTrashOptions(kind) {
   }
 }
 function openMoveTrashModalTeam(taskId) {
-  movingTrashTask = { id: taskId, kind: 'team' };
-  buildMoveTrashOptions('team');
+  const task = trashTasks.find(t => t.id === taskId);
+  const fromDeposit = !!(task && task.depositEntryId);
+  movingTrashTask = { id: taskId, kind: 'team', fromDeposit };
+  buildMoveTrashOptions('team', fromDeposit);
   document.getElementById('moveTrashModal').classList.add('active');
 }
 function openMoveTrashModalPersonal(taskId) {
-  movingTrashTask = { id: taskId, kind: 'personal' };
-  buildMoveTrashOptions('personal');
+  movingTrashTask = { id: taskId, kind: 'personal', fromDeposit: false };
+  buildMoveTrashOptions('personal', false);
   document.getElementById('moveTrashModal').classList.add('active');
 }
 window.openMoveTrashModalTeam = openMoveTrashModalTeam;
@@ -3683,7 +3711,15 @@ document.getElementById('confirmMoveTrash').addEventListener('click', async () =
   if (!movingTrashTask) return;
   const targetValue = document.getElementById('moveTrashSelect').value;
   try {
-    if (movingTrashTask.kind === 'team') {
+    if (movingTrashTask.kind === 'team' && targetValue === '__deposit__') {
+      // Caso especial: enviar la tarea al Deposito de Ideas (re-asignable).
+      // Equivale a eliminacion permanente de la tarea + restauracion de la
+      // entry del deposito a su categoria original como 'idea' (pendiente).
+      const task = trashTasks.find(t => t.id === movingTrashTask.id);
+      if (!task) throw new Error('Tarea no encontrada');
+      await db.collection('tasks').doc(movingTrashTask.id).delete();
+      await syncDepositOnTaskChange(task, 'restore');
+    } else if (movingTrashTask.kind === 'team') {
       // Restaurar + cambiar projectId
       const project = projects.find(p => p.id === targetValue);
       const update = {
