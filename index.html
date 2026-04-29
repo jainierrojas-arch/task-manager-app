@@ -1089,6 +1089,40 @@
       text-transform: uppercase;
       letter-spacing: 0.4px;
     }
+    .caption-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 14px;
+      padding: 4px 10px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: opacity 0.15s, transform 0.15s;
+      max-width: 280px;
+    }
+    .caption-pill:hover { opacity: 0.85; transform: translateY(-1px); }
+    .caption-pill-folder {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      padding: 1px 6px;
+      border-radius: 8px;
+      flex-shrink: 0;
+    }
+    .caption-pill-name {
+      max-width: 180px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .caption-pill-edit {
+      cursor: pointer;
+      opacity: 0.55;
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+    .caption-pill-edit:hover { opacity: 1; }
     .trash-thumb {
       width: 80px; height: 80px; flex-shrink: 0;
       border-radius: 6px;
@@ -1655,6 +1689,20 @@
         <label>Caption (descripcion del post)</label>
         <textarea id="schedCaption" rows="12" placeholder="Caption del post (puedes incluir hashtags y mentions)&#10;&#10;Tip: este campo es resizable — arrastra la esquina inferior derecha para hacerlo aun mas grande." style="font-family:inherit;width:100%;min-height:200px;box-sizing:border-box;resize:vertical;line-height:1.5;padding:10px"></textarea>
       </div>
+      <!-- Libreria de copys guardados -->
+      <div class="modal-row" id="schedCaptionLibraryRow">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
+          <label style="margin:0">📝 Mis copys guardados</label>
+          <div style="display:flex;gap:6px;align-items:center">
+            <select id="schedCaptionFolderFilter" style="font-size:11px;padding:3px 8px;width:auto">
+              <option value="">Todas las carpetas</option>
+            </select>
+            <button class="btn btn-ghost btn-small" id="schedSaveCaptionBtn" type="button" style="font-size:11px;padding:4px 10px">💾 Guardar copy</button>
+          </div>
+        </div>
+        <div id="schedCaptionLibraryList" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;max-height:140px;overflow-y:auto;padding:4px;background:var(--bg-card);border-radius:6px;min-height:42px;align-items:flex-start"></div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:4px">Click en un copy para usarlo. Cada copy se organiza por carpeta (ej. "Reels Cinematográficos", "CTAs", "Hooks virales"). Edita o elimina con el ícono ✎ de cada uno.</div>
+      </div>
       <!-- Single URL: para post/reel/story -->
       <div class="modal-row" id="schedSingleUrlRow">
         <label>URL del medio (imagen/video publica)</label>
@@ -1741,6 +1789,31 @@
       <div class="modal-buttons">
         <button class="btn btn-ghost" id="cancelEdit">Cancelar</button>
         <button class="btn btn-primary" id="confirmEdit">&#128190; Guardar todo</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Crear / Editar copy de la libreria de captions -->
+  <div class="modal-overlay" id="captionTemplateModal">
+    <div class="modal" style="max-width:620px;width:95vw">
+      <div class="modal-title" id="captionTemplateModalTitle">💾 Guardar copy</div>
+      <div class="modal-row">
+        <label>Nombre corto (lo que aparece en el botón)</label>
+        <input type="text" id="captionTplName" placeholder="Ej: Hook viral / CTA Cierre / Promocion verano" maxlength="80">
+      </div>
+      <div class="modal-row">
+        <label>Carpeta (escribe nueva o elige existente)</label>
+        <input type="text" id="captionTplFolder" placeholder="Ej: Reels Cinematográficos" list="captionTplFolderList" maxlength="60">
+        <datalist id="captionTplFolderList"></datalist>
+      </div>
+      <div class="modal-row">
+        <label>Contenido del copy</label>
+        <textarea id="captionTplText" rows="10" placeholder="Pega aquí el caption completo..." style="font-family:inherit;width:100%;box-sizing:border-box;resize:vertical;line-height:1.5;padding:10px;min-height:200px"></textarea>
+      </div>
+      <div class="modal-buttons">
+        <button class="btn btn-ghost" id="cancelCaptionTpl">Cancelar</button>
+        <button class="btn btn-danger" id="deleteCaptionTpl" style="display:none">Eliminar</button>
+        <button class="btn btn-primary" id="confirmCaptionTpl">💾 Guardar</button>
       </div>
     </div>
   </div>

@@ -1,6 +1,6 @@
 {
   "name": "task-manager-app",
-  "version": "2.99.6",
+  "version": "2.99.7",
   "description": "App colaborativa de gestion de tareas con Firebase y Telegram",
   "main": "main.js",
   "scripts": {

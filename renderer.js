@@ -75,6 +75,17 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '2.99.7': {
+    title: 'Librería de copys con carpetas (templates de captions)',
+    features: [
+      '📝 <strong>Mis copys guardados</strong>: en el modal Programar, debajo del Caption ahora hay una sección con tus copys guardados. Click en cualquiera → se rellena automáticamente el Caption con ese texto.',
+      '📁 <strong>Organizados por carpetas</strong>: cada copy va en una carpeta (ej. "Reels Cinematográficos", "CTAs", "Hooks virales"). Cada carpeta tiene un color automático para distinguirla. Filtro arriba para ver solo una carpeta.',
+      '💾 <strong>Botón "Guardar copy"</strong>: cuando escribas un caption bueno, click → modal con nombre + carpeta + texto. Se guarda y aparece como pill abajo lista para reusar.',
+      '✎ <strong>Editar y eliminar</strong>: cada pill tiene un ícono ✎ para editar (texto, nombre, mover de carpeta o eliminar). Compartido con el equipo: lo que tú guardas, lo ven todos.',
+      '🎨 <strong>Pre-llenado inteligente</strong>: al darle "Guardar copy" mientras tienes texto en el Caption, el modal abre con ese texto ya cargado.',
+      '⚙️ Datos: nueva colección Firestore <code>captionTemplates</code> con name + folder + text + usageCount + timestamps.'
+    ]
+  },
   '2.99.6': {
     title: 'Editar/eliminar borradores y programaciones del equipo',
     features: [
@@ -518,6 +529,9 @@ let unsubscribeIdeas = null;
 let ideas = [];
 let currentIdeasMode = 'team'; // 'team' | 'personal'
 let unsubscribeScheduled = null;
+let captionTemplates = [];
+let unsubscribeCaptionTpls = null;
+let editingCaptionTplId = null;
 let scheduledPosts = [];
 let scheduledPostsInitialized = false; // false en primera carga del snapshot
 let currentScheduleView = 'list'; // 'list' | 'calendar'
@@ -881,6 +895,7 @@ function showLogin() {
   if (unsubscribeDeposit) { unsubscribeDeposit(); unsubscribeDeposit = null; }
   if (unsubscribeIdeas) { unsubscribeIdeas(); unsubscribeIdeas = null; }
   if (unsubscribeScheduled) { unsubscribeScheduled(); unsubscribeScheduled = null; scheduledPostsInitialized = false; }
+  if (unsubscribeCaptionTpls) { unsubscribeCaptionTpls(); unsubscribeCaptionTpls = null; captionTemplates = []; }
   if (presenceTimer) { clearInterval(presenceTimer); presenceTimer = null; }
 }
 
@@ -1038,6 +1053,17 @@ function subscribeToData() {
     });
 
   depositLastViewedAt = currentUserData.depositLastViewedAt || null;
+
+  // Libreria de copys/captions: compartida por equipo, ordenada por uso reciente
+  if (unsubscribeCaptionTpls) { unsubscribeCaptionTpls(); unsubscribeCaptionTpls = null; }
+  unsubscribeCaptionTpls = db.collection('captionTemplates')
+    .orderBy('editedAt', 'desc')
+    .limit(500)
+    .onSnapshot(snap => {
+      captionTemplates = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderCaptionLibrary();
+      updateCaptionFolderOptions();
+    }, err => console.warn('[captionTemplates]', err.message));
 }
 
 function renderDepositBadge() {
@@ -1258,6 +1284,168 @@ function setIdeasMode(mode) {
       : 'Idea grupal (visible para todo el equipo)...';
   }
   renderIdeas();
+}
+
+// ===== Libreria de copys (captionTemplates) =====
+// Coleccion compartida con el equipo: cada doc tiene { name, folder, text,
+// usageCount, createdBy, createdAt, editedAt, lastUsedAt }.
+// Aparece debajo del caption en el modal Programar como pills clickables.
+function getCaptionFolderColor(folder) {
+  // Color deterministico desde el nombre de la carpeta
+  if (!folder) return '#6c63ff';
+  let hash = 0;
+  for (let i = 0; i < folder.length; i++) hash = folder.charCodeAt(i) + ((hash << 5) - hash);
+  const hue = Math.abs(hash) % 360;
+  // HSL → hex (saturacion media, luminosidad media)
+  const h = hue / 360, s = 0.6, l = 0.55;
+  const k = n => (n + h * 12) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = n => Math.round(255 * (l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1))))).toString(16).padStart(2, '0');
+  return '#' + f(0) + f(8) + f(4);
+}
+
+function renderCaptionLibrary() {
+  const list = document.getElementById('schedCaptionLibraryList');
+  if (!list) return;
+  const filterEl = document.getElementById('schedCaptionFolderFilter');
+  const folderFilter = filterEl ? filterEl.value.trim() : '';
+  let items = captionTemplates;
+  if (folderFilter) items = items.filter(t => (t.folder || 'General') === folderFilter);
+  if (items.length === 0) {
+    list.innerHTML = '<div style="font-size:11px;color:var(--text-dim);padding:8px;width:100%;text-align:center">' +
+      (folderFilter ? `Sin copys en "${esc(folderFilter)}"` : 'Sin copys guardados. Escribe un caption arriba y dale "💾 Guardar copy".') +
+      '</div>';
+    return;
+  }
+  list.innerHTML = items.map(t => {
+    const folder = t.folder || 'General';
+    const c = getCaptionFolderColor(folder);
+    const name = t.name || (t.text || '').slice(0, 40);
+    return `
+      <div class="caption-pill" style="background:${hexToRgba(c, 0.15)};border:1px solid ${hexToRgba(c, 0.4)};color:var(--text-primary)" data-tpl-id="${esc(t.id)}" title="${esc(t.text || '').slice(0, 200)}${(t.text || '').length > 200 ? '...' : ''}">
+        <span class="caption-pill-folder" style="background:${hexToRgba(c, 0.3)};color:${c}">${esc(folder)}</span>
+        <span class="caption-pill-name">${esc(name)}</span>
+        <span class="caption-pill-edit" data-edit-tpl-id="${esc(t.id)}" title="Editar">✎</span>
+      </div>`;
+  }).join('');
+  // Bind clicks
+  list.querySelectorAll('[data-tpl-id]').forEach(el => {
+    el.addEventListener('click', (e) => {
+      if (e.target.dataset.editTplId) {
+        e.stopPropagation();
+        editCaptionTpl(e.target.dataset.editTplId);
+      } else {
+        useCaptionTpl(el.dataset.tplId);
+      }
+    });
+  });
+}
+
+function updateCaptionFolderOptions() {
+  // Filter dropdown del modal Programar
+  const filterEl = document.getElementById('schedCaptionFolderFilter');
+  // Datalist del modal Editar Copy
+  const datalist = document.getElementById('captionTplFolderList');
+  const folders = [...new Set(captionTemplates.map(t => t.folder || 'General'))].sort();
+  if (filterEl) {
+    const currentValue = filterEl.value;
+    filterEl.innerHTML = '<option value="">Todas las carpetas</option>' +
+      folders.map(f => `<option value="${esc(f)}">${esc(f)}</option>`).join('');
+    filterEl.value = currentValue;
+  }
+  if (datalist) {
+    datalist.innerHTML = folders.map(f => `<option value="${esc(f)}">`).join('');
+  }
+}
+
+function useCaptionTpl(id) {
+  const tpl = captionTemplates.find(t => t.id === id);
+  if (!tpl) return;
+  const captionField = document.getElementById('schedCaption');
+  if (!captionField) return;
+  if (captionField.value.trim() && !confirm('Ya tienes texto en el caption. Reemplazarlo con este copy?')) return;
+  captionField.value = tpl.text || '';
+  captionField.focus();
+  // Incrementar contador de uso
+  db.collection('captionTemplates').doc(id).update({
+    usageCount: (tpl.usageCount || 0) + 1,
+    lastUsedAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).catch(() => {});
+}
+window.useCaptionTpl = useCaptionTpl;
+
+function openCaptionTplModalForCreate() {
+  editingCaptionTplId = null;
+  document.getElementById('captionTemplateModalTitle').innerHTML = '💾 Guardar copy';
+  // Pre-llenar con el caption actual del modal Programar (si hay)
+  const currentCaption = document.getElementById('schedCaption').value.trim();
+  document.getElementById('captionTplName').value = '';
+  document.getElementById('captionTplFolder').value = '';
+  document.getElementById('captionTplText').value = currentCaption;
+  document.getElementById('deleteCaptionTpl').style.display = 'none';
+  document.getElementById('captionTemplateModal').classList.add('active');
+  setTimeout(() => document.getElementById('captionTplName').focus(), 100);
+}
+
+function editCaptionTpl(id) {
+  const tpl = captionTemplates.find(t => t.id === id);
+  if (!tpl) return;
+  editingCaptionTplId = id;
+  document.getElementById('captionTemplateModalTitle').innerHTML = '✎ Editar copy';
+  document.getElementById('captionTplName').value = tpl.name || '';
+  document.getElementById('captionTplFolder').value = tpl.folder || '';
+  document.getElementById('captionTplText').value = tpl.text || '';
+  document.getElementById('deleteCaptionTpl').style.display = '';
+  document.getElementById('captionTemplateModal').classList.add('active');
+  setTimeout(() => document.getElementById('captionTplName').focus(), 100);
+}
+window.editCaptionTpl = editCaptionTpl;
+
+async function saveCaptionTpl() {
+  const name = document.getElementById('captionTplName').value.trim();
+  const folder = document.getElementById('captionTplFolder').value.trim();
+  const text = document.getElementById('captionTplText').value.trim();
+  if (!name) { alert('Ponle un nombre corto al copy (lo que aparece en el botón)'); return; }
+  if (!text) { alert('El contenido del copy no puede estar vacío'); return; }
+  try {
+    const data = {
+      name,
+      folder: folder || 'General',
+      text,
+      editedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      editedBy: currentUser.uid,
+      editedByName: currentUserData.name
+    };
+    if (editingCaptionTplId) {
+      await db.collection('captionTemplates').doc(editingCaptionTplId).update(data);
+    } else {
+      data.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+      data.createdBy = currentUser.uid;
+      data.createdByName = currentUserData.name;
+      data.usageCount = 0;
+      await db.collection('captionTemplates').add(data);
+    }
+  } catch (e) {
+    alert('Error: ' + e.message);
+    return;
+  }
+  document.getElementById('captionTemplateModal').classList.remove('active');
+  editingCaptionTplId = null;
+}
+
+async function deleteCaptionTpl() {
+  if (!editingCaptionTplId) return;
+  const tpl = captionTemplates.find(t => t.id === editingCaptionTplId);
+  if (!tpl) return;
+  if (!confirm(`Eliminar el copy "${tpl.name}"?\n\nEsta accion no se puede deshacer.`)) return;
+  try {
+    await db.collection('captionTemplates').doc(editingCaptionTplId).delete();
+  } catch (e) {
+    alert('Error: ' + e.message);
+    return;
+  }
+  document.getElementById('captionTemplateModal').classList.remove('active');
+  editingCaptionTplId = null;
 }
 
 // ===== Programacion de contenido a Instagram (via Make.com webhook) =====
@@ -5172,6 +5360,29 @@ if (schedSaveDraftBtn) {
 }
 const schedModal = document.getElementById('scheduleModal');
 if (schedModal) schedModal.addEventListener('click', (e) => { if (e.target === schedModal) closeScheduleModal(); });
+
+// Libreria de copys: filtro carpeta + boton guardar copy actual
+const schedCaptionFolderFilter = document.getElementById('schedCaptionFolderFilter');
+if (schedCaptionFolderFilter) {
+  schedCaptionFolderFilter.addEventListener('change', () => renderCaptionLibrary());
+}
+const schedSaveCaptionBtn = document.getElementById('schedSaveCaptionBtn');
+if (schedSaveCaptionBtn) {
+  schedSaveCaptionBtn.addEventListener('click', () => openCaptionTplModalForCreate());
+}
+// Modal crear/editar copy
+document.getElementById('cancelCaptionTpl').addEventListener('click', () => {
+  document.getElementById('captionTemplateModal').classList.remove('active');
+  editingCaptionTplId = null;
+});
+document.getElementById('captionTemplateModal').addEventListener('click', (e) => {
+  if (e.target.id === 'captionTemplateModal') {
+    document.getElementById('captionTemplateModal').classList.remove('active');
+    editingCaptionTplId = null;
+  }
+});
+document.getElementById('confirmCaptionTpl').addEventListener('click', saveCaptionTpl);
+document.getElementById('deleteCaptionTpl').addEventListener('click', deleteCaptionTpl);
 const schedMediaUrlInput = document.getElementById('schedMediaUrl');
 if (schedMediaUrlInput) {
   schedMediaUrlInput.addEventListener('input', () => {
