@@ -1745,6 +1745,33 @@
     </div>
   </div>
 
+  <!-- Multi-task: marcar mi parte hecha + subir entregable -->
+  <div class="modal-overlay" id="multiSubmitModal">
+    <div class="modal" style="max-width:560px;width:95vw">
+      <div class="modal-title">&#9989; Marcar mi parte como hecha</div>
+      <div id="multiSubmitTaskInfo" style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;padding:8px;background:var(--bg-card);border-radius:6px"></div>
+      <div class="modal-row">
+        <label>Tu entregable (opcional, se acumula con lo de otros miembros)</label>
+        <div style="display:flex;gap:6px;align-items:center;margin-top:4px">
+          <input type="url" id="multiSubmitUrl" placeholder="https://... .jpg / .mp4 / link a doc" style="flex:1;min-width:0">
+          <button class="btn btn-ghost btn-small" id="multiSubmitUploadBtn" type="button" title="Subir archivo desde tu computadora a Cloudinary" style="font-size:12px;padding:6px 10px;white-space:nowrap">&#128193; Subir archivo</button>
+          <input type="file" id="multiSubmitFileInput" accept="image/*,video/*" style="display:none">
+        </div>
+        <div id="multiSubmitUploadStatus" style="font-size:11px;color:var(--text-dim);margin-top:4px;display:none"></div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:4px">Si tu rol es <strong>guion</strong> pega el link al doc. Si es <strong>edicion</strong> sube el video o pega su URL. Si no tienes nada que subir, deja vacio y dale "Marcar".</div>
+      </div>
+      <div class="modal-row">
+        <label>Nota (opcional)</label>
+        <textarea id="multiSubmitNote" rows="2" placeholder="Comentario para el resto del equipo (opcional)" style="font-family:inherit;width:100%;box-sizing:border-box;resize:vertical"></textarea>
+      </div>
+      <div id="multiSubmitExisting" style="margin-bottom:12px;font-size:11px;color:var(--text-secondary)"></div>
+      <div class="modal-buttons">
+        <button class="btn btn-ghost" id="cancelMultiSubmit">Cancelar</button>
+        <button class="btn btn-primary" id="confirmMultiSubmit">&#9989; Marcar mi parte hecha</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Move from Trash Modal -->
   <div class="modal-overlay" id="moveTrashModal">
     <div class="modal" style="max-width:480px;width:95vw">

@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '2.99.0': {
+    title: 'Multi-tarea: subir entregables + visibilidad arreglada',
+    features: [
+      '🐛 <strong>Fix bug v2.98</strong>: las multi-tareas en estado "lista para programar" desaparecían de todas las pestañas. Ahora aparecen correctamente en <strong>Por Aprobar</strong> (con sus 3 botones Programar / Asignar publicador / Borrador) y también en <strong>Mis Tareas</strong> si eres uno de los miembros.',
+      '📁 <strong>Modal al marcar tu parte hecha</strong>: cuando le das al botón "✓ Marcar mi parte", ahora se abre un mini-modal donde puedes pegar el URL de tu entregable o subirlo directo desde tu Mac (botón Cloudinary igual que en Programar). También puedes dejar una nota corta para el resto del equipo.',
+      '🎬 <strong>URLs acumuladas como carrusel</strong>: cada miembro contribuye su entregable y todas las URLs se acumulan en el campo <code>mediaUrls</code> de la tarea. Cuando le das "📅 Programar ahora", el modal Programar abre con TODAS las URLs ya cargadas como carrusel — el editor sube su video, el guionista pega su link, todo queda listo para programar en 1 click.',
+      '👁️ <strong>Visible para los miembros</strong>: el modal te muestra qué URLs ya han subido los otros miembros antes de que tú agregues la tuya. Así sabes si necesitas subir más o si ya está completo.',
+      '💾 <strong>Auto-detect tipo</strong>: si la URL termina en .mp4/.mov/.webm, se guarda también como `videoLink`. La primera URL subida se usa como `coverImage` si la tarea no tenía una.'
+    ]
+  },
   '2.98.0': {
     title: 'Multi-tarea: 3 botones cuando todos completan',
     features: [
@@ -2170,17 +2180,23 @@ setInterval(updateCountdowns, 60 * 1000);
 function renderAll() {
   const pending = tasks.filter(t => t.status === 'pending');
   const pendingApproval = tasks.filter(t => t.status === 'pending_approval');
+  // Multi-tareas listas para programar (todos los miembros completaron) van
+  // tambien a "Por Aprobar" para que alguien decida la accion final.
+  const multiReady = tasks.filter(t => t.status === 'multi-ready');
+  const approvalCombined = [...pendingApproval, ...multiReady];
   const completed = tasks.filter(t => t.status === 'completed');
   const myTasks = pending.filter(t => t.assignedTo === currentUser.uid);
   const myPendingApproval = pendingApproval.filter(t => t.assignedTo === currentUser.uid);
+  // Multi-tareas tambien aparecen en Mis Tareas si el user es uno de los asignados
+  const myMultiReady = multiReady.filter(t => Array.isArray(t.assignedToMulti) && t.assignedToMulti.includes(currentUser.uid));
 
   el.mainBadge.textContent = pending.length;
-  el.myBadge.textContent = myTasks.length + myPendingApproval.length;
-  el.approvalBadge.textContent = pendingApproval.length;
+  el.myBadge.textContent = myTasks.length + myPendingApproval.length + myMultiReady.length;
+  el.approvalBadge.textContent = approvalCombined.length;
 
   renderTaskList(el.taskList, pending, 'pending');
-  renderTaskList(el.myTaskList, [...myTasks, ...myPendingApproval], 'my-tasks');
-  renderTaskList(el.approvalList, pendingApproval, 'approval');
+  renderTaskList(el.myTaskList, [...myTasks, ...myPendingApproval, ...myMultiReady], 'my-tasks');
+  renderTaskList(el.approvalList, approvalCombined, 'approval');
   renderCompletedList(completed.slice(0, 100));
   if (currentTab === 'calendar') renderCalendar();
 }
@@ -3152,43 +3168,8 @@ async function completeTask(taskId) {
       return;
     }
     if (isAssignee && !completions[currentUser.uid]) {
-      // Marcar mi parte como hecha
-      const myRole = (task.multiRoles && task.multiRoles[currentUser.uid]) || '';
-      const roleLine = myRole ? ` (${myRole})` : '';
-      if (!confirm(`Marcar TU parte${roleLine} como terminada?\n\nEsto NO completa la tarea — solo marca tu contribucion. Cuando todos los miembros completen, aparecen los botones para Programar / Asignar publicador / Borrador.`)) return;
-      // Calcular si esto completa a TODOS los miembros
-      const allOthersDone = Array.isArray(task.assignedToMulti)
-        && task.assignedToMulti.every(id => id === currentUser.uid || completions[id]);
-      const update = {
-        [`multiCompletions.${currentUser.uid}`]: true,
-        [`multiCompletedAt.${currentUser.uid}`]: firebase.firestore.FieldValue.serverTimestamp()
-      };
-      // Si este es el ultimo en marcar, transicionar a 'multi-ready' para
-      // mostrar los 3 botones de acciones finales en la card.
-      if (allOthersDone) {
-        update.status = 'multi-ready';
-        update.multiReadyAt = firebase.firestore.FieldValue.serverTimestamp();
-      }
-      await db.collection('tasks').doc(taskId).update(update);
-      // Notificar a otros miembros
-      const otherIds = (task.assignedToMulti || []).filter(id => id !== currentUser.uid);
-      otherIds.forEach(id => {
-        const m = teamMembers.find(x => x.id === id);
-        if (m && m.telegramChatId) {
-          const extra = allOthersDone
-            ? `\n\n✓ Todos completamos. La tarea esta lista — alguien la puede programar / asignar publicador / dejar como borrador.`
-            : '';
-          sendTelegramNotif(m.telegramChatId, `*${currentUserData.name}* completo su parte de la multi-tarea:\n*${task.text}*\nProyecto: *${task.projectName}*${extra}`);
-        }
-      });
-      // Notificar al creador tambien si todos terminaron
-      if (allOthersDone) {
-        const creator = teamMembers.find(m => m.id === task.createdBy);
-        if (creator && creator.telegramChatId && creator.id !== currentUser.uid) {
-          sendTelegramNotif(creator.telegramChatId,
-            `Multi-tarea lista para programar:\n*${task.text}*\nProyecto: *${task.projectName}*\n\nTodos los miembros completaron sus partes.`);
-        }
-      }
+      // Abrir modal de submit (con upload de URL/archivo) en vez de confirm simple
+      openMultiSubmitModal(task);
       return;
     }
     // Si todos los demas ya marcaron pero yo no estoy en la lista (admin):
@@ -3834,6 +3815,134 @@ async function returnTaskToDeposit(taskId) {
   } catch (e) { console.warn('[notif return]', e.message); }
 }
 window.returnTaskToDeposit = returnTaskToDeposit;
+
+// ===== Multi-tarea: modal "Marcar mi parte hecha" =====
+let multiSubmitTaskId = null;
+
+function openMultiSubmitModal(task) {
+  multiSubmitTaskId = task.id;
+  const myRole = (task.multiRoles && task.multiRoles[currentUser.uid]) || '';
+  const roleLine = myRole ? ` (${myRole})` : '';
+  document.getElementById('multiSubmitTaskInfo').textContent = `${task.text}${roleLine} — proyecto: ${task.projectName || 'sin proyecto'}`;
+  document.getElementById('multiSubmitUrl').value = '';
+  document.getElementById('multiSubmitNote').value = '';
+  document.getElementById('multiSubmitUploadStatus').style.display = 'none';
+  // Mostrar URLs ya subidas por otros miembros (si hay)
+  const existing = Array.isArray(task.mediaUrls) ? task.mediaUrls : [];
+  const existingEl = document.getElementById('multiSubmitExisting');
+  if (existing.length > 0) {
+    existingEl.innerHTML = `📎 Ya subido por otros miembros: ${existing.length} URL(s)<br>` +
+      existing.map((u, i) => `<a href="#" onclick="window.api.openExternal('${esc(u)}');return false" style="color:var(--accent);text-decoration:underline">[${i + 1}] ${esc(u.slice(0, 80))}${u.length > 80 ? '...' : ''}</a>`).join('<br>');
+  } else {
+    existingEl.textContent = '';
+  }
+  document.getElementById('multiSubmitModal').classList.add('active');
+  setTimeout(() => document.getElementById('multiSubmitUrl').focus(), 100);
+}
+
+document.getElementById('cancelMultiSubmit').addEventListener('click', () => {
+  document.getElementById('multiSubmitModal').classList.remove('active');
+  multiSubmitTaskId = null;
+});
+document.getElementById('multiSubmitModal').addEventListener('click', (e) => {
+  if (e.target.id === 'multiSubmitModal') {
+    document.getElementById('multiSubmitModal').classList.remove('active');
+    multiSubmitTaskId = null;
+  }
+});
+
+// Boton "Subir archivo" en el modal multi-submit (Cloudinary)
+const multiSubmitUploadBtn = document.getElementById('multiSubmitUploadBtn');
+const multiSubmitFileInput = document.getElementById('multiSubmitFileInput');
+const multiSubmitUploadStatus = document.getElementById('multiSubmitUploadStatus');
+if (multiSubmitUploadBtn && multiSubmitFileInput) {
+  multiSubmitUploadBtn.addEventListener('click', () => multiSubmitFileInput.click());
+  multiSubmitFileInput.addEventListener('change', async () => {
+    const file = multiSubmitFileInput.files && multiSubmitFileInput.files[0];
+    if (!file) return;
+    multiSubmitUploadStatus.style.display = 'block';
+    multiSubmitUploadStatus.textContent = `⏳ Subiendo ${file.name}... 0%`;
+    multiSubmitUploadBtn.disabled = true;
+    try {
+      const result = await uploadToCloudinary(file, (pct) => {
+        multiSubmitUploadStatus.textContent = `⏳ Subiendo ${file.name}... ${pct}%`;
+      });
+      document.getElementById('multiSubmitUrl').value = result.url;
+      multiSubmitUploadStatus.textContent = `✅ Subido (${(result.bytes / 1024).toFixed(0)} KB)`;
+      setTimeout(() => { multiSubmitUploadStatus.style.display = 'none'; }, 3000);
+    } catch (e) {
+      multiSubmitUploadStatus.textContent = `❌ ${e.message}`;
+      multiSubmitUploadStatus.style.color = 'var(--danger)';
+    } finally {
+      multiSubmitUploadBtn.disabled = false;
+      multiSubmitFileInput.value = '';
+    }
+  });
+}
+
+document.getElementById('confirmMultiSubmit').addEventListener('click', async () => {
+  if (!multiSubmitTaskId) return;
+  const task = tasks.find(t => t.id === multiSubmitTaskId);
+  if (!task) { multiSubmitTaskId = null; return; }
+  const url = document.getElementById('multiSubmitUrl').value.trim();
+  const note = document.getElementById('multiSubmitNote').value.trim();
+  // Acumular URL en task.mediaUrls (si se proporciono)
+  const existing = Array.isArray(task.mediaUrls) ? task.mediaUrls : [];
+  const newMediaUrls = [...existing];
+  if (url) newMediaUrls.push(url);
+  // Calcular si todos los miembros completaron
+  const completions = task.multiCompletions || {};
+  const allOthersDone = Array.isArray(task.assignedToMulti)
+    && task.assignedToMulti.every(id => id === currentUser.uid || completions[id]);
+  // Acumular nota por miembro en task.multiNotes (objeto)
+  const update = {
+    [`multiCompletions.${currentUser.uid}`]: true,
+    [`multiCompletedAt.${currentUser.uid}`]: firebase.firestore.FieldValue.serverTimestamp()
+  };
+  if (url) {
+    update.mediaUrls = newMediaUrls;
+    // Tambien actualizamos coverImage/videoLink si todavia no estaban setteados
+    if (!task.coverImage) update.coverImage = url;
+    if (!task.videoLink && /\.(mp4|mov|webm)(\?.*)?$/i.test(url)) update.videoLink = url;
+    update[`multiSubmissions.${currentUser.uid}`] = url;
+  }
+  if (note) {
+    update[`multiNotes.${currentUser.uid}`] = note;
+  }
+  if (allOthersDone) {
+    update.status = 'multi-ready';
+    update.multiReadyAt = firebase.firestore.FieldValue.serverTimestamp();
+  }
+  try {
+    await db.collection('tasks').doc(task.id).update(update);
+  } catch (e) {
+    alert('Error: ' + e.message);
+    return;
+  }
+  // Notificaciones Telegram
+  const myRole = (task.multiRoles && task.multiRoles[currentUser.uid]) || '';
+  const roleLine = myRole ? ` (rol: ${myRole})` : '';
+  const otherIds = (task.assignedToMulti || []).filter(id => id !== currentUser.uid);
+  otherIds.forEach(id => {
+    const m = teamMembers.find(x => x.id === id);
+    if (m && m.telegramChatId) {
+      const extra = allOthersDone
+        ? `\n\n✅ Todos completaron. La tarea esta lista — abrila en "Por Aprobar" para programar / asignar publicador / dejar borrador.`
+        : '';
+      const urlLine = url ? `\nEntregable: ${url}` : '';
+      sendTelegramNotif(m.telegramChatId, `*${currentUserData.name}*${roleLine} completo su parte de la multi-tarea:\n*${task.text}*\nProyecto: *${task.projectName}*${urlLine}${extra}`);
+    }
+  });
+  if (allOthersDone) {
+    const creator = teamMembers.find(m => m.id === task.createdBy);
+    if (creator && creator.telegramChatId && creator.id !== currentUser.uid) {
+      sendTelegramNotif(creator.telegramChatId,
+        `Multi-tarea lista para programar:\n*${task.text}*\nProyecto: *${task.projectName}*\n\nTodos los miembros completaron — abrila en "Por Aprobar".`);
+    }
+  }
+  document.getElementById('multiSubmitModal').classList.remove('active');
+  multiSubmitTaskId = null;
+});
 
 // ===== Multi-tarea: acciones post-completion =====
 // Las multi-tareas en estado 'multi-ready' (todos completaron) tienen 3 botones:
