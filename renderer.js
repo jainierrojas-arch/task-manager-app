@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '2.99.9': {
+    title: 'Entregar tarea: subir archivo + botón "Enviar y programar"',
+    features: [
+      '📁 <strong>Subida local en el modal de Entregar</strong>: cuando el asignado le da "✓ Tarea completada", el modal "Entregar trabajo terminado" ahora tiene un botón <strong>📁 Subir archivo</strong> al lado del campo del link. Click → elige imagen/video desde tu Mac → se sube a Cloudinary con barra de progreso → el URL se rellena automáticamente en el campo. Misma experiencia que el modal Programar.',
+      '📅 <strong>Botón "Enviar y programar"</strong>: ya no tienes que entregar la tarea, esperar aprobación, y después buscarla para programar. Click este botón verde → se envía para aprobación + se abre el modal Programar con el material ya cargado (URLs, título como caption, portada). Atajo de 1 click para todo el flujo.',
+      'ℹ️ El botón "Enviar para aprobación" sigue funcionando igual si solo quieres entregar y dejar que el creador apruebe primero.'
+    ]
+  },
   '2.99.8': {
     title: 'Programación visible y editable para TODO el equipo',
     features: [
@@ -3508,6 +3516,8 @@ async function completeTask(taskId) {
   submittingTaskId = taskId;
   document.getElementById('submitTaskTitle').textContent = task.text;
   document.getElementById('submitTaskLinkInput').value = '';
+  const stEl = document.getElementById('submitTaskUploadStatus');
+  if (stEl) { stEl.style.display = 'none'; stEl.textContent = ''; stEl.style.color = ''; }
   document.getElementById('submitTaskModal').classList.add('active');
   setTimeout(() => document.getElementById('submitTaskLinkInput').focus(), 100);
 }
@@ -3607,6 +3617,31 @@ document.getElementById('submitTaskConfirm').addEventListener('click', async () 
   document.getElementById('submitTaskModal').classList.remove('active');
   await finalizeSubmitTask(taskId, link);
 });
+// "Enviar y programar": entrega para aprobacion y abre el modal Programar
+// pre-llenado con el material recien subido. Atajo para no tener que ir a
+// buscar la tarea despues.
+document.getElementById('submitTaskConfirmSchedule').addEventListener('click', async () => {
+  if (!submittingTaskId) return;
+  const link = document.getElementById('submitTaskLinkInput').value;
+  const taskId = submittingTaskId;
+  const task = tasks.find(t => t.id === taskId);
+  submittingTaskId = null;
+  document.getElementById('submitTaskModal').classList.remove('active');
+  await finalizeSubmitTask(taskId, link);
+  if (task) {
+    // Construir contexto reutilizando la data de la tarea + el link recien
+    // entregado (que aun no esta en task porque finalizeSubmitTask actualiza
+    // Firestore async). Lo inyectamos manualmente.
+    const ctx = buildSchedulingContextFromTask(task);
+    if (link && link.trim()) {
+      let normLink = link.trim();
+      if (!/^https?:\/\//i.test(normLink)) normLink = 'https://' + normLink;
+      if (!ctx.mediaUrls.includes(normLink)) ctx.mediaUrls.unshift(normLink);
+    }
+    schedulingContext = ctx;
+    await openScheduleModalWithContext();
+  }
+});
 document.getElementById('submitTaskLinkInput').addEventListener('keypress', (e) => {
   if (e.key === 'Enter') document.getElementById('submitTaskConfirm').click();
 });
@@ -3616,6 +3651,38 @@ document.getElementById('submitTaskModal').addEventListener('click', (e) => {
     submittingTaskId = null;
   }
 });
+
+// Upload local a Cloudinary desde el modal "Entregar trabajo terminado".
+// Misma logica que multiSubmitUploadBtn: click en el boton abre file input,
+// la URL resultante se pega en submitTaskLinkInput.
+const submitTaskUploadBtn = document.getElementById('submitTaskUploadBtn');
+const submitTaskFileInput = document.getElementById('submitTaskFileInput');
+const submitTaskUploadStatus = document.getElementById('submitTaskUploadStatus');
+if (submitTaskUploadBtn && submitTaskFileInput) {
+  submitTaskUploadBtn.addEventListener('click', () => submitTaskFileInput.click());
+  submitTaskFileInput.addEventListener('change', async () => {
+    const file = submitTaskFileInput.files && submitTaskFileInput.files[0];
+    if (!file) return;
+    submitTaskUploadStatus.style.display = 'block';
+    submitTaskUploadStatus.style.color = '';
+    submitTaskUploadStatus.textContent = `⏳ Subiendo ${file.name}... 0%`;
+    submitTaskUploadBtn.disabled = true;
+    try {
+      const result = await uploadToCloudinary(file, (pct) => {
+        submitTaskUploadStatus.textContent = `⏳ Subiendo ${file.name}... ${pct}%`;
+      });
+      document.getElementById('submitTaskLinkInput').value = result.url;
+      submitTaskUploadStatus.textContent = `✅ Subido (${(result.bytes / 1024).toFixed(0)} KB)`;
+      setTimeout(() => { submitTaskUploadStatus.style.display = 'none'; }, 3000);
+    } catch (e) {
+      submitTaskUploadStatus.textContent = `❌ ${e.message}`;
+      submitTaskUploadStatus.style.color = 'var(--danger)';
+    } finally {
+      submitTaskUploadBtn.disabled = false;
+      submitTaskFileInput.value = '';
+    }
+  });
+}
 
 async function approveTask(taskId) {
   const taskEl = document.querySelector(`.task-item[data-id="${taskId}"]`);
