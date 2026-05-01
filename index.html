@@ -1179,6 +1179,24 @@
     }
     .carousel-upload:hover { background: rgba(108,99,255,0.1); color: var(--accent); border-color: var(--accent); }
     .carousel-upload:disabled { opacity: 0.5; cursor: wait; }
+    /* Botones de reorden en filas del carrusel */
+    .carousel-move {
+      width: 22px; height: 22px; flex-shrink: 0; cursor: pointer;
+      background: transparent; border: 1px solid var(--border);
+      border-radius: 4px; color: var(--text-secondary);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; padding: 0;
+    }
+    .carousel-move:hover { background: rgba(108,99,255,0.1); color: var(--accent); border-color: var(--accent); }
+    .carousel-move:disabled { opacity: 0.3; cursor: not-allowed; }
+    .carousel-move-stack {
+      display: flex; flex-direction: column; gap: 2px; flex-shrink: 0;
+    }
+    /* Drag-to-reorder en thumbs de la galeria */
+    .gallery-thumb-drag { cursor: grab; }
+    .gallery-thumb-drag:active { cursor: grabbing; }
+    .gallery-thumb-dragging { opacity: 0.4; }
+    .gallery-thumb-drop-target { outline: 2px dashed var(--accent); outline-offset: 2px; }
   </style>
 </head>
 <body>
@@ -1950,6 +1968,21 @@
       <div class="modal-buttons">
         <button class="btn btn-ghost" id="archiveSkip">No archivar</button>
         <button class="btn btn-success" id="archiveConfirm" style="background:#4ecdc4;color:#1a1b2e;font-weight:600">Archivar al Deposito</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Preview Modal: ver lo que hay en un borrador / programado -->
+  <div class="modal-overlay" id="schedPreviewModal">
+    <div class="modal" style="max-width:720px">
+      <div class="modal-title" id="schedPreviewTitle">👁 Ver post</div>
+      <div id="schedPreviewMeta" style="font-size:12px;color:var(--text-secondary);margin-bottom:10px"></div>
+      <div id="schedPreviewMedia" style="display:flex;gap:10px;overflow-x:auto;padding:8px;background:var(--bg-secondary);border-radius:8px;margin-bottom:12px;scroll-snap-type:x mandatory"></div>
+      <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px">Caption</div>
+      <div id="schedPreviewCaption" style="background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:10px;font-size:13px;color:var(--text-primary);white-space:pre-wrap;max-height:200px;overflow-y:auto;margin-bottom:12px"></div>
+      <div class="modal-buttons" style="flex-wrap:wrap;gap:6px">
+        <button class="btn btn-ghost" id="schedPreviewClose">Cerrar</button>
+        <button class="btn btn-primary" id="schedPreviewEdit" title="Abrir el modal Programar para terminar de editar">&#9998; Editar</button>
       </div>
     </div>
   </div>

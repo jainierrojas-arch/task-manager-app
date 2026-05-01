@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.0.0': {
+    title: 'Botón "Ver" en programaciones + reordenar carrusel',
+    features: [
+      '👁 <strong>Botón "Ver" en cada programación / borrador</strong>: en la pestaña Programación ahora aparece un ícono 👁 en cada card. Click → modal preview con todos los medios cargados (cover + carrusel) numerados en orden, el caption completo, y el estado. Útil para revisar qué tiene un borrador sin tener que abrir el editor completo. Click en cualquier thumbnail → abre el archivo original en el navegador.',
+      '✎ <strong>Atajo Editar dentro del preview</strong>: si tienes permiso para editar el borrador / programado, el botón "Editar" abre directamente el modal Programar con todo cargado.',
+      '🔢 <strong>Reordenar carrusel: botones ↑/↓</strong>: cada fila de URL en el modal Programar tiene ahora botones ▲▼ a la izquierda. Click → mueve la URL una posición arriba o abajo. La numeración y el preview se actualizan en vivo.',
+      '🖱️ <strong>Reordenar carrusel: arrastrar en la galería</strong>: en la previsualización horizontal arriba del modal, ahora puedes arrastrar cualquier miniatura y soltarla sobre otra para reordenar visualmente. El orden se sincroniza con los inputs de abajo automáticamente.',
+      '🎯 Funciona para Posts y Carruseles. El orden final que veas es el que se manda a Make → Instagram.'
+    ]
+  },
   '2.99.9': {
     title: 'Entregar tarea: subir archivo + botón "Enviar y programar"',
     features: [
@@ -1545,6 +1555,9 @@ function renderScheduleListView() {
     const editableNorm = (norm === 'programado' || norm === 'draft');
     const editBtn = (canEditPost && editableNorm) ? `<button class="btn btn-ghost btn-small" data-edit-sched="${esc(p.id)}" title="${norm === 'draft' ? 'Editar borrador' : 'Editar'}">&#9998;</button>` : '';
     const cancelBtn = (canEditPost && editableNorm) ? `<button class="btn btn-danger btn-small" data-cancel-sched="${esc(p.id)}" title="${norm === 'draft' ? 'Eliminar borrador' : 'Cancelar'}">&#10005;</button>` : '';
+    // Boton "Ver": disponible siempre (incluso publicado/fallo) para revisar
+    // qué medios y caption tiene un post sin abrir el editor.
+    const viewBtn = `<button class="btn btn-ghost btn-small" data-view-sched="${esc(p.id)}" title="Ver media y caption">&#128065;</button>`;
     const platformLabel = (p.postType || 'post').toUpperCase();
     return `
       <div class="sched-card ${cls}">
@@ -1554,7 +1567,7 @@ function renderScheduleListView() {
           <div class="sched-card-caption">${esc(cap)}</div>
           <div class="sched-card-meta">${scheduleStatusPill(p.status || 'pending')} &middot; por ${esc(p.createdByName || 'Anonimo')}</div>
         </div>
-        <div class="sched-card-actions">${editBtn}${cancelBtn}</div>
+        <div class="sched-card-actions">${viewBtn}${editBtn}${cancelBtn}</div>
       </div>`;
   }).join('');
   container.querySelectorAll('[data-cancel-sched]').forEach(b => {
@@ -1568,6 +1581,83 @@ function renderScheduleListView() {
       e.stopPropagation();
       editScheduledPost(b.dataset.editSched);
     });
+  });
+  container.querySelectorAll('[data-view-sched]').forEach(b => {
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openSchedPreviewModal(b.dataset.viewSched);
+    });
+  });
+}
+
+// Preview modal: ver media (cover + carousel) y caption de un post sin
+// entrar al editor. Util para revisar borradores antes de retomarlos.
+function openSchedPreviewModal(postId) {
+  const p = scheduledPosts.find(x => x.id === postId);
+  if (!p) return;
+  const modal = document.getElementById('schedPreviewModal');
+  const titleEl = document.getElementById('schedPreviewTitle');
+  const metaEl = document.getElementById('schedPreviewMeta');
+  const mediaEl = document.getElementById('schedPreviewMedia');
+  const captionEl = document.getElementById('schedPreviewCaption');
+  const editBtn = document.getElementById('schedPreviewEdit');
+  if (!modal || !mediaEl) return;
+
+  const norm = scheduleStatusNorm(p.status);
+  const platformLabel = (p.postType || 'post').toUpperCase();
+  const statusPill = scheduleStatusPill(p.status || 'pending');
+  titleEl.innerHTML = `👁 ${norm === 'draft' ? 'Borrador' : platformLabel} &middot; ${statusPill}`;
+  metaEl.innerHTML = `${esc(fmtScheduledDate(p.scheduledAt))} &middot; por ${esc(p.createdByName || 'Anonimo')}`;
+
+  const urls = (Array.isArray(p.mediaUrls) && p.mediaUrls.length > 0)
+    ? p.mediaUrls
+    : (p.mediaUrl ? [p.mediaUrl] : []);
+  if (urls.length === 0) {
+    mediaEl.innerHTML = '<div style="color:var(--text-dim);font-size:12px;padding:20px;text-align:center;width:100%">Sin media cargada</div>';
+  } else {
+    mediaEl.innerHTML = urls.map((url, i) => {
+      const thumbUrl = mediaThumbUrl(url);
+      const isVid = isVideoUrl(url);
+      const playIcon = isVid ? '<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:36px;color:white;text-shadow:0 2px 8px rgba(0,0,0,0.7);pointer-events:none">▶</div>' : '';
+      const numBadge = `<div style="position:absolute;top:6px;left:6px;background:rgba(0,0,0,0.75);color:white;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700">${i + 1}</div>`;
+      const safeUrl = esc(url);
+      const inner = thumbUrl
+        ? `<div style="width:100%;height:100%;background:url('${esc(thumbUrl)}') center/cover no-repeat"></div>`
+        : (isVid ? `<video src="${safeUrl}" muted preload="metadata" playsinline style="width:100%;height:100%;object-fit:cover"></video>` : `<img src="${safeUrl}" style="width:100%;height:100%;object-fit:cover">`);
+      return `<a href="${safeUrl}" target="_blank" rel="noopener" style="flex:0 0 auto;width:200px;height:260px;border-radius:8px;overflow:hidden;border:1px solid var(--border);background:var(--bg-card);scroll-snap-align:start;position:relative;text-decoration:none;display:block">${inner}${numBadge}${playIcon}</a>`;
+    }).join('');
+  }
+
+  captionEl.textContent = p.caption || '(Sin caption)';
+
+  // El botón Editar solo se muestra si el usuario puede editar este post.
+  const isAdminUser = currentUserData && currentUserData.role === 'admin';
+  const isMine = p.createdBy === currentUser.uid;
+  const isMultiMember = Array.isArray(p.multiTaskMembers) && p.multiTaskMembers.includes(currentUser.uid);
+  const canEdit = (norm === 'draft') ? true : (isAdminUser || isMine || isMultiMember);
+  const editableNorm = (norm === 'programado' || norm === 'draft');
+  if (canEdit && editableNorm) {
+    editBtn.style.display = '';
+    editBtn.onclick = () => {
+      modal.classList.remove('active');
+      editScheduledPost(postId);
+    };
+  } else {
+    editBtn.style.display = 'none';
+  }
+
+  modal.classList.add('active');
+}
+const _schedPreviewClose = document.getElementById('schedPreviewClose');
+if (_schedPreviewClose) {
+  _schedPreviewClose.addEventListener('click', () => {
+    document.getElementById('schedPreviewModal').classList.remove('active');
+  });
+}
+const _schedPreviewModal = document.getElementById('schedPreviewModal');
+if (_schedPreviewModal) {
+  _schedPreviewModal.addEventListener('click', (e) => {
+    if (e.target === _schedPreviewModal) _schedPreviewModal.classList.remove('active');
   });
 }
 function renderScheduleCalendarView() {
@@ -1709,6 +1799,8 @@ function refreshCarouselInputs() {
     const input = row.querySelector('input[type="url"]');
     const thumb = row.querySelector('.carousel-thumb');
     const removeBtn = row.querySelector('.carousel-remove');
+    const upBtn = row.querySelector('.carousel-move-up');
+    const downBtn = row.querySelector('.carousel-move-down');
     if (num) num.textContent = String(i + 1);
     if (thumb && input) {
       const v = input.value.trim();
@@ -1727,10 +1819,27 @@ function refreshCarouselInputs() {
       }
     }
     if (removeBtn) removeBtn.disabled = rows.length <= CAROUSEL_MIN;
+    if (upBtn) upBtn.disabled = i === 0;
+    if (downBtn) downBtn.disabled = i === rows.length - 1;
   });
   // Boton +Anadir desactivado al llegar al max
   const addBtn = document.getElementById('schedAddCarouselUrl');
   if (addBtn) addBtn.disabled = rows.length >= CAROUSEL_MAX;
+}
+
+// Mueve una fila del carrusel hacia arriba o abajo en el orden.
+function moveCarouselRow(row, direction) {
+  const container = document.getElementById('schedCarouselInputs');
+  if (!container || !row) return;
+  if (direction === 'up') {
+    const prev = row.previousElementSibling;
+    if (prev) container.insertBefore(row, prev);
+  } else {
+    const next = row.nextElementSibling;
+    if (next) container.insertBefore(next, row);
+  }
+  refreshCarouselInputs();
+  renderCarouselGallery();
 }
 
 // Crea una fila de input con miniatura + boton remove + boton upload por fila,
@@ -1744,6 +1853,10 @@ function addCarouselInputRow(prefillUrl) {
   row.className = 'carousel-input-row';
   row.innerHTML = `
     <div class="carousel-num">1</div>
+    <div class="carousel-move-stack">
+      <button type="button" class="carousel-move carousel-move-up" title="Mover arriba">&#9650;</button>
+      <button type="button" class="carousel-move carousel-move-down" title="Mover abajo">&#9660;</button>
+    </div>
     <input type="url" placeholder="https://...jpg" />
     <button type="button" class="carousel-upload" title="Subir archivo">&#128193;</button>
     <input type="file" class="carousel-file-input" accept="image/*,video/*" style="display:none" />
@@ -1791,6 +1904,9 @@ function addCarouselInputRow(prefillUrl) {
     refreshCarouselInputs();
     renderCarouselGallery();
   });
+  // Botones mover arriba / abajo
+  row.querySelector('.carousel-move-up').addEventListener('click', () => moveCarouselRow(row, 'up'));
+  row.querySelector('.carousel-move-down').addEventListener('click', () => moveCarouselRow(row, 'down'));
   container.appendChild(row);
   refreshCarouselInputs();
 }
@@ -1818,26 +1934,82 @@ function renderCarouselGallery() {
     count.textContent = '';
     return;
   }
-  count.textContent = `(${lines.length} ${lines.length === 1 ? 'imagen' : 'imagenes'})`;
+  count.textContent = `(${lines.length} ${lines.length === 1 ? 'imagen' : 'imagenes'}) — arrastra para reordenar`;
   thumbs.innerHTML = lines.map((url, i) => {
     const thumbUrl = mediaThumbUrl(url);
     const isVid = isVideoUrl(url);
-    const playIcon = isVid ? '<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:32px;color:white;text-shadow:0 2px 8px rgba(0,0,0,0.6)">▶</div>' : '';
+    const playIcon = isVid ? '<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:32px;color:white;text-shadow:0 2px 8px rgba(0,0,0,0.6);pointer-events:none">▶</div>' : '';
+    const numBadge = `<div style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.7);color:white;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;pointer-events:none">${i + 1}</div>`;
     if (thumbUrl) {
       return `
-      <div style="flex:0 0 auto;width:120px;height:150px;border-radius:6px;overflow:hidden;background:var(--bg-card) center/cover no-repeat;background-image:url('${thumbUrl.replace(/'/g, '%27')}');border:1px solid var(--border);scroll-snap-align:start;position:relative">
-        <div style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.7);color:white;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">${i + 1}</div>
+      <div class="gallery-thumb-drag" draggable="true" data-gallery-idx="${i}" style="flex:0 0 auto;width:120px;height:150px;border-radius:6px;overflow:hidden;background:var(--bg-card) center/cover no-repeat;background-image:url('${thumbUrl.replace(/'/g, '%27')}');border:1px solid var(--border);scroll-snap-align:start;position:relative">
+        ${numBadge}
         ${playIcon}
       </div>`;
     }
     // Video no-Cloudinary: usar video tag inline (preload metadata para 1er frame)
     return `
-      <div style="flex:0 0 auto;width:120px;height:150px;border-radius:6px;overflow:hidden;background:var(--bg-card);border:1px solid var(--border);scroll-snap-align:start;position:relative">
-        <video src="${url.replace(/"/g, '%22')}" muted preload="metadata" playsinline style="width:100%;height:100%;object-fit:cover"></video>
-        <div style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.7);color:white;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">${i + 1}</div>
+      <div class="gallery-thumb-drag" draggable="true" data-gallery-idx="${i}" style="flex:0 0 auto;width:120px;height:150px;border-radius:6px;overflow:hidden;background:var(--bg-card);border:1px solid var(--border);scroll-snap-align:start;position:relative">
+        <video src="${url.replace(/"/g, '%22')}" muted preload="metadata" playsinline style="width:100%;height:100%;object-fit:cover;pointer-events:none"></video>
+        ${numBadge}
         ${playIcon}
       </div>`;
   }).join('');
+  // Drag-to-reorder: arrastra un thumb sobre otro y se intercambian/insertan.
+  // Sincroniza con los inputs para que getCarouselUrls() refleje el nuevo orden.
+  let dragSrcIdx = null;
+  thumbs.querySelectorAll('[data-gallery-idx]').forEach(el => {
+    el.addEventListener('dragstart', (e) => {
+      dragSrcIdx = parseInt(el.dataset.galleryIdx, 10);
+      el.classList.add('gallery-thumb-dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      try { e.dataTransfer.setData('text/plain', String(dragSrcIdx)); } catch (_) {}
+    });
+    el.addEventListener('dragend', () => {
+      el.classList.remove('gallery-thumb-dragging');
+      thumbs.querySelectorAll('.gallery-thumb-drop-target').forEach(x => x.classList.remove('gallery-thumb-drop-target'));
+    });
+    el.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      el.classList.add('gallery-thumb-drop-target');
+    });
+    el.addEventListener('dragleave', () => el.classList.remove('gallery-thumb-drop-target'));
+    el.addEventListener('drop', (e) => {
+      e.preventDefault();
+      el.classList.remove('gallery-thumb-drop-target');
+      const dstIdx = parseInt(el.dataset.galleryIdx, 10);
+      if (dragSrcIdx === null || dragSrcIdx === dstIdx) return;
+      reorderCarouselByGalleryDrag(dragSrcIdx, dstIdx);
+      dragSrcIdx = null;
+    });
+  });
+}
+
+// Reordena las filas del carrusel cuando se hace drag-and-drop en la galeria
+// de previews. La galeria solo muestra URLs validas (filter por https), pero
+// las filas pueden tener URLs vacias — saltamos esas para mapear bien.
+function reorderCarouselByGalleryDrag(srcIdx, dstIdx) {
+  const container = document.getElementById('schedCarouselInputs');
+  if (!container) return;
+  const rows = Array.from(container.querySelectorAll('.carousel-input-row'));
+  const filledRows = rows.filter(r => {
+    const v = r.querySelector('input[type="url"]').value.trim();
+    return /^https?:\/\//i.test(v);
+  });
+  const srcRow = filledRows[srcIdx];
+  const dstRow = filledRows[dstIdx];
+  if (!srcRow || !dstRow) return;
+  if (srcIdx < dstIdx) {
+    // mover hacia abajo: insertar despues del destino
+    if (dstRow.nextSibling) container.insertBefore(srcRow, dstRow.nextSibling);
+    else container.appendChild(srcRow);
+  } else {
+    // mover hacia arriba: insertar antes del destino
+    container.insertBefore(srcRow, dstRow);
+  }
+  refreshCarouselInputs();
+  renderCarouselGallery();
 }
 
 async function openScheduleModal(taskId) {
