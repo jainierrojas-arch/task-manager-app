@@ -5,19 +5,25 @@ const admin = require('firebase-admin');
 admin.initializeApp();
 const db = admin.firestore();
 
-// Lee la URL del webhook de Make desde el doc config/instagram en Firestore.
-// La app la guarda ahi cuando el usuario la configura en Settings.
-async function getMakeWebhookUrl() {
+// Lee las URLs de webhook desde el doc config/instagram en Firestore.
+// La app las guarda ahi cuando el usuario las configura en Settings.
+// - makeWebhookUrl    -> Instagram via Make.com
+// - ghlTiktokWebhookUrl -> TikTok via GoHighLevel Social Planner
+async function getWebhookUrls() {
   const snap = await db.collection('config').doc('instagram').get();
-  if (!snap.exists) return null;
-  const data = snap.data();
-  return (data && data.makeWebhookUrl) || null;
+  if (!snap.exists) return { make: null, ghlTiktok: null };
+  const data = snap.data() || {};
+  return {
+    make: data.makeWebhookUrl || null,
+    ghlTiktok: data.ghlTiktokWebhookUrl || null
+  };
 }
 
-// Construye el payload exacto que Make espera (igual al que la app enviaba antes).
+// Construye el payload exacto que cada webhook espera. Mantiene los campos
+// historicos (mediaUrl, mediaUrls, carouselChildren) para no romper el escenario
+// de Make existente. GHL recibe el mismo payload — la diferencia es el destino.
 function buildWebhookPayload(doc, scheduledPostId) {
   const d = doc.data();
-  // scheduledAt puede ser Timestamp; lo serializamos a ISO igual que antes.
   let scheduledAtIso = null;
   try {
     if (d.scheduledAt && typeof d.scheduledAt.toDate === 'function') {
@@ -29,6 +35,7 @@ function buildWebhookPayload(doc, scheduledPostId) {
 
   const payload = {
     platform: d.platform || 'instagram',
+    platforms: Array.isArray(d.platforms) ? d.platforms : ['instagram'],
     postType: d.postType || 'post',
     caption: d.caption || '',
     mediaUrl: d.mediaUrl || '',
@@ -63,17 +70,17 @@ async function postToWebhook(url, payload) {
 }
 
 // Corre cada 5 minutos. Lee Firestore, encuentra posts cuya hora ya llego
-// (status=programado y scheduledAt<=now), llama al webhook de Make y marca
-// como publicado o failed segun el resultado.
+// (status=programado y scheduledAt<=now), llama a los webhooks correspondientes
+// segun platforms[], y marca como publicado / failed / partialFailure.
 exports.publishScheduledPosts = onSchedule({
   schedule: 'every 5 minutes',
   timeZone: 'America/Argentina/Buenos_Aires',
   region: 'us-central1',
   retryCount: 0
 }, async (event) => {
-  const webhookUrl = await getMakeWebhookUrl();
-  if (!webhookUrl) {
-    logger.warn('No hay makeWebhookUrl configurado en config/instagram. Skip.');
+  const urls = await getWebhookUrls();
+  if (!urls.make && !urls.ghlTiktok) {
+    logger.warn('No hay webhooks configurados (ni Make ni GHL TikTok). Skip.');
     return;
   }
 
@@ -93,8 +100,7 @@ exports.publishScheduledPosts = onSchedule({
 
   for (const doc of snap.docs) {
     const ref = doc.ref;
-    // Lock optimista: marcamos publishing antes de llamar a Make para evitar
-    // doble disparo si la funcion corre dos veces por algun motivo.
+    // Lock optimista para evitar doble disparo si la funcion corre dos veces.
     try {
       await db.runTransaction(async (tx) => {
         const fresh = await tx.get(ref);
@@ -110,24 +116,33 @@ exports.publishScheduledPosts = onSchedule({
       continue;
     }
 
+    const data = doc.data();
+    const platforms = Array.isArray(data.platforms) && data.platforms.length > 0
+      ? data.platforms
+      : ['instagram']; // legacy: posts sin platforms van a IG por default
     const payload = buildWebhookPayload(doc, doc.id);
+
+    // Disparar en paralelo a las plataformas que correspondan.
+    const tasks = [];
+    if (platforms.includes('instagram') && urls.make) {
+      tasks.push(postToWebhook(urls.make, payload).then(r => ({ platform: 'instagram', ...r })));
+    }
+    if (platforms.includes('tiktok') && urls.ghlTiktok) {
+      tasks.push(postToWebhook(urls.ghlTiktok, payload).then(r => ({ platform: 'tiktok', ...r })));
+    }
+    if (tasks.length === 0) {
+      await ref.update({
+        status: 'failed',
+        error: 'Plataformas seleccionadas pero ningun webhook configurado',
+        failedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+      logger.error(`Fallo ${doc.id}: sin webhook para ${platforms.join(',')}`);
+      continue;
+    }
+
+    let results;
     try {
-      const result = await postToWebhook(webhookUrl, payload);
-      if (result.ok) {
-        await ref.update({
-          status: 'publicado',
-          publishedAt: admin.firestore.FieldValue.serverTimestamp(),
-          webhookResponseStatus: result.status
-        });
-        logger.info(`Publicado ${doc.id}`);
-      } else {
-        await ref.update({
-          status: 'failed',
-          error: `HTTP ${result.status}: ${result.body.slice(0, 500)}`,
-          failedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-        logger.error(`Fallo ${doc.id}: HTTP ${result.status}`);
-      }
+      results = await Promise.all(tasks);
     } catch (e) {
       await ref.update({
         status: 'failed',
@@ -135,6 +150,40 @@ exports.publishScheduledPosts = onSchedule({
         failedAt: admin.firestore.FieldValue.serverTimestamp()
       });
       logger.error(`Error ${doc.id}: ${e.message}`);
+      continue;
+    }
+
+    const allOk = results.every(r => r.ok);
+    const anyOk = results.some(r => r.ok);
+    if (allOk) {
+      await ref.update({
+        status: 'publicado',
+        publishedAt: admin.firestore.FieldValue.serverTimestamp(),
+        publishedPlatforms: results.map(r => r.platform),
+        webhookResponses: results.map(r => ({ platform: r.platform, status: r.status }))
+      });
+      logger.info(`Publicado ${doc.id} en ${results.map(r => r.platform).join('+')}`);
+    } else if (anyOk) {
+      const succeeded = results.filter(r => r.ok).map(r => r.platform);
+      const failed = results.filter(r => !r.ok);
+      await ref.update({
+        status: 'partial',
+        publishedAt: admin.firestore.FieldValue.serverTimestamp(),
+        publishedPlatforms: succeeded,
+        failedPlatforms: failed.map(r => r.platform),
+        error: failed.map(r => `${r.platform}: HTTP ${r.status} ${(r.body || '').slice(0, 200)}`).join(' | '),
+        webhookResponses: results.map(r => ({ platform: r.platform, status: r.status, ok: r.ok }))
+      });
+      logger.warn(`Parcial ${doc.id}: OK=${succeeded.join(',')} FALLO=${failed.map(r => r.platform).join(',')}`);
+    } else {
+      const errMsg = results.map(r => `${r.platform}: HTTP ${r.status} ${(r.body || '').slice(0, 200)}`).join(' | ');
+      await ref.update({
+        status: 'failed',
+        error: errMsg,
+        failedAt: admin.firestore.FieldValue.serverTimestamp(),
+        webhookResponses: results.map(r => ({ platform: r.platform, status: r.status, ok: r.ok }))
+      });
+      logger.error(`Fallo total ${doc.id}: ${errMsg}`);
     }
   }
 });

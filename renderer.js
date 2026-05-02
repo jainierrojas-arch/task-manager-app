@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.1.0': {
+    title: 'TikTok via GoHighLevel: programar en IG + TikTok a la vez',
+    features: [
+      '🎵 <strong>TikTok integrado via GHL Social Planner</strong>: ahora podés programar contenido en TikTok desde la misma app, sin pagar tools extra. GHL te lo permite con su Social Planner (que ya pagás). Cero TikTok Developer App, cero apps de pago tipo Late.',
+      '☑️ <strong>Selector de plataformas en el modal Programar</strong>: arriba del Tipo de post ahora hay 2 checkboxes: 📷 Instagram y 🎵 TikTok. Ambas marcadas por defecto. Tildá solo las que quieras — la app dispara cada webhook correspondiente.',
+      '🔗 <strong>Settings: nuevo campo "GHL TikTok Webhook"</strong>: pegá ahí el Inbound Webhook URL de tu Workflow de GHL. Instrucciones paso a paso de cómo configurarlo en GHL están dentro del propio Settings.',
+      '🏷️ <strong>Badges IG / TT</strong> en cada card de Programación para ver de un vistazo dónde se publica cada post.',
+      '☁️ <strong>Cloud Function actualizada</strong>: ahora dispara los 2 webhooks en paralelo (Make IG + GHL TikTok). Si una plataforma falla y la otra no, el post queda en estado nuevo <code>partial</code> con detalle de cuál falló — la otra ya quedó publicada y no se reintenta.'
+    ]
+  },
   '3.0.0': {
     title: 'Botón "Ver" en programaciones + reordenar carrusel',
     features: [
@@ -1520,6 +1530,17 @@ function fmtScheduledDate(ts) {
   if (isNaN(d.getTime())) return 'Sin fecha';
   return d.toLocaleString('es-ES', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
+// Renderiza badges para las plataformas a las que se publicara este post.
+// Posts legacy sin .platforms se asumen IG-only (no rompemos visual).
+function platformBadges(p) {
+  const arr = Array.isArray(p.platforms) && p.platforms.length > 0 ? p.platforms : ['instagram'];
+  return arr.map(pl => {
+    if (pl === 'instagram') return '<span style="font-size:10px;background:rgba(240,148,51,0.15);color:#f09433;padding:1px 6px;border-radius:8px;margin-left:4px">IG</span>';
+    if (pl === 'tiktok') return '<span style="font-size:10px;background:rgba(255,71,87,0.15);color:#ff4757;padding:1px 6px;border-radius:8px;margin-left:4px">TT</span>';
+    return '';
+  }).join('');
+}
+
 function visibleScheduledPosts() {
   if (!currentUser) return [];
   // Todo el equipo ve todos los posts (programados, borradores, publicados, fallos).
@@ -1565,7 +1586,7 @@ function renderScheduleListView() {
         <div class="sched-card-body">
           <div class="sched-card-when">${esc(fmtScheduledDate(p.scheduledAt))} &middot; ${esc(platformLabel)}</div>
           <div class="sched-card-caption">${esc(cap)}</div>
-          <div class="sched-card-meta">${scheduleStatusPill(p.status || 'pending')} &middot; por ${esc(p.createdByName || 'Anonimo')}</div>
+          <div class="sched-card-meta">${scheduleStatusPill(p.status || 'pending')} &middot; por ${esc(p.createdByName || 'Anonimo')} ${platformBadges(p)}</div>
         </div>
         <div class="sched-card-actions">${viewBtn}${editBtn}${cancelBtn}</div>
       </div>`;
@@ -2125,6 +2146,8 @@ async function openScheduleModalWithContext() {
   // Aplicar tipo sugerido
   document.querySelectorAll('input[name="schedPostType"]').forEach(r => { r.checked = r.value === suggestedType; });
   applyPostTypeToModal(suggestedType);
+  // Plataformas default: ambas activas en posts nuevos.
+  applyPlatformsToModal(['instagram', 'tiktok']);
   // Reset modo edicion (solo openScheduleModalForEdit lo activa)
   editingPostId = null;
   applyScheduleModalLabels();
@@ -2214,9 +2237,32 @@ async function editScheduledPost(id) {
   const ptype = p.postType || 'post';
   document.querySelectorAll('input[name="schedPostType"]').forEach(r => { r.checked = r.value === ptype; });
   applyPostTypeToModal(ptype);
+  // Plataformas: si el post tiene platforms guardado, respetarlo. Si no
+  // (posts legacy de antes de v3.1), asumir IG only para no cambiar destino.
+  applyPlatformsToModal(Array.isArray(p.platforms) && p.platforms.length > 0 ? p.platforms : ['instagram']);
   editingPostId = id;
   applyScheduleModalLabels();
   modal.classList.add('active');
+}
+
+// Lee los checkboxes de plataformas del modal Programar y devuelve el array.
+// Default: ambas marcadas si el usuario no toco nada (caso edicion legacy).
+function getSelectedPlatforms() {
+  const ig = document.getElementById('schedPlatformIg');
+  const tt = document.getElementById('schedPlatformTt');
+  const platforms = [];
+  if (ig && ig.checked) platforms.push('instagram');
+  if (tt && tt.checked) platforms.push('tiktok');
+  return platforms;
+}
+function applyPlatformsToModal(platforms) {
+  const ig = document.getElementById('schedPlatformIg');
+  const tt = document.getElementById('schedPlatformTt');
+  // Si no se especifico nada (post legacy), default IG only para no romper
+  // posts antiguos: la Cloud Function asume IG si platforms esta vacio.
+  const arr = Array.isArray(platforms) && platforms.length > 0 ? platforms : ['instagram'];
+  if (ig) ig.checked = arr.includes('instagram');
+  if (tt) tt.checked = arr.includes('tiktok');
 }
 
 // Comprueba si el modal tiene "data significativa" — usado para decidir si al
@@ -2264,8 +2310,10 @@ async function saveScheduleAsDraft() {
     alert('Nada que guardar — agrega al menos un caption o una imagen');
     return false;
   }
+  const platforms = getSelectedPlatforms();
   const payload = {
     platform: 'instagram',
+    platforms: platforms.length > 0 ? platforms : ['instagram'],
     postType,
     caption,
     mediaUrl,
@@ -2345,8 +2393,11 @@ async function confirmSchedulePost() {
     if (!mediaUrl) { alert('La URL del medio es obligatoria'); return; }
   }
 
+  const platforms = getSelectedPlatforms();
+  if (platforms.length === 0) { alert('Tildá al menos una plataforma (Instagram o TikTok)'); return; }
   const payload = {
     platform: 'instagram',
+    platforms,
     postType,
     caption,
     mediaUrl,
@@ -5737,6 +5788,60 @@ if (saveMakeWebhookBtn) {
     }
   });
 }
+// ===== GHL TikTok webhook: cargar al abrir Settings, guardar + sync a Firestore =====
+const ghlTiktokWebhookInput = document.getElementById('ghlTiktokWebhookInput');
+const saveGhlTiktokWebhookBtn = document.getElementById('saveGhlTiktokWebhook');
+const ghlTiktokStatusEl = document.getElementById('ghlTiktokStatus');
+function setGhlTiktokStatus(connected, msg) {
+  if (!ghlTiktokStatusEl) return;
+  const dot = ghlTiktokStatusEl.querySelector('.status-dot');
+  const text = ghlTiktokStatusEl.querySelector('span:last-child');
+  if (dot) { dot.classList.toggle('connected', !!connected); dot.classList.toggle('disconnected', !connected); }
+  if (text) text.textContent = msg;
+}
+if (window.api && window.api.getGhlTiktokWebhook && ghlTiktokWebhookInput) {
+  window.api.getGhlTiktokWebhook().then(async url => {
+    ghlTiktokWebhookInput.value = url || '';
+    setGhlTiktokStatus(!!url, url ? 'Configurado' : 'No configurado');
+    // Sync a Firestore (config/instagram, mismo doc) para que la Cloud Function
+    // tenga la URL sin esperar al proximo guardado manual.
+    if (url && db && currentUser) {
+      try {
+        const snap = await db.collection('config').doc('instagram').get();
+        const remote = snap.exists ? snap.data().ghlTiktokWebhookUrl : null;
+        if (remote !== url) {
+          await db.collection('config').doc('instagram').set({
+            ghlTiktokWebhookUrl: url,
+            updatedBy: currentUser.email,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+          }, { merge: true });
+        }
+      } catch (e) { /* no critico */ }
+    }
+  });
+}
+if (saveGhlTiktokWebhookBtn) {
+  saveGhlTiktokWebhookBtn.addEventListener('click', async () => {
+    const url = ghlTiktokWebhookInput.value.trim();
+    const result = await window.api.setGhlTiktokWebhook(url);
+    if (result && result.ok) {
+      try {
+        await db.collection('config').doc('instagram').set({
+          ghlTiktokWebhookUrl: url,
+          updatedBy: currentUser ? currentUser.email : null,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+      } catch (e) {
+        console.warn('No se pudo guardar GHL webhook en Firestore:', e.message);
+      }
+      setGhlTiktokStatus(!!url, url ? 'Configurado' : 'No configurado');
+      alert('Webhook GHL TikTok guardado');
+    } else {
+      alert('Error: ' + (result && result.error));
+    }
+  });
+}
+
 // ===== Cloudinary config: cargar al abrir Settings, guardar al click, sync Firestore =====
 const cloudinaryCloudNameInput = document.getElementById('cloudinaryCloudName');
 const cloudinaryUploadPresetInput = document.getElementById('cloudinaryUploadPreset');

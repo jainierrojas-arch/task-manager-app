@@ -56,6 +56,9 @@ contextBridge.exposeInMainWorld('api', {
   // Cloudinary unsigned upload config (para subir archivos directos desde la app)
   getCloudinaryConfig: () => ipcRenderer.invoke('get-cloudinary-config'),
   setCloudinaryConfig: (cfg) => ipcRenderer.invoke('set-cloudinary-config', cfg),
+  // GHL TikTok webhook (Social Planner)
+  getGhlTiktokWebhook: () => ipcRenderer.invoke('get-ghl-tiktok-webhook'),
+  setGhlTiktokWebhook: (url) => ipcRenderer.invoke('set-ghl-tiktok-webhook', url),
   // El deposito puede pedir abrir el modal de programacion con datos pre-llenados
   onScheduleFromEntry: (callback) => ipcRenderer.on('schedule-from-entry', (_, data) => callback(data)),
 

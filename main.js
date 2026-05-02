@@ -60,7 +60,12 @@ const store = new JsonStore({
   // sin necesidad de API secret (modo unsigned). Las URLs resultantes se
   // pegan automaticamente en el modal de Programar.
   cloudinaryCloudName: '',
-  cloudinaryUploadPreset: ''
+  cloudinaryUploadPreset: '',
+  // URL de webhook de GoHighLevel para publicar en TikTok via Social Planner.
+  // Workflow en GHL: Inbound Webhook -> Create Social Post -> TikTok account.
+  // Cuando el usuario marca "TikTok" en el modal Programar, la Cloud Function
+  // tambien manda payload aqui (en paralelo al webhook de Make/Instagram).
+  ghlTiktokWebhookUrl: ''
 });
 
 let mainWindow;
@@ -776,6 +781,20 @@ function registerIpcHandlers() {
     } catch (e) {
       return { ok: false, error: e.message };
     }
+  });
+
+  // GHL TikTok webhook: igual que Make pero para Social Planner de
+  // GoHighLevel. La Cloud Function lee este URL desde config/instagram (mismo
+  // doc para no proliferar config docs) y lo llama si el post tiene
+  // platforms incluyendo "tiktok".
+  ipcMain.handle('get-ghl-tiktok-webhook', () => store.get('ghlTiktokWebhookUrl') || '');
+  ipcMain.handle('set-ghl-tiktok-webhook', (_, url) => {
+    const clean = String(url || '').trim();
+    if (clean && !/^https?:\/\//i.test(clean)) {
+      return { ok: false, error: 'La URL debe empezar con http:// o https://' };
+    }
+    store.set('ghlTiktokWebhookUrl', clean);
+    return { ok: true };
   });
 
   // Cloudinary config: cloud name + upload preset (modo unsigned).

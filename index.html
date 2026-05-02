@@ -1575,6 +1575,28 @@
           </div>
 
           <div class="settings-group">
+            <div class="settings-label">Programacion en TikTok (GoHighLevel webhook)</div>
+            <div class="settings-input-group">
+              <input type="url" id="ghlTiktokWebhookInput" placeholder="https://services.leadconnectorhq.com/hooks/...">
+              <button class="btn btn-primary btn-small" id="saveGhlTiktokWebhook">Guardar</button>
+            </div>
+            <div class="status-indicator" id="ghlTiktokStatus" style="margin-top:6px">
+              <span class="status-dot disconnected"></span>
+              <span>No configurado</span>
+            </div>
+            <div class="telegram-instructions">
+              <h4>Como configurar GHL para postear en TikTok:</h4>
+              <ol>
+                <li>En GHL: <strong>Settings &rarr; Social Planner &rarr; Connect Accounts &rarr; TikTok</strong>. Login con cuenta TikTok Business.</li>
+                <li><strong>Automation &rarr; Workflows &rarr; New Workflow</strong></li>
+                <li>Trigger: <code>Inbound Webhook</code> &rarr; copiá la URL que GHL te genera y pegala arriba.</li>
+                <li>Action: <code>Social Planner &rarr; Create Social Post</code>. Mapeá <code>caption</code> y <code>mediaUrl</code> desde el payload del webhook. Tildá tu cuenta TikTok como destino.</li>
+                <li>Activa el Workflow. Cuando programes con TikTok marcado, GHL publica.</li>
+              </ol>
+            </div>
+          </div>
+
+          <div class="settings-group">
             <div class="settings-label">Cloudinary (subir imagenes y videos directo desde la app)</div>
             <div style="display:flex;gap:6px;flex-direction:column">
               <input type="text" id="cloudinaryCloudName" placeholder="Cloud Name (ej: dcdfsfjha)">
@@ -1686,6 +1708,14 @@
       <div id="scheduleCarouselGallery" style="display:none;margin-bottom:12px">
         <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px">Vista previa del carrusel <span id="scheduleGalleryCount" style="color:var(--accent);font-weight:600"></span></div>
         <div id="scheduleGalleryThumbs" style="display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;scroll-snap-type:x mandatory"></div>
+      </div>
+      <div class="modal-row">
+        <label>Plataformas</label>
+        <div style="display:flex;gap:10px;margin-top:4px;flex-wrap:wrap">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="schedPlatformIg" checked> &#128247; Instagram</label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="schedPlatformTt" checked> &#127925; TikTok</label>
+        </div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:4px">IG va via Make. TikTok va via GHL Social Planner. Cada uno usa su webhook configurado en Settings.</div>
       </div>
       <div class="modal-row">
         <label>Tipo de post</label>
