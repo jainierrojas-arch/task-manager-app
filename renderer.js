@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.4.0': {
+    title: 'Recurso ManyChat por programación',
+    features: [
+      '🔗 <strong>Botón "Recurso ManyChat" en cada borrador / programación</strong>: el que arma el flow de ManyChat (DM automático, comentarios, etc.) puede pegar el link del recurso directo en la card. El siguiente miembro del equipo lo encuentra al toque sin tener que buscar en otra app.',
+      '➕ <strong>Cómo se ve</strong>: si la programación NO tiene recurso, aparece un botón <code>+ Recurso ManyChat</code> punteado para pegarlo. Si SÍ tiene, aparece un chip turquesa <code>🔗 Recurso ManyChat</code> que abre el link en el browser con un click. Al lado, un ✏ para editarlo o quitarlo (solo visible para quien tiene permisos de edición).',
+      '👁 <strong>También en el preview modal</strong>: cuando le das click al ojo (👁) para ver una programación, se muestra una sección dedicada con el recurso, indicando quién lo agregó.',
+      '🔒 <strong>Permisos</strong>: para BORRADORES cualquier miembro puede agregar/editar el recurso (mismo criterio que el resto de campos del borrador). Para programados/publicados solo admin / creador / miembros del multi-task. Cualquiera puede abrir el link, no hace falta permiso especial para eso.'
+    ]
+  },
   '3.3.1': {
     title: 'Fix: pantalla de espera no se cerraba al ser aprobado',
     features: [
@@ -1742,6 +1751,87 @@ function platformBadges(p) {
   }).join('');
 }
 
+// ===== Recurso ManyChat por post =====
+// Cada post programado/borrador puede tener un link a un "recurso ManyChat":
+// el flow del bot que dispara cuando alguien comenta o manda DM. La idea es
+// que el creador del recurso pegue el link aca y el publisher lo encuentre
+// al instante sin tener que buscar en otra app.
+function manychatBadgeHtml(post, canEdit) {
+  const url = (post && post.manychatUrl) ? post.manychatUrl.trim() : '';
+  if (url) {
+    const editIcon = canEdit
+      ? `<button class="btn btn-ghost btn-small" data-mc-edit="${esc(post.id)}" title="Editar / quitar recurso ManyChat" style="font-size:10px;padding:1px 5px;margin-left:2px">✏</button>`
+      : '';
+    return `<button class="task-tag" data-mc-open="${esc(post.id)}" title="Abrir recurso ManyChat: ${esc(url)}" style="background:rgba(78,205,196,0.18);color:#4ecdc4;border:1px solid rgba(78,205,196,0.4);font-weight:600;cursor:pointer">🔗 Recurso ManyChat</button>${editIcon}`;
+  }
+  if (canEdit) {
+    return `<button class="task-tag" data-mc-add="${esc(post.id)}" title="Pegar link del recurso ManyChat" style="background:transparent;color:var(--text-secondary);border:1px dashed var(--border);cursor:pointer">+ Recurso ManyChat</button>`;
+  }
+  return '';
+}
+
+window.openManyChatResource = function(postId) {
+  const p = scheduledPosts.find(x => x.id === postId);
+  if (!p || !p.manychatUrl) return;
+  if (window.api && window.api.openExternal) window.api.openExternal(p.manychatUrl);
+  else window.open(p.manychatUrl, '_blank');
+};
+
+window.addManyChatResource = async function(postId) {
+  const url = prompt('Pegá el link del recurso ManyChat para esta programación:\n(debe empezar con https://)');
+  if (!url) return;
+  const trimmed = url.trim();
+  if (!/^https?:\/\//i.test(trimmed)) {
+    alert('El link tiene que empezar con http:// o https://');
+    return;
+  }
+  try {
+    await db.collection('scheduledPosts').doc(postId).update({
+      manychatUrl: trimmed,
+      manychatAddedBy: currentUser.uid,
+      manychatAddedByName: currentUserData.name,
+      manychatAddedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  } catch (e) { alert('No se pudo guardar: ' + e.message); }
+};
+
+window.editManyChatResource = async function(postId) {
+  const p = scheduledPosts.find(x => x.id === postId);
+  if (!p) return;
+  const current = p.manychatUrl || '';
+  const url = prompt('Editar link del recurso ManyChat\n(dejá vacío para quitarlo):', current);
+  if (url === null) return; // cancelado
+  const trimmed = url.trim();
+  try {
+    if (trimmed === '') {
+      if (!confirm('¿Quitar el recurso ManyChat de esta programación?')) return;
+      await db.collection('scheduledPosts').doc(postId).update({
+        manychatUrl: firebase.firestore.FieldValue.delete()
+      });
+    } else {
+      if (!/^https?:\/\//i.test(trimmed)) { alert('El link tiene que empezar con http:// o https://'); return; }
+      await db.collection('scheduledPosts').doc(postId).update({
+        manychatUrl: trimmed,
+        manychatAddedBy: currentUser.uid,
+        manychatAddedByName: currentUserData.name,
+        manychatAddedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    }
+  } catch (e) { alert('No se pudo guardar: ' + e.message); }
+};
+
+function bindManyChatButtons(container) {
+  container.querySelectorAll('[data-mc-open]').forEach(b => {
+    b.addEventListener('click', (e) => { e.stopPropagation(); openManyChatResource(b.dataset.mcOpen); });
+  });
+  container.querySelectorAll('[data-mc-edit]').forEach(b => {
+    b.addEventListener('click', (e) => { e.stopPropagation(); editManyChatResource(b.dataset.mcEdit); });
+  });
+  container.querySelectorAll('[data-mc-add]').forEach(b => {
+    b.addEventListener('click', (e) => { e.stopPropagation(); addManyChatResource(b.dataset.mcAdd); });
+  });
+}
+
 function visibleScheduledPosts() {
   if (!currentUser) return [];
   // Todo el equipo ve todos los posts (programados, borradores, publicados, fallos).
@@ -1781,17 +1871,19 @@ function renderScheduleListView() {
     // qué medios y caption tiene un post sin abrir el editor.
     const viewBtn = `<button class="btn btn-ghost btn-small" data-view-sched="${esc(p.id)}" title="Ver media y caption">&#128065;</button>`;
     const platformLabel = (p.postType || 'post').toUpperCase();
+    const mcHtml = manychatBadgeHtml(p, canEditPost);
     return `
       <div class="sched-card ${cls}">
         <div class="sched-card-thumb" ${thumb}></div>
         <div class="sched-card-body">
           <div class="sched-card-when">${esc(fmtScheduledDate(p.scheduledAt))} &middot; ${esc(platformLabel)}</div>
           <div class="sched-card-caption">${esc(cap)}</div>
-          <div class="sched-card-meta">${scheduleStatusPill(p.status || 'pending')} &middot; por ${esc(p.createdByName || 'Anonimo')} ${platformBadges(p)}</div>
+          <div class="sched-card-meta">${scheduleStatusPill(p.status || 'pending')} &middot; por ${esc(p.createdByName || 'Anonimo')} ${platformBadges(p)} ${mcHtml}</div>
         </div>
         <div class="sched-card-actions">${viewBtn}${editBtn}${cancelBtn}</div>
       </div>`;
   }).join('');
+  bindManyChatButtons(container);
   container.querySelectorAll('[data-cancel-sched]').forEach(b => {
     b.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -1857,6 +1949,28 @@ function openSchedPreviewModal(postId) {
   const isMine = p.createdBy === currentUser.uid;
   const isMultiMember = Array.isArray(p.multiTaskMembers) && p.multiTaskMembers.includes(currentUser.uid);
   const canEdit = (norm === 'draft') ? true : (isAdminUser || isMine || isMultiMember);
+
+  // Render del slot ManyChat dentro del preview
+  const mcEl = document.getElementById('schedPreviewManychat');
+  if (mcEl) {
+    if (p.manychatUrl) {
+      const editIcon = canEdit
+        ? `<button class="btn btn-ghost btn-small" data-mc-edit="${esc(p.id)}" title="Editar / quitar recurso ManyChat" style="font-size:11px;padding:2px 8px;margin-left:6px">✏ Editar</button>`
+        : '';
+      const addedBy = p.manychatAddedByName ? `<div style="font-size:10px;color:var(--text-dim);margin-top:4px">Agregado por ${esc(p.manychatAddedByName)}</div>` : '';
+      mcEl.innerHTML = `
+        <div style="display:flex;align-items:center;gap:8px;background:rgba(78,205,196,0.1);border:1px solid rgba(78,205,196,0.3);border-radius:8px;padding:10px 12px">
+          <button data-mc-open="${esc(p.id)}" style="background:none;border:none;color:#4ecdc4;font-weight:600;font-size:13px;cursor:pointer;text-align:left;flex:1;padding:0">🔗 Abrir recurso ManyChat</button>
+          ${editIcon}
+        </div>
+        ${addedBy}`;
+    } else if (canEdit) {
+      mcEl.innerHTML = `<button class="btn btn-ghost btn-small" data-mc-add="${esc(p.id)}" style="border:1px dashed var(--border);width:100%;padding:10px">+ Agregar recurso ManyChat</button>`;
+    } else {
+      mcEl.innerHTML = `<div style="font-size:12px;color:var(--text-dim);font-style:italic">Sin recurso asignado</div>`;
+    }
+    bindManyChatButtons(mcEl);
+  }
   const editableNorm = (norm === 'programado' || norm === 'draft');
   if (canEdit && editableNorm) {
     editBtn.style.display = '';
