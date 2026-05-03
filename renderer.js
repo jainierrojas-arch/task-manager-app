@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.5.0': {
+    title: 'Reordenar manualmente las cards de Programación',
+    features: [
+      '🔼🔽 <strong>Botones ↑ y ↓ en cada card</strong>: ahora podés mover arriba o abajo cada borrador / programación / publicado para organizarlos a tu gusto. Sirve para tener arriba lo más importante o agrupar visualmente lo que necesites, sin importar la fecha.',
+      '🌐 <strong>Orden compartido para todo el equipo</strong>: el orden manual se guarda en Firestore, así todos ven la lista en el mismo orden en tiempo real.',
+      '↩ <strong>Volver al orden por fecha</strong>: cuando hay orden manual activo aparece un cartel arriba de la lista con un botón "↩ Volver a orden por fecha" para resetear y volver al cronológico de siempre.',
+      '⚠️ <strong>Importante</strong>: el orden visual no cambia la <strong>fecha de publicación</strong> — el post se publica cuando esté programado en el calendario, sin importar dónde lo hayas movido en la lista.'
+    ]
+  },
   '3.4.1': {
     title: 'Fix: modal real para pegar el Recurso ManyChat',
     features: [
@@ -1889,14 +1898,77 @@ function bindManyChatButtons(container) {
   });
 }
 
+function scheduledAtMs(p) {
+  if (!p || !p.scheduledAt) return 0;
+  try { return p.scheduledAt.toDate ? p.scheduledAt.toDate().getTime() : new Date(p.scheduledAt).getTime(); }
+  catch (e) { return 0; }
+}
+
 function visibleScheduledPosts() {
   if (!currentUser) return [];
   // Todo el equipo ve todos los posts (programados, borradores, publicados, fallos).
-  // La idea: si el admin deja borradores, cualquier miembro puede retomarlos y
-  // terminarlos. Programaciones del equipo son visibles para todos para que el
-  // calendario sea coherente.
-  return scheduledPosts.slice();
+  // Si algun post tiene manualOrder seteado, ordenamos por ese campo (mas bajo = arriba).
+  // Items sin manualOrder se ordenan por fecha (mas reciente primero), igual que antes.
+  const arr = scheduledPosts.slice();
+  const hasManual = arr.some(p => typeof p.manualOrder === 'number');
+  if (hasManual) {
+    arr.sort((a, b) => {
+      const aOrder = typeof a.manualOrder === 'number' ? a.manualOrder : Number.MAX_SAFE_INTEGER;
+      const bOrder = typeof b.manualOrder === 'number' ? b.manualOrder : Number.MAX_SAFE_INTEGER;
+      if (aOrder !== bOrder) return aOrder - bOrder;
+      return scheduledAtMs(b) - scheduledAtMs(a);
+    });
+  }
+  return arr;
 }
+
+// Mover una card arriba/abajo en la lista. Si ningun post tiene manualOrder
+// seteado todavia, asignamos secuencial a todos primero (snapshot del orden
+// visual actual) y despues intercambiamos los dos vecinos.
+async function moveScheduledPost(postId, direction) {
+  const items = visibleScheduledPosts();
+  const idx = items.findIndex(p => p.id === postId);
+  if (idx === -1) return;
+  const newIdx = idx + direction;
+  if (newIdx < 0 || newIdx >= items.length) return;
+  try {
+    const hasManual = items.some(p => typeof p.manualOrder === 'number');
+    if (!hasManual) {
+      const initBatch = db.batch();
+      items.forEach((p, i) => {
+        initBatch.update(db.collection('scheduledPosts').doc(p.id), { manualOrder: i });
+      });
+      await initBatch.commit();
+      items.forEach((p, i) => { p.manualOrder = i; }); // sync local
+    }
+    const a = items[idx];
+    const b = items[newIdx];
+    const aOrder = (typeof a.manualOrder === 'number') ? a.manualOrder : idx;
+    const bOrder = (typeof b.manualOrder === 'number') ? b.manualOrder : newIdx;
+    const swapBatch = db.batch();
+    swapBatch.update(db.collection('scheduledPosts').doc(a.id), { manualOrder: bOrder });
+    swapBatch.update(db.collection('scheduledPosts').doc(b.id), { manualOrder: aOrder });
+    await swapBatch.commit();
+  } catch (e) { alert('No se pudo mover: ' + e.message); }
+}
+
+window.moveSchedUp = function(id) { moveScheduledPost(id, -1); };
+window.moveSchedDown = function(id) { moveScheduledPost(id, +1); };
+
+window.resetSchedManualOrder = async function() {
+  const dirty = scheduledPosts.filter(p => typeof p.manualOrder === 'number');
+  if (dirty.length === 0) { alert('Ya estás en orden por fecha.'); return; }
+  if (!confirm(`¿Volver al orden cronológico por fecha?\nSe va a perder el orden manual actual de ${dirty.length} programación(es).`)) return;
+  try {
+    const batch = db.batch();
+    dirty.forEach(p => {
+      batch.update(db.collection('scheduledPosts').doc(p.id), {
+        manualOrder: firebase.firestore.FieldValue.delete()
+      });
+    });
+    await batch.commit();
+  } catch (e) { alert('Error: ' + e.message); }
+};
 function renderScheduleListView() {
   const container = document.getElementById('scheduleListView');
   if (!container) return;
@@ -1905,7 +1977,17 @@ function renderScheduleListView() {
     container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">&#128241;</div><div class="empty-state-text">No hay posts programados</div><div class="empty-state-sub">Marca una tarea finalizada con &quot;&#128241; Programar&quot; para enviar a tu cuenta de Instagram via Make.com</div></div>`;
     return;
   }
-  container.innerHTML = items.map(p => {
+  // Header con boton "Volver al orden por fecha" cuando hay orden manual activo
+  const hasManualOrder = scheduledPosts.some(p => typeof p.manualOrder === 'number');
+  const orderHeaderHtml = hasManualOrder
+    ? `<div style="display:flex;align-items:center;justify-content:space-between;background:rgba(108,99,255,0.08);border:1px solid rgba(108,99,255,0.25);border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:12px">
+         <span>📋 Orden manual activo · usá ↑↓ en cada card para mover</span>
+         <button class="btn btn-ghost btn-small" onclick="resetSchedManualOrder()" style="font-size:11px">↩ Volver a orden por fecha</button>
+       </div>`
+    : `<div style="display:flex;align-items:center;justify-content:flex-end;margin-bottom:6px;font-size:11px;color:var(--text-dim)">
+         <span>Tip: usá ↑↓ en cada card para reordenar manualmente</span>
+       </div>`;
+  container.innerHTML = orderHeaderHtml + items.map((p, idx) => {
     const norm = scheduleStatusNorm(p.status);
     const cls = norm === 'publicado' ? 'published' : (norm === 'failed' ? 'failed' : (norm === 'draft' ? 'draft' : ''));
     const thumbSrc = p.mediaUrl ? mediaThumbUrl(p.mediaUrl) : '';
@@ -1929,8 +2011,17 @@ function renderScheduleListView() {
     const viewBtn = `<button class="btn btn-ghost btn-small" data-view-sched="${esc(p.id)}" title="Ver media y caption">&#128065;</button>`;
     const platformLabel = (p.postType || 'post').toUpperCase();
     const mcHtml = manychatBadgeHtml(p, canEditPost);
+    // Botones reorder ↑↓ — disabled en los bordes de la lista
+    const upDisabled = idx === 0 ? 'disabled style="opacity:0.3;cursor:not-allowed"' : '';
+    const downDisabled = idx === items.length - 1 ? 'disabled style="opacity:0.3;cursor:not-allowed"' : '';
+    const reorderBtns = `
+      <div style="display:flex;flex-direction:column;gap:2px;margin-right:4px">
+        <button class="btn btn-ghost" data-move-up="${esc(p.id)}" title="Mover arriba" ${upDisabled} style="padding:1px 6px;font-size:11px;line-height:1">▲</button>
+        <button class="btn btn-ghost" data-move-down="${esc(p.id)}" title="Mover abajo" ${downDisabled} style="padding:1px 6px;font-size:11px;line-height:1">▼</button>
+      </div>`;
     return `
       <div class="sched-card ${cls}">
+        ${reorderBtns}
         <div class="sched-card-thumb" ${thumb}></div>
         <div class="sched-card-body">
           <div class="sched-card-when">${esc(fmtScheduledDate(p.scheduledAt))} &middot; ${esc(platformLabel)}</div>
@@ -1940,6 +2031,12 @@ function renderScheduleListView() {
         <div class="sched-card-actions">${viewBtn}${editBtn}${cancelBtn}</div>
       </div>`;
   }).join('');
+  container.querySelectorAll('[data-move-up]').forEach(b => {
+    b.addEventListener('click', (e) => { e.stopPropagation(); if (!b.disabled) moveSchedUp(b.dataset.moveUp); });
+  });
+  container.querySelectorAll('[data-move-down]').forEach(b => {
+    b.addEventListener('click', (e) => { e.stopPropagation(); if (!b.disabled) moveSchedDown(b.dataset.moveDown); });
+  });
   bindManyChatButtons(container);
   container.querySelectorAll('[data-cancel-sched]').forEach(b => {
     b.addEventListener('click', (e) => {
