@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.1.1': {
+    title: 'Portada automática para videos de Cloudinary en el Depósito',
+    features: [
+      '🖼️ <strong>Thumbnail automático para videos de Cloudinary</strong>: cuando pegás un link <code>res.cloudinary.com/.../video/upload/...</code> en una idea del Depósito, la card de preview ya muestra la portada del video directamente (primer frame relevante via <code>so_auto</code>). No más ícono morado genérico.',
+      '📸 <strong>Cover de la entry y de la tarea</strong>: el thumbnail también queda guardado como cover de la entrada en el Depósito y se propaga a la tarea cuando alguien la asigne — todo automático, sin pasos manuales.',
+      '⚡ Sin llamadas extra a la red: el URL del thumbnail se construye por transformación de la URL del video (feature nativa de Cloudinary), instantáneo.'
+    ]
+  },
   '3.1.0': {
     title: 'TikTok via GoHighLevel: programar en IG + TikTok a la vez',
     features: [

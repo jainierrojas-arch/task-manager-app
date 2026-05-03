@@ -780,6 +780,16 @@ function renderEntries() {
   });
 }
 
+// Cloudinary video → URL de thumbnail (.jpg del primer frame). Cloudinary lo
+// genera al vuelo, sin que tengamos que subirlo. Devuelve null si no es video.
+function cloudinaryVideoThumb(url) {
+  if (!url || !/\/video\/upload\//.test(url)) return null;
+  if (!/res\.cloudinary\.com/i.test(url)) return null;
+  return url
+    .replace(/\/video\/upload\//, '/video/upload/so_auto,w_600/')
+    .replace(/\.(mp4|mov|webm|m4v)(\?.*)?$/i, '.jpg');
+}
+
 // Helpers para servicios conocidos cuando no hay og:image
 function serviceFromUrl(url) {
   if (!url) return null;
@@ -823,7 +833,10 @@ function renderEntryHtml(e) {
   // Cover: imagen Open Graph del primer link (cacheada en e.coverImage).
   // Si no hay og:image (ej. Instagram bloquea scraping), pintar placeholder con
   // gradiente del servicio + icono + dominio para que SIEMPRE haya portada.
-  const cover = e.coverImage;
+  // Safety net: si no hay coverImage cacheado pero el primer link es un video
+  // de Cloudinary, generamos el thumb on-the-fly. lazyFetchCovers va a persistir
+  // este mismo valor despues, pero asi el primer render ya muestra portada.
+  const cover = e.coverImage || cloudinaryVideoThumb(links[0]?.url || '');
   const firstUrl = links[0]?.url || '';
   let coverHtml = '';
   if (firstUrl) {
@@ -1167,6 +1180,33 @@ async function lazyFetchCovers(visibleEntries) {
     if (ogFetchInFlight.has(entry.id) || ogFetchedThisSession.has(entry.id)) continue;
     ogFetchInFlight.add(entry.id);
     const url = links[0].url;
+    // Atajo Cloudinary video: thumb por transformacion de URL, sin fetcher.
+    // Asumimos 9:16 porque la mayoria de los videos subidos a Cloudinary son
+    // reels verticales — si no, la imagen se ajusta igual con object-fit.
+    const cdnThumb = cloudinaryVideoThumb(url);
+    if (cdnThumb) {
+      try {
+        await db.collection('depositEntries').doc(entry.id).update({
+          coverImage: cdnThumb,
+          coverWidth: 1080,
+          coverHeight: 1920,
+          coverFetcherV: 6
+        });
+        try {
+          const tasksSnap = await db.collection('tasks').where('depositEntryId', '==', entry.id).get();
+          const batch = db.batch();
+          let count = 0;
+          tasksSnap.forEach(d => {
+            batch.update(d.ref, { coverImage: cdnThumb, coverWidth: 1080, coverHeight: 1920 });
+            count++;
+          });
+          if (count > 0) await batch.commit();
+        } catch (e) { /* ignore */ }
+      } catch (e) { /* ignore */ }
+      ogFetchInFlight.delete(entry.id);
+      ogFetchedThisSession.add(entry.id);
+      continue;
+    }
     try {
       const og = await window.api.fetchOgData(url);
       const update = { coverImage: og.image || null, coverFetcherV: 6 };
@@ -1345,6 +1385,13 @@ function addLinkRow(link) {
     }
     if (url === lastFetchedUrl) return;
     lastFetchedUrl = url;
+    // Atajo Cloudinary video: la URL del thumbnail se genera por transformacion,
+    // no necesitamos pegarle al fetcher.
+    const cdnThumb = cloudinaryVideoThumb(url);
+    if (cdnThumb) {
+      renderPreviewCard(url, { image: cdnThumb, title: 'Video' });
+      return;
+    }
     // Pintar INMEDIATAMENTE el placeholder con dominio/icono. El usuario nunca
     // ve "Cargando..." colgado: ve la card al instante y se actualiza despues
     // si el fetcher logra obtener la imagen real.
