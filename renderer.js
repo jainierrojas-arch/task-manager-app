@@ -75,6 +75,17 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.3.0': {
+    title: 'Aprobación de nuevos miembros + códigos de invitación',
+    features: [
+      '🔐 <strong>Aprobación de nuevos miembros</strong>: cuando alguien se registra ahora queda en estado "pendiente". Ve una pantalla de espera explicándole que el admin tiene que aprobar. No accede a la app hasta entonces.',
+      '🎟 <strong>Códigos de invitación de un solo uso</strong>: el admin puede generar códigos desde la pestaña Equipo → al darle "Generar código" se crea uno (ej. <code>X7K9MQ</code>) y se copia automáticamente al portapapeles. Quien se registre con ese código entra DIRECTO sin esperar aprobación. Cada código sirve para una sola persona.',
+      '👤 <strong>Panel de solicitudes pendientes</strong>: los admins ven en la pestaña Equipo, arriba del todo, las solicitudes con nombre + email + botones <strong>✓ Aprobar</strong> / <strong>✕ Rechazar</strong>. La persona aprobada entra al instante (su pantalla de espera se actualiza sola, sin tener que recargar).',
+      '🎫 <strong>Canjear código desde la pantalla de espera</strong>: si alguien se registró sin código y después le pasás uno, lo puede pegar en su pantalla de espera y se activa al toque, sin pasar por aprobación.',
+      '🛡 <strong>Backward compatibility total</strong>: los miembros existentes (sin campo <code>status</code>) se consideran activos automáticamente. Nadie pierde acceso. El owner (admin original) siempre queda activo.',
+      '⚠ <strong>Requiere actualizar Firestore Security Rules</strong>: agregar permisos para colección <code>inviteCodes</code> y para que los admins puedan editar el <code>status</code> de otros usuarios. Las reglas exactas están en el README de la app.'
+    ]
+  },
   '3.2.0': {
     title: 'Contador de antigüedad por tarea + reset (admin)',
     features: [
@@ -585,6 +596,8 @@ let currentIdeasMode = 'team'; // 'team' | 'personal'
 let unsubscribeScheduled = null;
 let captionTemplates = [];
 let unsubscribeCaptionTpls = null;
+let inviteCodes = [];
+let unsubscribeInviteCodes = null;
 let editingCaptionTplId = null;
 let scheduledPosts = [];
 let scheduledPostsInitialized = false; // false en primera carga del snapshot
@@ -711,6 +724,10 @@ try {
 el.loginToggle.addEventListener('click', () => {
   isRegistering = !isRegistering;
   el.loginName.style.display = isRegistering ? 'block' : 'none';
+  const inviteInput = document.getElementById('loginInviteCode');
+  const inviteHint = document.getElementById('loginInviteHint');
+  if (inviteInput) inviteInput.style.display = isRegistering ? 'block' : 'none';
+  if (inviteHint) inviteHint.style.display = isRegistering ? 'block' : 'none';
   el.loginBtn.textContent = isRegistering ? 'Registrarse' : 'Iniciar Sesion';
   el.loginToggle.innerHTML = isRegistering
     ? 'Ya tienes cuenta? <span>Inicia sesion</span>'
@@ -743,14 +760,46 @@ async function handleAuth() {
 
   try {
     if (isRegistering) {
+      // Codigo de invitacion (opcional). Si es valido y no esta usado:
+      // status='active' inmediato. Si no hay codigo (o es invalido):
+      // status='pending' y la cuenta queda esperando aprobacion del admin.
+      const inviteInput = document.getElementById('loginInviteCode');
+      const rawCode = inviteInput ? (inviteInput.value || '').trim().toUpperCase() : '';
+      let codeOk = false;
+      let codeDoc = null;
+      if (rawCode) {
+        try {
+          const snap = await db.collection('inviteCodes').doc(rawCode).get();
+          if (snap.exists) {
+            const d = snap.data();
+            if (!d.usedBy && !d.revokedAt) {
+              codeOk = true;
+              codeDoc = snap;
+            }
+          }
+        } catch (e) { /* si falla la lectura por rules, codeOk queda false */ }
+      }
+
       const cred = await auth.createUserWithEmailAndPassword(email, password);
-      await db.collection('users').doc(cred.user.uid).set({
+      const userPayload = {
         name: name,
         email: email.toLowerCase(),
         role: 'miembro',
+        status: codeOk ? 'active' : 'pending',
         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
         telegramChatId: ''
-      });
+      };
+      if (codeOk) userPayload.invitedWith = rawCode;
+      await db.collection('users').doc(cred.user.uid).set(userPayload);
+      if (codeOk && codeDoc) {
+        try {
+          await codeDoc.ref.update({
+            usedBy: cred.user.uid,
+            usedByEmail: email.toLowerCase(),
+            usedAt: firebase.firestore.FieldValue.serverTimestamp()
+          });
+        } catch (e) { /* no critico */ }
+      }
     } else {
       await auth.signInWithEmailAndPassword(email, password);
     }
@@ -789,10 +838,41 @@ auth.onAuthStateChanged(async (user) => {
         await db.collection('users').doc(user.uid).update({ role: 'admin' });
         currentUserData.role = 'admin';
       }
+      // Owner siempre activo. Otros usuarios sin status (legacy) se consideran
+      // activos para no romper accesos existentes.
+      if (user.email === 'jainierrojas@gmail.com' && currentUserData.status !== 'active') {
+        try { await db.collection('users').doc(user.uid).update({ status: 'active' }); } catch (e) {}
+        currentUserData.status = 'active';
+      }
     } else {
-      currentUserData = { id: user.uid, name: user.email.split('@')[0], email: user.email, role: 'miembro' };
+      // Doc no existe (alta a medias). Lo creamos con status='pending' para que
+      // el admin pueda aprobarlo.
+      const fallback = {
+        name: user.email.split('@')[0],
+        email: (user.email || '').toLowerCase(),
+        role: 'miembro',
+        status: 'pending',
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        telegramChatId: ''
+      };
+      try {
+        await db.collection('users').doc(user.uid).set(fallback);
+      } catch (e) { /* si falla, currentUserData queda en memoria */ }
+      currentUserData = { id: user.uid, ...fallback };
     }
-    showApp();
+    // Routing: active → app, pending → pantalla de espera, rejected → pantalla
+    // de bloqueo. Admin siempre activo.
+    const status = currentUserData.status;
+    const isAdmin = currentUserData.role === 'admin';
+    if (isAdmin || !status || status === 'active') {
+      showApp();
+    } else if (status === 'pending') {
+      showPendingScreen();
+    } else if (status === 'rejected') {
+      showRejectedScreen();
+    } else {
+      showApp(); // status desconocido → asumimos OK
+    }
   } else {
     currentUser = null;
     currentUserData = null;
@@ -942,6 +1022,10 @@ async function syncMakeWebhookToFirestore() {
 function showLogin() {
   el.loginScreen.classList.remove('hidden');
   el.appContainer.classList.remove('active');
+  const ps = document.getElementById('pendingScreen');
+  const rs = document.getElementById('rejectedScreen');
+  if (ps) ps.style.display = 'none';
+  if (rs) rs.style.display = 'none';
   if (unsubscribeTasks) unsubscribeTasks();
   if (unsubscribeProjects) unsubscribeProjects();
   if (unsubscribeUsers) unsubscribeUsers();
@@ -950,7 +1034,84 @@ function showLogin() {
   if (unsubscribeIdeas) { unsubscribeIdeas(); unsubscribeIdeas = null; }
   if (unsubscribeScheduled) { unsubscribeScheduled(); unsubscribeScheduled = null; scheduledPostsInitialized = false; }
   if (unsubscribeCaptionTpls) { unsubscribeCaptionTpls(); unsubscribeCaptionTpls = null; captionTemplates = []; }
+  if (unsubscribeInviteCodes) { unsubscribeInviteCodes(); unsubscribeInviteCodes = null; inviteCodes = []; }
   if (presenceTimer) { clearInterval(presenceTimer); presenceTimer = null; }
+}
+
+// Pantallas de espera y rechazo (status pending/rejected). Ocultan login y app
+// y muestran su propio overlay con opcion de logout.
+function showPendingScreen() {
+  el.loginScreen.classList.add('hidden');
+  el.appContainer.classList.remove('active');
+  const ps = document.getElementById('pendingScreen');
+  const rs = document.getElementById('rejectedScreen');
+  if (ps) ps.style.display = 'flex';
+  if (rs) rs.style.display = 'none';
+  // Listener: si el admin nos aprueba mientras estamos en esta pantalla,
+  // pasamos automaticamente a la app sin tener que recargar.
+  if (currentUser && !window._pendingStatusUnsub) {
+    window._pendingStatusUnsub = db.collection('users').doc(currentUser.uid)
+      .onSnapshot(snap => {
+        if (!snap.exists) return;
+        const d = snap.data();
+        if (d.status === 'active') {
+          if (window._pendingStatusUnsub) { window._pendingStatusUnsub(); window._pendingStatusUnsub = null; }
+          currentUserData = { id: currentUser.uid, ...d };
+          showApp();
+        } else if (d.status === 'rejected') {
+          if (window._pendingStatusUnsub) { window._pendingStatusUnsub(); window._pendingStatusUnsub = null; }
+          currentUserData = { id: currentUser.uid, ...d };
+          showRejectedScreen();
+        }
+      });
+  }
+}
+function showRejectedScreen() {
+  el.loginScreen.classList.add('hidden');
+  el.appContainer.classList.remove('active');
+  const ps = document.getElementById('pendingScreen');
+  const rs = document.getElementById('rejectedScreen');
+  if (ps) ps.style.display = 'none';
+  if (rs) rs.style.display = 'flex';
+}
+
+// Wireup de las pantallas pending/rejected
+document.addEventListener('DOMContentLoaded', () => {
+  const pendingLogout = document.getElementById('pendingLogoutBtn');
+  if (pendingLogout) pendingLogout.addEventListener('click', (e) => { e.preventDefault(); auth.signOut(); });
+  const rejectedLogout = document.getElementById('rejectedLogoutBtn');
+  if (rejectedLogout) rejectedLogout.addEventListener('click', (e) => { e.preventDefault(); auth.signOut(); });
+  const redeemBtn = document.getElementById('redeemInviteBtn');
+  if (redeemBtn) redeemBtn.addEventListener('click', redeemInviteCode);
+});
+
+// Canjear codigo desde la pantalla de espera (alguien que ya esta en pending
+// y consigue un codigo despues — lo activa al toque).
+async function redeemInviteCode() {
+  const input = document.getElementById('pendingInviteCode');
+  if (!input || !currentUser) return;
+  const code = (input.value || '').trim().toUpperCase();
+  if (!code) { alert('Ingresa el codigo de invitacion'); return; }
+  try {
+    const snap = await db.collection('inviteCodes').doc(code).get();
+    if (!snap.exists) { alert('Codigo invalido'); return; }
+    const d = snap.data();
+    if (d.usedBy) { alert('Ese codigo ya fue usado'); return; }
+    if (d.revokedAt) { alert('Ese codigo fue revocado'); return; }
+    await db.collection('users').doc(currentUser.uid).update({
+      status: 'active',
+      invitedWith: code,
+      activatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    await snap.ref.update({
+      usedBy: currentUser.uid,
+      usedByEmail: (currentUser.email || '').toLowerCase(),
+      usedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    // El listener en showPendingScreen detecta el cambio y nos manda a la app.
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
 }
 
 el.logoutBtn.addEventListener('click', () => auth.signOut());
@@ -1010,6 +1171,16 @@ function subscribeToData() {
     if (tasks.length > 0) renderAll();
     renderChatBadge();
   });
+
+  // Codigos de invitacion (solo admin los ve / puede tocar)
+  if (currentUserData && currentUserData.role === 'admin') {
+    unsubscribeInviteCodes = db.collection('inviteCodes').onSnapshot((snapshot) => {
+      inviteCodes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      renderInviteCodes();
+    }, (err) => {
+      console.warn('[invites] no se pueden leer códigos:', err.message);
+    });
+  }
 
   unsubscribePersonal = db.collection('personalTasks')
     .where('ownerId', '==', currentUser.uid)
@@ -3680,10 +3851,16 @@ function renderProjectSelect() {
   if (current) el.projectSelect.value = current;
 }
 
+// Solo miembros con acceso activo aparecen en selectores y team list. Los
+// pending/rejected viven en el panel de aprobaciones (solo admin).
+function activeMembers() {
+  return teamMembers.filter(m => !m.status || m.status === 'active');
+}
+
 function renderAssignSelect() {
   const current = el.assignSelect.value;
   el.assignSelect.innerHTML = '<option value="">Asignar a...</option>';
-  teamMembers.forEach(m => {
+  activeMembers().forEach(m => {
     const opt = document.createElement('option');
     opt.value = m.id;
     opt.textContent = m.name + (m.id === currentUser.uid ? ' (yo)' : '');
@@ -3694,13 +3871,18 @@ function renderAssignSelect() {
 
 
 function renderTeam() {
-  if (teamMembers.length === 0) {
+  // Render del panel admin (pending + invites) en cada refresh
+  renderPendingRequests();
+  renderInviteCodes();
+
+  const visibleMembers = activeMembers();
+  if (visibleMembers.length === 0) {
     el.teamList.innerHTML = '<div class="empty-state"><div class="empty-state-text">No hay miembros</div></div>';
     return;
   }
 
   let html = '';
-  teamMembers.forEach((m, i) => {
+  visibleMembers.forEach((m, i) => {
     const pending = tasks.filter(t => t.assignedTo === m.id && t.status === 'pending').length;
     const waiting = tasks.filter(t => t.assignedTo === m.id && t.status === 'pending_approval').length;
     const done = tasks.filter(t => t.assignedTo === m.id && t.status === 'completed').length;
@@ -3728,6 +3910,155 @@ function renderTeam() {
 
   el.teamList.innerHTML = html;
 }
+
+// ===== Admin: solicitudes pendientes + codigos de invitacion =====
+function renderPendingRequests() {
+  const section = document.getElementById('adminPendingSection');
+  const list = document.getElementById('pendingList');
+  const countEl = document.getElementById('pendingCount');
+  if (!section || !list) return;
+  const isAdmin = currentUserData && currentUserData.role === 'admin';
+  if (!isAdmin) { section.style.display = 'none'; return; }
+  const pending = teamMembers.filter(m => m.status === 'pending');
+  if (countEl) countEl.textContent = pending.length;
+  if (pending.length === 0) { section.style.display = 'none'; return; }
+  section.style.display = 'block';
+  list.innerHTML = pending.map(m => `
+    <div style="display:flex;align-items:center;gap:10px;padding:10px;background:rgba(0,0,0,0.2);border-radius:8px">
+      <div style="flex:1">
+        <div style="font-weight:600;font-size:13px">${esc(m.name || '(sin nombre)')}</div>
+        <div style="font-size:11px;color:var(--text-secondary)">${esc(m.email || '')}</div>
+      </div>
+      <button class="btn btn-success btn-small" onclick="approveUser('${m.id}')">✓ Aprobar</button>
+      <button class="btn btn-danger btn-small" onclick="rejectUser('${m.id}')">✕ Rechazar</button>
+    </div>
+  `).join('');
+}
+
+window.approveUser = async function(uid) {
+  if (!confirm('Aprobar el acceso de este usuario a la app?')) return;
+  try {
+    await db.collection('users').doc(uid).update({
+      status: 'active',
+      activatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      activatedBy: currentUser.uid
+    });
+  } catch (e) { alert('Error: ' + e.message); }
+};
+window.rejectUser = async function(uid) {
+  if (!confirm('Rechazar el acceso de este usuario? No va a poder entrar a la app.')) return;
+  try {
+    await db.collection('users').doc(uid).update({
+      status: 'rejected',
+      rejectedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      rejectedBy: currentUser.uid
+    });
+  } catch (e) { alert('Error: ' + e.message); }
+};
+
+function renderInviteCodes() {
+  const section = document.getElementById('adminInvitesSection');
+  const list = document.getElementById('invitesList');
+  if (!section || !list) return;
+  const isAdmin = currentUserData && currentUserData.role === 'admin';
+  if (!isAdmin) { section.style.display = 'none'; return; }
+  section.style.display = 'block';
+  if (inviteCodes.length === 0) {
+    list.innerHTML = '<div style="font-size:12px;color:var(--text-dim);text-align:center;padding:8px">No hay códigos generados todavía</div>';
+    return;
+  }
+  // Sort: activos primero, despues usados, despues revocados
+  const sorted = inviteCodes.slice().sort((a, b) => {
+    const aOrder = a.usedBy ? 2 : (a.revokedAt ? 3 : 1);
+    const bOrder = b.usedBy ? 2 : (b.revokedAt ? 3 : 1);
+    if (aOrder !== bOrder) return aOrder - bOrder;
+    const at = a.createdAt && a.createdAt.toDate ? a.createdAt.toDate().getTime() : 0;
+    const bt = b.createdAt && b.createdAt.toDate ? b.createdAt.toDate().getTime() : 0;
+    return bt - at;
+  });
+  list.innerHTML = sorted.map(c => {
+    const isUsed = !!c.usedBy;
+    const isRevoked = !!c.revokedAt && !isUsed;
+    const isActive = !isUsed && !isRevoked;
+    let stateBadge, stateColor;
+    if (isUsed) { stateBadge = `Usado por ${esc(c.usedByEmail || '?')}`; stateColor = 'var(--text-dim)'; }
+    else if (isRevoked) { stateBadge = 'Revocado'; stateColor = '#ff8a8a'; }
+    else { stateBadge = 'Activo'; stateColor = 'var(--success)'; }
+    const opacity = isActive ? 1 : 0.55;
+    const actionsHtml = isActive
+      ? `<button class="btn btn-ghost btn-small" onclick="copyInviteCode('${c.id}')" title="Copiar al portapapeles">📋 Copiar</button>
+         <button class="btn btn-danger btn-small" onclick="revokeInviteCode('${c.id}')" title="Revocar">🗑</button>`
+      : '';
+    return `
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:rgba(0,0,0,0.15);border-radius:6px;opacity:${opacity}">
+        <div style="font-family:monospace;font-weight:700;font-size:14px;letter-spacing:1px;color:var(--accent);min-width:100px">${esc(c.id)}</div>
+        <div style="flex:1;font-size:11px;color:${stateColor}">${stateBadge}</div>
+        ${actionsHtml}
+      </div>`;
+  }).join('');
+}
+
+window.copyInviteCode = function(code) {
+  try {
+    navigator.clipboard.writeText(code);
+    const btn = event && event.target;
+    if (btn) {
+      const orig = btn.textContent;
+      btn.textContent = '✓ Copiado';
+      setTimeout(() => { btn.textContent = orig; }, 1500);
+    }
+  } catch (e) { alert('No se pudo copiar: ' + e.message); }
+};
+
+window.revokeInviteCode = async function(code) {
+  if (!confirm(`Revocar el codigo ${code}?\nQuien lo tenga ya no va a poder usarlo.`)) return;
+  try {
+    await db.collection('inviteCodes').doc(code).update({
+      revokedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      revokedBy: currentUser.uid
+    });
+  } catch (e) { alert('Error: ' + e.message); }
+};
+
+// Genera codigo de 6 chars alfanumericos sin caracteres ambiguos (0,O,I,1,L)
+function randomInviteCode() {
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  let out = '';
+  for (let i = 0; i < 6; i++) out += chars[Math.floor(Math.random() * chars.length)];
+  return out;
+}
+async function generateNewInviteCode() {
+  if (!currentUser) return;
+  // Reintentamos hasta 5 veces si por mala suerte el codigo ya existe
+  for (let i = 0; i < 5; i++) {
+    const code = randomInviteCode();
+    try {
+      const ref = db.collection('inviteCodes').doc(code);
+      const snap = await ref.get();
+      if (snap.exists) continue;
+      await ref.set({
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        createdBy: currentUser.uid,
+        createdByName: currentUserData.name,
+        usedBy: null,
+        revokedAt: null
+      });
+      // Copiar al portapapeles automaticamente
+      try { await navigator.clipboard.writeText(code); } catch (e) {}
+      alert(`Código generado: ${code}\n\nYa lo copié al portapapeles. Pasáselo a la persona que querés que entre — sólo se puede usar una vez.`);
+      return;
+    } catch (e) {
+      alert('Error generando código: ' + e.message);
+      return;
+    }
+  }
+  alert('No se pudo generar un código único. Intentá otra vez.');
+}
+// Listener boton generar
+document.addEventListener('DOMContentLoaded', () => {
+  const btn = document.getElementById('generateInviteBtn');
+  if (btn) btn.addEventListener('click', generateNewInviteCode);
+});
 
 function renderProjectList() {
   if (projects.length === 0) {

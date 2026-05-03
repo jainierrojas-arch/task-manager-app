@@ -1,0 +1,76 @@
+// Firestore Security Rules para Task Manager v3.3+
+//
+// COMO APLICAR:
+// 1) Firebase Console → https://console.firebase.google.com/project/app-de-tareas-e4209/firestore/rules
+// 2) Pegar este contenido entero (reemplazando lo que esté)
+// 3) Click "Publicar"
+//
+// Si no las aplicás, el flujo de invitaciones / aprobación NO va a funcionar:
+// los nuevos usuarios no podrán crear su propio doc en /users, y los admins
+// no podrán crear códigos en /inviteCodes.
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // ===== users =====
+    // Read: cualquier autenticado (necesario para asignar tareas, chat, etc).
+    // Create: solo el dueño puede crear su propio doc al registrarse.
+    // Update: el dueño puede editar campos propios; los admins pueden editar
+    // role/status/activatedAt/rejectedAt para aprobar/rechazar/promover.
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ===== inviteCodes =====
+    // get: cualquier autenticado puede leer un codigo individual para validarlo
+    //      al registrarse. NO permite list — solo lecturas por ID.
+    // list: solo admin (para mostrar el listado en el panel).
+    // create/delete: solo admin.
+    // update: admin (revocar) o el usuario que lo esta canjeando (marcarlo usado).
+    match /inviteCodes/{code} {
+      allow get: if isSignedIn();
+      allow list: if isAdmin();
+      allow create: if isAdmin();
+      allow update: if isAdmin()
+        || (isSignedIn() && request.resource.data.usedBy == request.auth.uid);
+      allow delete: if isAdmin();
+    }
+
+    // ===== Resto de colecciones del producto =====
+    // Cualquier autenticado puede leer/escribir. Mismo comportamiento que tenia
+    // antes — la unica diferencia es que ahora estan listadas explicitamente
+    // en vez de por wildcard, para que el wildcard NO opaque las reglas
+    // restrictivas de /users e /inviteCodes (las rules de Firestore son
+    // aditivas: si CUALQUIER match permite, se permite).
+    match /tasks/{id}                      { allow read, write: if isSignedIn(); }
+    match /projects/{id}                   { allow read, write: if isSignedIn(); }
+    match /depositEntries/{id}             { allow read, write: if isSignedIn(); }
+    match /depositCategories/{id}          { allow read, write: if isSignedIn(); }
+    match /scheduledPosts/{id}             { allow read, write: if isSignedIn(); }
+    match /chatMessages/{id}               { allow read, write: if isSignedIn(); }
+    match /directMessages/{id}             { allow read, write: if isSignedIn(); }
+    match /captionTemplates/{id}           { allow read, write: if isSignedIn(); }
+    match /personalTasks/{id}              { allow read, write: if isSignedIn(); }
+    match /ideas/{id}                      { allow read, write: if isSignedIn(); }
+    match /notifications/{id}              { allow read, write: if isSignedIn(); }
+    match /config/{id}                     { allow read, write: if isSignedIn(); }
+  }
+}
