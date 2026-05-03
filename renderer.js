@@ -75,6 +75,12 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.3.1': {
+    title: 'Fix: pantalla de espera no se cerraba al ser aprobado',
+    features: [
+      '🐛 <strong>Fix</strong>: cuando un usuario en estado "pendiente" era aprobado por el admin (o canjeaba un código desde la pantalla de espera), el listener detectaba el cambio pero el overlay "Esperando aprobación" se quedaba pegado encima de la app, dando la sensación de que seguía sin acceso. Ahora el overlay se cierra automáticamente y la persona pasa al app sin tener que reiniciar.'
+    ]
+  },
   '3.3.0': {
     title: 'Aprobación de nuevos miembros + códigos de invitación',
     features: [
@@ -883,6 +889,13 @@ auth.onAuthStateChanged(async (user) => {
 function showApp() {
   el.loginScreen.classList.add('hidden');
   el.appContainer.classList.add('active');
+  // Esconder overlays de espera/rechazo si quedaron visibles (transiciones
+  // pending->active y rejected->active deben limpiar el DOM, no solo activar
+  // appContainer encima).
+  const ps = document.getElementById('pendingScreen');
+  const rs = document.getElementById('rejectedScreen');
+  if (ps) ps.style.display = 'none';
+  if (rs) rs.style.display = 'none';
 
   el.userAvatar.textContent = currentUserData.name.charAt(0).toUpperCase();
   el.userName.textContent = currentUserData.name;
