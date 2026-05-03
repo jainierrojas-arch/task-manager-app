@@ -2112,6 +2112,26 @@
     </div>
   </div>
 
+  <!-- Modal: editar Recurso ManyChat de una programacion -->
+  <div class="modal-overlay" id="manychatModal">
+    <div class="modal" style="max-width:520px">
+      <div class="modal-title">🔗 Recurso ManyChat</div>
+      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;line-height:1.5">
+        Pegá el link del recurso ManyChat asociado a esta programación. Cualquier miembro del equipo va a poder abrirlo desde la card.
+      </div>
+      <input type="url" id="manychatInput" placeholder="https://manychat.com/..." style="width:100%;padding:12px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);font-size:14px;font-family:inherit;margin-bottom:6px">
+      <div id="manychatError" style="font-size:11px;color:var(--danger);min-height:16px;margin-bottom:8px"></div>
+      <div id="manychatAddedInfo" style="font-size:11px;color:var(--text-dim);margin-bottom:14px;display:none"></div>
+      <div class="modal-buttons" style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-danger" id="manychatRemoveBtn" style="display:none">🗑 Quitar</button>
+        <div style="display:flex;gap:8px;margin-left:auto">
+          <button class="btn btn-ghost" id="manychatCancelBtn">Cancelar</button>
+          <button class="btn btn-primary" id="manychatSaveBtn">Guardar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Link Modal -->
   <div class="modal-overlay" id="linkModal">
     <div class="modal">

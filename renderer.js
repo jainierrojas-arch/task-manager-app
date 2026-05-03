@@ -75,6 +75,13 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.4.1': {
+    title: 'Fix: modal real para pegar el Recurso ManyChat',
+    features: [
+      '🐛 <strong>Fix</strong>: en v3.4.0 al darle click al botón "+ Recurso ManyChat" no aparecía nada porque usaba <code>prompt()</code> nativo y Electron lo bloquea silenciosamente. Ahora abre un modal propio con un campo de texto para pegar el link, botón Guardar y botón Quitar (cuando ya hay uno cargado). También se puede confirmar con Enter.',
+      '✏ <strong>Editar mejorado</strong>: el ✏ al lado del chip ahora abre el mismo modal con el link actual ya cargado para que lo edites. Botón Quitar a la izquierda para eliminarlo de un click.'
+    ]
+  },
   '3.4.0': {
     title: 'Recurso ManyChat por programación',
     features: [
@@ -1777,48 +1784,98 @@ window.openManyChatResource = function(postId) {
   else window.open(p.manychatUrl, '_blank');
 };
 
-window.addManyChatResource = async function(postId) {
-  const url = prompt('Pegá el link del recurso ManyChat para esta programación:\n(debe empezar con https://)');
-  if (!url) return;
-  const trimmed = url.trim();
-  if (!/^https?:\/\//i.test(trimmed)) {
-    alert('El link tiene que empezar con http:// o https://');
-    return;
+// Modal real (Electron bloquea prompt() nativo). Maneja tanto agregar como
+// editar — la diferencia es si el post ya tenia manychatUrl. El boton Quitar
+// solo se muestra cuando hay valor previo.
+let _mcCurrentPostId = null;
+function openManyChatModal(postId) {
+  const p = scheduledPosts.find(x => x.id === postId);
+  if (!p) return;
+  _mcCurrentPostId = postId;
+  const modal = document.getElementById('manychatModal');
+  const input = document.getElementById('manychatInput');
+  const removeBtn = document.getElementById('manychatRemoveBtn');
+  const errEl = document.getElementById('manychatError');
+  const addedInfo = document.getElementById('manychatAddedInfo');
+  if (!modal || !input) return;
+  input.value = p.manychatUrl || '';
+  errEl.textContent = '';
+  if (p.manychatUrl) {
+    removeBtn.style.display = 'inline-flex';
+    if (p.manychatAddedByName) {
+      addedInfo.textContent = `Agregado originalmente por ${p.manychatAddedByName}`;
+      addedInfo.style.display = 'block';
+    } else {
+      addedInfo.style.display = 'none';
+    }
+  } else {
+    removeBtn.style.display = 'none';
+    addedInfo.style.display = 'none';
   }
+  modal.classList.add('active');
+  setTimeout(() => input.focus(), 50);
+}
+
+function closeManyChatModal() {
+  const modal = document.getElementById('manychatModal');
+  if (modal) modal.classList.remove('active');
+  _mcCurrentPostId = null;
+}
+
+async function saveManyChatFromModal() {
+  if (!_mcCurrentPostId) return;
+  const input = document.getElementById('manychatInput');
+  const errEl = document.getElementById('manychatError');
+  const trimmed = (input.value || '').trim();
+  if (!trimmed) { errEl.textContent = 'Pegá un link o usá el botón Quitar.'; return; }
+  if (!/^https?:\/\//i.test(trimmed)) { errEl.textContent = 'El link tiene que empezar con http:// o https://'; return; }
   try {
-    await db.collection('scheduledPosts').doc(postId).update({
+    await db.collection('scheduledPosts').doc(_mcCurrentPostId).update({
       manychatUrl: trimmed,
       manychatAddedBy: currentUser.uid,
       manychatAddedByName: currentUserData.name,
       manychatAddedAt: firebase.firestore.FieldValue.serverTimestamp()
     });
-  } catch (e) { alert('No se pudo guardar: ' + e.message); }
-};
+    closeManyChatModal();
+  } catch (e) { errEl.textContent = 'No se pudo guardar: ' + e.message; }
+}
 
-window.editManyChatResource = async function(postId) {
-  const p = scheduledPosts.find(x => x.id === postId);
-  if (!p) return;
-  const current = p.manychatUrl || '';
-  const url = prompt('Editar link del recurso ManyChat\n(dejá vacío para quitarlo):', current);
-  if (url === null) return; // cancelado
-  const trimmed = url.trim();
+async function removeManyChatFromModal() {
+  if (!_mcCurrentPostId) return;
+  if (!confirm('¿Quitar el recurso ManyChat de esta programación?')) return;
   try {
-    if (trimmed === '') {
-      if (!confirm('¿Quitar el recurso ManyChat de esta programación?')) return;
-      await db.collection('scheduledPosts').doc(postId).update({
-        manychatUrl: firebase.firestore.FieldValue.delete()
-      });
-    } else {
-      if (!/^https?:\/\//i.test(trimmed)) { alert('El link tiene que empezar con http:// o https://'); return; }
-      await db.collection('scheduledPosts').doc(postId).update({
-        manychatUrl: trimmed,
-        manychatAddedBy: currentUser.uid,
-        manychatAddedByName: currentUserData.name,
-        manychatAddedAt: firebase.firestore.FieldValue.serverTimestamp()
-      });
-    }
-  } catch (e) { alert('No se pudo guardar: ' + e.message); }
-};
+    await db.collection('scheduledPosts').doc(_mcCurrentPostId).update({
+      manychatUrl: firebase.firestore.FieldValue.delete()
+    });
+    closeManyChatModal();
+  } catch (e) {
+    const errEl = document.getElementById('manychatError');
+    if (errEl) errEl.textContent = 'No se pudo quitar: ' + e.message;
+  }
+}
+
+// Wireup del modal una sola vez al cargar el DOM
+document.addEventListener('DOMContentLoaded', () => {
+  const cancel = document.getElementById('manychatCancelBtn');
+  const save = document.getElementById('manychatSaveBtn');
+  const remove = document.getElementById('manychatRemoveBtn');
+  const overlay = document.getElementById('manychatModal');
+  const input = document.getElementById('manychatInput');
+  if (cancel) cancel.addEventListener('click', closeManyChatModal);
+  if (save) save.addEventListener('click', saveManyChatFromModal);
+  if (remove) remove.addEventListener('click', removeManyChatFromModal);
+  if (overlay) overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeManyChatModal();
+  });
+  if (input) input.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') saveManyChatFromModal();
+  });
+});
+
+// Las dos funciones publicas: agregar y editar abren el mismo modal
+// (openManyChatModal detecta automaticamente si hay valor previo).
+window.addManyChatResource = function(postId) { openManyChatModal(postId); };
+window.editManyChatResource = function(postId) { openManyChatModal(postId); };
 
 function bindManyChatButtons(container) {
   container.querySelectorAll('[data-mc-open]').forEach(b => {
