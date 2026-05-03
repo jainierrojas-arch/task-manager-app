@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.6.0': {
+    title: 'Drag & drop + colores por tipo en Programación',
+    features: [
+      '🖱 <strong>Arrastrá y soltá las cards</strong>: chau botones ↑↓ — ahora agarrás cualquier card con el mouse y la soltás donde quieras. Si soltás en la mitad superior de otra card, se inserta arriba; si soltás abajo, se inserta abajo. Una línea morada te muestra exactamente dónde va a caer.',
+      '🎨 <strong>Color de fondo según el tipo de post</strong>: cada card ahora tiene un tinte de color según el tipo, para que identifiques al toque qué es cada cosa: <span style="color:#4ecdc4">turquesa</span>=Post, <span style="color:#ff6b6b">rojo</span>=Reel, <span style="color:#a855f7">violeta</span>=Carrusel, <span style="color:#ffd93d">amarillo</span>=Story.',
+      '📋 <strong>Leyenda de colores arriba</strong> de la lista para tener referencia visual siempre a mano.',
+      '🔄 El orden manual sigue siendo compartido para todo el equipo en tiempo real, igual que antes.'
+    ]
+  },
   '3.5.0': {
     title: 'Reordenar manualmente las cards de Programación',
     features: [
@@ -1955,6 +1964,73 @@ async function moveScheduledPost(postId, direction) {
 window.moveSchedUp = function(id) { moveScheduledPost(id, -1); };
 window.moveSchedDown = function(id) { moveScheduledPost(id, +1); };
 
+// Drag & drop entre cards de la lista de Programación.
+// El usuario arrastra una card y la suelta sobre otra. Dependiendo de si suelta
+// en la mitad superior o inferior del target, la card se inserta arriba o abajo.
+let _schedDragSrcId = null;
+function bindSchedDragAndDrop(container) {
+  const cards = container.querySelectorAll('.sched-card[data-sched-id]');
+  cards.forEach(card => {
+    card.addEventListener('dragstart', (e) => {
+      _schedDragSrcId = card.dataset.schedId;
+      card.classList.add('dragging');
+      try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', _schedDragSrcId); } catch (err) {}
+    });
+    card.addEventListener('dragend', () => {
+      card.classList.remove('dragging');
+      cards.forEach(c => c.classList.remove('drop-above', 'drop-below'));
+      _schedDragSrcId = null;
+    });
+    card.addEventListener('dragover', (e) => {
+      if (!_schedDragSrcId || _schedDragSrcId === card.dataset.schedId) return;
+      e.preventDefault();
+      try { e.dataTransfer.dropEffect = 'move'; } catch (err) {}
+      const rect = card.getBoundingClientRect();
+      const midY = rect.top + rect.height / 2;
+      if (e.clientY < midY) {
+        card.classList.add('drop-above');
+        card.classList.remove('drop-below');
+      } else {
+        card.classList.add('drop-below');
+        card.classList.remove('drop-above');
+      }
+    });
+    card.addEventListener('dragleave', () => {
+      card.classList.remove('drop-above', 'drop-below');
+    });
+    card.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      const targetId = card.dataset.schedId;
+      const srcId = _schedDragSrcId;
+      const position = card.classList.contains('drop-above') ? 'above' : 'below';
+      cards.forEach(c => c.classList.remove('drop-above', 'drop-below'));
+      if (!srcId || srcId === targetId) return;
+      await reorderSchedDrop(srcId, targetId, position);
+    });
+  });
+}
+
+async function reorderSchedDrop(srcId, targetId, position) {
+  const items = visibleScheduledPosts();
+  const srcIdx = items.findIndex(p => p.id === srcId);
+  const targetIdx = items.findIndex(p => p.id === targetId);
+  if (srcIdx === -1 || targetIdx === -1) return;
+  // Reordenar el array localmente
+  const reordered = items.slice();
+  const [moved] = reordered.splice(srcIdx, 1);
+  let insertIdx = reordered.findIndex(p => p.id === targetId);
+  if (position === 'below') insertIdx += 1;
+  reordered.splice(insertIdx, 0, moved);
+  // Reasignar manualOrder secuencial a TODOS los posts (firestore batch)
+  try {
+    const batch = db.batch();
+    reordered.forEach((p, i) => {
+      batch.update(db.collection('scheduledPosts').doc(p.id), { manualOrder: i });
+    });
+    await batch.commit();
+  } catch (e) { alert('No se pudo reordenar: ' + e.message); }
+}
+
 window.resetSchedManualOrder = async function() {
   const dirty = scheduledPosts.filter(p => typeof p.manualOrder === 'number');
   if (dirty.length === 0) { alert('Ya estás en orden por fecha.'); return; }
@@ -1977,17 +2053,26 @@ function renderScheduleListView() {
     container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">&#128241;</div><div class="empty-state-text">No hay posts programados</div><div class="empty-state-sub">Marca una tarea finalizada con &quot;&#128241; Programar&quot; para enviar a tu cuenta de Instagram via Make.com</div></div>`;
     return;
   }
-  // Header con boton "Volver al orden por fecha" cuando hay orden manual activo
+  // Header con leyenda de colores por tipo + boton reset cuando hay orden manual
   const hasManualOrder = scheduledPosts.some(p => typeof p.manualOrder === 'number');
+  const legendHtml = `
+    <div style="display:flex;align-items:center;gap:14px;font-size:11px;color:var(--text-dim);flex-wrap:wrap">
+      <span style="display:inline-flex;align-items:center;gap:4px"><span style="width:10px;height:10px;background:#4ecdc4;border-radius:2px"></span>Post</span>
+      <span style="display:inline-flex;align-items:center;gap:4px"><span style="width:10px;height:10px;background:#ff6b6b;border-radius:2px"></span>Reel</span>
+      <span style="display:inline-flex;align-items:center;gap:4px"><span style="width:10px;height:10px;background:#a855f7;border-radius:2px"></span>Carrusel</span>
+      <span style="display:inline-flex;align-items:center;gap:4px"><span style="width:10px;height:10px;background:#ffd93d;border-radius:2px"></span>Story</span>
+    </div>`;
   const orderHeaderHtml = hasManualOrder
-    ? `<div style="display:flex;align-items:center;justify-content:space-between;background:rgba(108,99,255,0.08);border:1px solid rgba(108,99,255,0.25);border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:12px">
-         <span>📋 Orden manual activo · usá ↑↓ en cada card para mover</span>
+    ? `<div style="display:flex;align-items:center;justify-content:space-between;gap:14px;background:rgba(108,99,255,0.08);border:1px solid rgba(108,99,255,0.25);border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:12px;flex-wrap:wrap">
+         <span>📋 Orden manual activo · arrastrá las cards para reordenar</span>
+         ${legendHtml}
          <button class="btn btn-ghost btn-small" onclick="resetSchedManualOrder()" style="font-size:11px">↩ Volver a orden por fecha</button>
        </div>`
-    : `<div style="display:flex;align-items:center;justify-content:flex-end;margin-bottom:6px;font-size:11px;color:var(--text-dim)">
-         <span>Tip: usá ↑↓ en cada card para reordenar manualmente</span>
+    : `<div style="display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:8px;font-size:11px;color:var(--text-dim);flex-wrap:wrap">
+         <span>💡 Arrastrá cualquier card para reordenarla. Drop entre cards para insertar.</span>
+         ${legendHtml}
        </div>`;
-  container.innerHTML = orderHeaderHtml + items.map((p, idx) => {
+  container.innerHTML = orderHeaderHtml + items.map((p) => {
     const norm = scheduleStatusNorm(p.status);
     const cls = norm === 'publicado' ? 'published' : (norm === 'failed' ? 'failed' : (norm === 'draft' ? 'draft' : ''));
     const thumbSrc = p.mediaUrl ? mediaThumbUrl(p.mediaUrl) : '';
@@ -2009,19 +2094,11 @@ function renderScheduleListView() {
     // Boton "Ver": disponible siempre (incluso publicado/fallo) para revisar
     // qué medios y caption tiene un post sin abrir el editor.
     const viewBtn = `<button class="btn btn-ghost btn-small" data-view-sched="${esc(p.id)}" title="Ver media y caption">&#128065;</button>`;
-    const platformLabel = (p.postType || 'post').toUpperCase();
+    const ptype = (p.postType || 'post').toLowerCase();
+    const platformLabel = ptype.toUpperCase();
     const mcHtml = manychatBadgeHtml(p, canEditPost);
-    // Botones reorder ↑↓ — disabled en los bordes de la lista
-    const upDisabled = idx === 0 ? 'disabled style="opacity:0.3;cursor:not-allowed"' : '';
-    const downDisabled = idx === items.length - 1 ? 'disabled style="opacity:0.3;cursor:not-allowed"' : '';
-    const reorderBtns = `
-      <div style="display:flex;flex-direction:column;gap:2px;margin-right:4px">
-        <button class="btn btn-ghost" data-move-up="${esc(p.id)}" title="Mover arriba" ${upDisabled} style="padding:1px 6px;font-size:11px;line-height:1">▲</button>
-        <button class="btn btn-ghost" data-move-down="${esc(p.id)}" title="Mover abajo" ${downDisabled} style="padding:1px 6px;font-size:11px;line-height:1">▼</button>
-      </div>`;
     return `
-      <div class="sched-card ${cls}">
-        ${reorderBtns}
+      <div class="sched-card ${cls}" draggable="true" data-sched-id="${esc(p.id)}" data-post-type="${esc(ptype)}">
         <div class="sched-card-thumb" ${thumb}></div>
         <div class="sched-card-body">
           <div class="sched-card-when">${esc(fmtScheduledDate(p.scheduledAt))} &middot; ${esc(platformLabel)}</div>
@@ -2031,12 +2108,8 @@ function renderScheduleListView() {
         <div class="sched-card-actions">${viewBtn}${editBtn}${cancelBtn}</div>
       </div>`;
   }).join('');
-  container.querySelectorAll('[data-move-up]').forEach(b => {
-    b.addEventListener('click', (e) => { e.stopPropagation(); if (!b.disabled) moveSchedUp(b.dataset.moveUp); });
-  });
-  container.querySelectorAll('[data-move-down]').forEach(b => {
-    b.addEventListener('click', (e) => { e.stopPropagation(); if (!b.disabled) moveSchedDown(b.dataset.moveDown); });
-  });
+  // Drag & drop: arrastrar cards y soltar arriba/abajo de otra para reordenar
+  bindSchedDragAndDrop(container);
   bindManyChatButtons(container);
   container.querySelectorAll('[data-cancel-sched]').forEach(b => {
     b.addEventListener('click', (e) => {
