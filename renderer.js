@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.2.0': {
+    title: 'Contador de antigüedad por tarea + reset (admin)',
+    features: [
+      '⏱ <strong>Contador de tiempo en cada tarea</strong>: cada card de tarea ahora muestra cuánto pasó desde que se asignó (ej. <code>⏱ 5h 23m</code>). Se actualiza automáticamente cada minuto sin recargar.',
+      '🟥 <strong>Franja de color que se intensifica con el tiempo</strong>: una barra vertical fina al lado izquierdo del card va pasando de un rojo casi imperceptible a un rojo crítico a medida que pasan las horas. A las <strong>48 horas</strong> queda en rojo crítico permanente con un pulso suave para que sea imposible no verla. El equipo identifica de un vistazo qué tareas están atrasadas.',
+      '⟳ <strong>Botón de reset (solo admin)</strong>: pasando el mouse sobre cualquier tarea aparece un ícono ⟳ a la derecha. Click → reinicia el contador a cero y la franja vuelve al color base. Útil cuando una tarea se "renueva" porque cambiaron prioridades o se reasignó implícitamente.',
+      '📊 La antigüedad arranca desde <code>assignedAt</code> (cuando se asignó / se reseteó) o desde <code>createdAt</code> como fallback para tareas viejas. No requiere migración: al primer render todas las tareas ya muestran su edad correctamente.'
+    ]
+  },
   '3.1.1': {
     title: 'Portada automática para videos de Cloudinary en el Depósito',
     features: [
@@ -3243,6 +3252,85 @@ function assigneeChips(task) {
   return `${userChip(creatorId, creatorName)}<span style="opacity:0.55;margin:0 2px;font-size:11px">→</span>${userChip(assigneeId, assigneeName)}`;
 }
 
+// ===== Contador de antiguedad por tarea =====
+// Cuenta minutos desde que la tarea se asigno (assignedAt) o se creo (createdAt
+// como fallback para tareas viejas). El reset (admin only) escribe assignedAt
+// con serverTimestamp para arrancar el conteo desde cero.
+const AGE_CRITICAL_MIN = 48 * 60; // 48 horas → rojo critico
+
+function getTaskAgeStartMs(task) {
+  const t = task.assignedAt || task.createdAt;
+  if (!t) return null;
+  try { return t.toDate ? t.toDate().getTime() : new Date(t).getTime(); }
+  catch (e) { return null; }
+}
+function ageMinutesFromMs(startMs) {
+  if (!startMs) return 0;
+  return Math.max(0, Math.floor((Date.now() - startMs) / 60000));
+}
+function formatAge(mins) {
+  if (mins < 60) return `${mins}m`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+// Color HSL interpolado de pale red → critical red. Saturacion sube con el
+// tiempo para que las tareas viejas se "destaquen" visualmente.
+function ageStripColor(mins) {
+  const t = Math.min(mins / AGE_CRITICAL_MIN, 1);
+  const L = 88 - t * 38;
+  const S = 50 + t * 35;
+  return `hsl(0, ${S}%, ${L}%)`;
+}
+function ageBadgeColors(mins) {
+  const t = Math.min(mins / AGE_CRITICAL_MIN, 1);
+  const bgL = 92 - t * 35;
+  const bgS = 45 + t * 40;
+  const fgL = t > 0.5 ? 100 : 30; // texto blanco cuando el bg ya es oscuro
+  return {
+    bg: `hsl(0, ${bgS}%, ${bgL}%)`,
+    fg: `hsl(0, 30%, ${fgL}%)`,
+    border: `hsl(0, ${bgS + 10}%, ${Math.max(bgL - 15, 30)}%)`
+  };
+}
+
+// Update in-place: re-pinta strip + badge de cada tarea visible cada 60s
+// para que el contador tique sin re-renderizar la lista entera.
+function refreshAgeBadges() {
+  document.querySelectorAll('.task-item[data-age-start]').forEach(el => {
+    const start = parseInt(el.dataset.ageStart);
+    if (!start) return;
+    const mins = ageMinutesFromMs(start);
+    const strip = el.querySelector('.task-age-strip');
+    if (strip) {
+      strip.style.backgroundColor = ageStripColor(mins);
+      strip.classList.toggle('critical', mins >= AGE_CRITICAL_MIN);
+    }
+    const badge = el.querySelector('.task-age-badge');
+    if (badge) {
+      const c = ageBadgeColors(mins);
+      badge.textContent = `⏱ ${formatAge(mins)}`;
+      badge.style.background = c.bg;
+      badge.style.color = c.fg;
+      badge.style.border = `1px solid ${c.border}`;
+    }
+  });
+}
+setInterval(refreshAgeBadges, 60000);
+
+window.resetTaskTimer = async function(taskId) {
+  const isAdmin = currentUserData && currentUserData.role === 'admin';
+  if (!isAdmin) return;
+  if (!confirm('Resetear el contador de antigüedad de esta tarea?\nEl tiempo arrancara desde cero.')) return;
+  try {
+    await db.collection('tasks').doc(taskId).update({
+      assignedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  } catch (e) {
+    alert('No se pudo resetear: ' + e.message);
+  }
+};
+
 function renderTaskList(container, taskList, mode) {
   if (taskList.length === 0) {
     const emptyMessages = {
@@ -3327,6 +3415,10 @@ function renderTaskList(container, taskList, mode) {
 
       // Edit, retornar (al deposito) y delete buttons (solo creator y admin)
       let taskActions = '';
+      // Reset de contador (solo admin, solo en tareas no completadas)
+      if (isAdmin && task.status !== 'completed' && !isPendingApproval) {
+        taskActions += `<button class="btn-timer-reset" onclick="resetTaskTimer('${task.id}')" title="Resetear contador de antigüedad">&#10227;</button>`;
+      }
       if (!isPendingApproval && canEdit(task)) {
         taskActions += `<button class="task-delete" onclick="editTask('${task.id}')" title="Editar" style="color:var(--accent)">&#9998;</button>`;
       }
@@ -3459,13 +3551,33 @@ function renderTaskList(container, taskList, mode) {
         coverPreview = `<div class="task-cover-preview" style="background-image:url('${esc(task.coverImage)}')" onclick="window.api.openExternal('${esc(previewUrl)}')" title="Abrir ${esc(previewUrl)}"></div>`;
       }
 
+      // Strip + badge de antiguedad (solo en tareas no completadas).
+      // Se muestra siempre — desde 0min con tono casi-blanco hasta crítico a 48h+.
+      let ageStripHtml = '';
+      let ageBadgeHtml = '';
+      let ageDataAttr = '';
+      if (task.status !== 'completed') {
+        const startMs = getTaskAgeStartMs(task);
+        if (startMs) {
+          const mins = ageMinutesFromMs(startMs);
+          const stripColor = ageStripColor(mins);
+          const isCritical = mins >= AGE_CRITICAL_MIN;
+          const c = ageBadgeColors(mins);
+          ageStripHtml = `<div class="task-age-strip${isCritical ? ' critical' : ''}" style="background-color:${stripColor}"></div>`;
+          ageBadgeHtml = `<span class="task-tag task-age-badge" title="Tiempo desde que se asignó la tarea" style="background:${c.bg};color:${c.fg};border:1px solid ${c.border}">⏱ ${formatAge(mins)}</span>`;
+          ageDataAttr = ` data-age-start="${startMs}"`;
+        }
+      }
+
       html += `
-        <div class="task-item ${overdueClass}" data-id="${task.id}" data-project-id="${task.projectId || ''}" data-project-name="${esc(task.projectName || '')}" style="border-left-color:${group.color}">
+        <div class="task-item ${overdueClass}" data-id="${task.id}" data-project-id="${task.projectId || ''}" data-project-name="${esc(task.projectName || '')}"${ageDataAttr} style="border-left-color:${group.color}">
+          ${ageStripHtml}
           ${checkBtn}
           <div style="flex:1">
             <div class="task-text">${esc(task.text)}</div>
             <div class="task-meta">
               ${assigneeChips(task)}
+              ${ageBadgeHtml}
               ${statusBadge}
               ${deadlineBadge}
               ${blockedBadge}

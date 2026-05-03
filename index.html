@@ -457,14 +457,50 @@
       display: flex;
       align-items: flex-start;
       gap: 10px;
-      padding: 10px 12px;
+      padding: 10px 12px 10px 16px;
       background: var(--bg-card);
       border-radius: 8px;
       margin-bottom: 6px;
       transition: all 0.2s;
       animation: slideIn 0.3s ease;
       border-left: 3px solid transparent;
+      position: relative;
     }
+    /* Franja de antigüedad: barra fina pegada al borde izquierdo del card.
+       El color se interpola por minuto desde casi-blanco hasta rojo crítico (48h+). */
+    .task-age-strip {
+      position: absolute;
+      left: 5px;
+      top: 6px;
+      bottom: 6px;
+      width: 4px;
+      border-radius: 2px;
+      pointer-events: none;
+      transition: background-color 0.4s ease;
+    }
+    .task-age-strip.critical {
+      animation: pulse 2.5s infinite;
+    }
+    .task-age-badge {
+      font-size: 9px !important;
+      padding: 1px 6px !important;
+      border-radius: 4px !important;
+      font-weight: 600;
+      letter-spacing: 0.2px;
+    }
+    .btn-timer-reset {
+      background: none;
+      border: none;
+      color: #6c63ff;
+      font-size: 14px;
+      cursor: pointer;
+      padding: 4px;
+      margin-top: 2px;
+      opacity: 0;
+      transition: opacity 0.2s, transform 0.2s;
+    }
+    .task-item:hover .btn-timer-reset { opacity: 1; }
+    .btn-timer-reset:hover { transform: rotate(-90deg); color: #4ecdc4; }
     .task-item:hover { background: var(--bg-hover); }
 
     @keyframes slideIn {
