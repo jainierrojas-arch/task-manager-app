@@ -75,6 +75,12 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.6.1': {
+    title: 'Tonalidad de los colores por tipo más fuerte',
+    features: [
+      '🎨 Subimos la opacidad del fondo de las cards en Programación de 7% a ~20% para que el color del tipo (post/reel/carrusel/story) se aprecie mucho mejor de un vistazo.'
+    ]
+  },
   '3.6.0': {
     title: 'Drag & drop + colores por tipo en Programación',
     features: [
