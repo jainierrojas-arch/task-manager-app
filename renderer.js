@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.8.3': {
+    title: 'Settings per-workspace — cada cliente, su propio Make/GHL/Cloudinary',
+    features: [
+      '⚙️ <strong>Cada workspace tiene sus propios settings</strong>: el Make webhook (IG), GHL TikTok webhook y Cloudinary config ahora son por workspace. Cuando estás en "Cliente Pizza", configurás los datos de Cliente Pizza; cuando volvés a "Mi Agencia", aparecen los tuyos.',
+      '📦 <strong>Migración automática</strong>: tu config existente del workspace default (Mi Agencia) se copia automáticamente al primer arranque post-update. No tenés que volver a pegar nada.',
+      '🔑 <strong>Naming convention</strong>: en Firestore las configs ahora son <code>config/instagram_{wsId}</code> y <code>config/cloudinary_{wsId}</code>. La global <code>config/instagram</code> sigue existiendo como fallback.',
+      '⚠️ <strong>Limitación temporal</strong>: la Cloud Function que publica en IG/TikTok todavía lee la config GLOBAL — entonces los posts creados en workspaces NUEVOS van a publicarse usando la config de Mi Agencia. Eso lo arreglamos en <strong>v3.8.4</strong> haciendo el backend workspace-aware.',
+      '🛣 <strong>Próximo paso (v3.8.4)</strong>: Cloud Function lee config del workspace correcto al publicar, basado en el workspaceId del post.'
+    ]
+  },
   '3.8.2': {
     title: 'Fix crítico: Depósito y Chat ahora respetan workspace activo',
     features: [
@@ -788,6 +798,44 @@ function applyWorkspaceFilter() {
   try { renderCaptionLibrary(); updateCaptionFolderOptions(); } catch (e) {}
 }
 
+// ===== Settings per-workspace (v3.8.3) =====
+// Ref a un doc de config scoped al workspace activo. Si no hay workspace,
+// fallback al global (compatibilidad con setups anteriores).
+// Estrategia: composite key `${name}_${wsId}` en la colección /config global.
+// Es más simple que subcolecciones, no requiere cambiar Firestore Rules.
+function wsConfigRef(name) {
+  if (currentWorkspaceId) {
+    return db.collection('config').doc(`${name}_${currentWorkspaceId}`);
+  }
+  return db.collection('config').doc(name);
+}
+
+// Migración: la primera vez que el owner está en el workspace default,
+// si existe el doc global config/instagram pero no existe config/instagram_${defaultId},
+// copia el contenido para que el workspace default arranque con la config existente.
+async function migrateGlobalConfigToDefaultWorkspace() {
+  if (!currentUser || !currentUserData) return;
+  const def = workspaces.find(w => w.isDefault);
+  if (!def) return;
+  if (currentWorkspaceId !== def.id) return;
+  const isOwner = (currentUser.email || '').toLowerCase() === 'jainierrojas@gmail.com';
+  if (!isOwner) return;
+  const configsToMigrate = ['instagram', 'cloudinary'];
+  for (const name of configsToMigrate) {
+    try {
+      const wsKey = `${name}_${def.id}`;
+      const wsSnap = await db.collection('config').doc(wsKey).get();
+      if (wsSnap.exists) continue; // ya migrado
+      const globalSnap = await db.collection('config').doc(name).get();
+      if (!globalSnap.exists) continue; // nada que migrar
+      await db.collection('config').doc(wsKey).set(globalSnap.data());
+      console.log(`[migrate] ${name} → ${wsKey}`);
+    } catch (e) {
+      console.warn(`[migrate] error ${name}:`, e.message);
+    }
+  }
+}
+
 // Monkey-patch db.collection().add() para auto-inyectar workspaceId en los
 // documentos nuevos de las colecciones workspace-scoped. Cero cambios en los
 // 25+ sitios de .add() existentes.
@@ -1224,10 +1272,10 @@ async function syncMakeWebhookToFirestore() {
     if (!window.api || !window.api.getMakeWebhook || !db || !currentUser) return;
     const url = await window.api.getMakeWebhook();
     if (!url) return;
-    const snap = await db.collection('config').doc('instagram').get();
+    const snap = await wsConfigRef('instagram').get();
     const remote = snap.exists ? (snap.data().makeWebhookUrl || null) : null;
     if (remote === url) return;
-    await db.collection('config').doc('instagram').set({
+    await wsConfigRef('instagram').set({
       makeWebhookUrl: url,
       updatedBy: currentUser.email,
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -6787,6 +6835,8 @@ function subscribeWorkspaces() {
       try { localStorage.setItem('currentWorkspaceId', currentWorkspaceId); } catch (e) {}
     }
     renderWorkspaceSwitcher();
+    // v3.8.3: migrar config global → workspace default (idempotente)
+    migrateGlobalConfigToDefaultWorkspace().catch(() => {});
   }, (err) => {
     console.warn('[workspaces] error de listener:', err.message);
   });
@@ -7159,10 +7209,10 @@ if (window.api && window.api.getMakeWebhook && makeWebhookInput) {
     // Asi v2.86.0 levanta sin necesidad de que el usuario reabra Settings.
     if (url && db && currentUser) {
       try {
-        const snap = await db.collection('config').doc('instagram').get();
+        const snap = await wsConfigRef('instagram').get();
         const remote = snap.exists ? snap.data().makeWebhookUrl : null;
         if (remote !== url) {
-          await db.collection('config').doc('instagram').set({
+          await wsConfigRef('instagram').set({
             makeWebhookUrl: url,
             updatedBy: currentUser.email,
             updatedAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -7179,7 +7229,7 @@ if (saveMakeWebhookBtn) {
     if (result && result.ok) {
       // Tambien guardar en Firestore para que la Cloud Function lo use
       try {
-        await db.collection('config').doc('instagram').set({
+        await wsConfigRef('instagram').set({
           makeWebhookUrl: url,
           updatedBy: currentUser ? currentUser.email : null,
           updatedAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -7213,10 +7263,10 @@ if (window.api && window.api.getGhlTiktokWebhook && ghlTiktokWebhookInput) {
     // tenga la URL sin esperar al proximo guardado manual.
     if (url && db && currentUser) {
       try {
-        const snap = await db.collection('config').doc('instagram').get();
+        const snap = await wsConfigRef('instagram').get();
         const remote = snap.exists ? snap.data().ghlTiktokWebhookUrl : null;
         if (remote !== url) {
-          await db.collection('config').doc('instagram').set({
+          await wsConfigRef('instagram').set({
             ghlTiktokWebhookUrl: url,
             updatedBy: currentUser.email,
             updatedAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -7232,7 +7282,7 @@ if (saveGhlTiktokWebhookBtn) {
     const result = await window.api.setGhlTiktokWebhook(url);
     if (result && result.ok) {
       try {
-        await db.collection('config').doc('instagram').set({
+        await wsConfigRef('instagram').set({
           ghlTiktokWebhookUrl: url,
           updatedBy: currentUser ? currentUser.email : null,
           updatedAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -7277,7 +7327,7 @@ if (saveCloudinaryConfigBtn) {
     if (!result || !result.ok) { alert('Error: ' + (result && result.error)); return; }
     // Sync a Firestore para que el equipo lo herede
     try {
-      await db.collection('config').doc('cloudinary').set({
+      await wsConfigRef('cloudinary').set({
         cloudName,
         uploadPreset,
         updatedBy: currentUser ? currentUser.email : null,
@@ -7296,7 +7346,7 @@ async function syncCloudinaryConfigFromFirestore() {
   try {
     if (!window.api || !window.api.getCloudinaryConfig || !db || !currentUser) return;
     const local = await window.api.getCloudinaryConfig();
-    const snap = await db.collection('config').doc('cloudinary').get();
+    const snap = await wsConfigRef('cloudinary').get();
     if (!snap.exists) return;
     const remote = snap.data();
     const remoteCloudName = (remote && remote.cloudName) || '';
