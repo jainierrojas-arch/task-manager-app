@@ -899,12 +899,14 @@ function renderEntryHtml(e) {
         </div>`;
     }
   }
-  // v3.9.1: aceptar más tipos de videos transcribibles, no solo Cloudinary
-  const videoLink = (e.links || []).find(l => isTranscribableLink(l));
+  // v3.9.2: mostrar botón Transcribir en CUALQUIER entry que tenga al menos
+  // un link (transcribible o no). Al click la función transcribeEntry decide
+  // si se puede o muestra error claro al usuario.
+  const hasAnyLink = Array.isArray(e.links) && e.links.some(l => l && l.url);
   const transcript = e.transcription || null;
   const variations = Array.isArray(e.scriptVariations) ? e.scriptVariations : [];
   let transcriptHtml = '';
-  if (videoLink || transcript) {
+  if (hasAnyLink || transcript) {
     if (transcript) {
       const variationsHtml = variations.length > 0
         ? variations.map((v, i) => `
@@ -922,7 +924,7 @@ function renderEntryHtml(e) {
             </div>
           </details>
         </div>`;
-    } else if (videoLink) {
+    } else if (hasAnyLink) {
       transcriptHtml = `
         <div class="entry-transcript" style="margin-top:8px">
           <button class="btn btn-ghost btn-small" data-transcribe="${esc(e.id)}" title="Transcribir audio del video con OpenAI Whisper">🎤 Transcribir video</button>

@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.9.2': {
+    title: 'Fix #2: botón Transcribir aparece en TODAS las entries con links',
+    features: [
+      '🎤 <strong>Botón siempre visible</strong>: en v3.9.0/3.9.1 el botón solo aparecía si la entry tenía links de tipos específicos. Ahora aparece en cualquier entry del Depósito que tenga al menos un link.',
+      '🤖 <strong>Detección inteligente al click</strong>: cuando hacés click, la app revisa los links de la entry y decide automáticamente si puede transcribir (Cloudinary, mp4 directo, etc.) o si necesitás bajar/re-subir (Instagram, TikTok, YouTube).',
+      '💡 <strong>Resultado</strong>: ahora vas a ver el botón aparecer en Referencias y en cualquier categoría del Depósito que tenga entries con links.'
+    ]
+  },
   '3.9.1': {
     title: 'Fix: botón Transcribir aparece en más tipos de videos',
     features: [
