@@ -75,6 +75,18 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.7.2': {
+    title: 'Pulido fino — tipografía, spacing y microinteracciones',
+    features: [
+      '✍️ <strong>Tipografía Inter</strong> en toda la app — la misma que usan Linear, Notion, Stripe. Le da un look mucho más profesional y limpio.',
+      '🎯 <strong>Microinteracciones suaves</strong> en todo lo interactivo: hover, click, transiciones de color y sombras coordinadas. Se siente más "vivo".',
+      '🪟 <strong>Modales con backdrop blur</strong>: cuando se abre un modal, el fondo se difumina (estilo iOS / macOS) en vez de quedarse plano.',
+      '✨ <strong>Empty states más prolijos</strong>: cuando una pestaña está vacía, ahora muestra un ícono circular con gradiente sutil + animación de entrada en vez del placeholder básico.',
+      '🎚 <strong>Scrollbars finitos</strong>: 8px en vez del default del sistema, casi invisibles hasta que pasás el mouse por encima.',
+      '💎 <strong>Sombras suaves al hover</strong> en cards de tareas, programaciones e ideas — se sienten como tarjetas físicas levitando ligeramente.',
+      '🎨 <strong>Botones con glow</strong> sutil al hover (primario violeta, success turquesa, danger rojo) — refuerza el color de acción.'
+    ]
+  },
   '3.7.1': {
     title: 'Header refinado: workspace badge + user dropdown',
     features: [
