@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.7.1': {
+    title: 'Header refinado: workspace badge + user dropdown',
+    features: [
+      '🏷 <strong>Workspace badge a la izquierda</strong>: arriba del todo aparece un badge "Mi Agencia" tipo ClickUp/Slack. Por ahora es estático — cuando activemos multi-cliente (Fase 4) este badge se vuelve dropdown para cambiar entre clientes.',
+      '👤 <strong>User dropdown a la derecha</strong>: tu nombre + avatar arriba a la derecha. Click → menú con tu info, "Modo PRO", "Configuración", "Cerrar sesión". Más limpio que tener todo eso visible en la barra siempre.',
+      '🧹 <strong>User-bar más limpia</strong>: los botones de Chat/Refs/Cloud/Pendientes que estaban en el top quedaron ocultos (ahora viven en el sidebar de Fase 1). La barra de arriba ahora respira.',
+      '🎨 <strong>Próximo paso (3.7.2)</strong>: pulido fino de tipografía, spacing en cards, microinteracciones y empty states más prolijos.'
+    ]
+  },
   '3.7.0': {
     title: 'Sidebar lateral estilo ClickUp — primera fase del rediseño',
     features: [
@@ -950,6 +959,7 @@ function showApp() {
   el.userAvatar.textContent = currentUserData.name.charAt(0).toUpperCase();
   el.userName.textContent = currentUserData.name;
   el.userRole.textContent = currentUserData.role || 'miembro';
+  syncUserDropdownInfo();
 
   personalProjectsList = Array.isArray(currentUserData.personalProjects) ? [...currentUserData.personalProjects] : [];
   currentPersonalProject = 'General';
@@ -6483,6 +6493,57 @@ document.querySelectorAll('.sidebar-item[data-go-button]').forEach(item => {
     if (btn) btn.click();
   });
 });
+
+// ===== User dropdown (v3.7.1): abrir/cerrar, items que disparan acciones existentes
+function setupUserDropdown() {
+  const toggle = document.getElementById('userDropdownToggle');
+  const menu = document.getElementById('userDropdownMenu');
+  if (!toggle || !menu) return;
+  let isOpen = false;
+  const close = () => { menu.classList.remove('open'); isOpen = false; };
+  const open = () => { menu.classList.add('open'); isOpen = true; };
+  toggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    isOpen ? close() : open();
+  });
+  document.addEventListener('click', (e) => {
+    if (isOpen && !menu.contains(e.target) && e.target !== toggle) close();
+  });
+  // Items con data-go-tab dentro del dropdown
+  menu.querySelectorAll('[data-go-tab]').forEach(item => {
+    item.addEventListener('click', () => {
+      close();
+      const t = document.querySelector(`.nav-tab[data-tab="${item.dataset.goTab}"]`);
+      if (t) t.click();
+    });
+  });
+  // Modo PRO y Logout: clickean los botones legacy escondidos (mantienen su lógica)
+  const proItem = document.getElementById('dropdownProMode');
+  if (proItem) proItem.addEventListener('click', () => {
+    close();
+    const btn = document.getElementById('proModeBtn');
+    if (btn) btn.click();
+  });
+  const logoutItem = document.getElementById('dropdownLogout');
+  if (logoutItem) logoutItem.addEventListener('click', () => {
+    close();
+    const btn = document.getElementById('logoutBtn');
+    if (btn) btn.click();
+  });
+}
+document.addEventListener('DOMContentLoaded', setupUserDropdown);
+
+// Sincroniza datos del usuario al avatar grande del dropdown + email
+function syncUserDropdownInfo() {
+  const nameBig = document.getElementById('userNameBig');
+  const avatarBig = document.getElementById('userAvatarBig');
+  const emailEl = document.getElementById('userEmailDropdown');
+  if (currentUserData) {
+    if (nameBig) nameBig.textContent = currentUserData.name || 'Usuario';
+    if (avatarBig) avatarBig.textContent = (currentUserData.name || 'U').charAt(0).toUpperCase();
+    if (emailEl) emailEl.textContent = currentUserData.email || '';
+  }
+}
 
 // Mirror badges en cada repaint relevante. Reusamos un MutationObserver sobre
 // los badges originales para que cualquier cambio se propague sin que tengamos

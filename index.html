@@ -302,6 +302,135 @@
       .sidebar-label, .sidebar-brand-label { display: none; }
     }
 
+    /* ===== Workspace badge (top-left) ===== */
+    .workspace-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      cursor: pointer;
+      color: var(--text-primary);
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .workspace-badge:hover {
+      background: var(--bg-hover);
+      border-color: var(--accent);
+    }
+    .workspace-emoji {
+      width: 22px;
+      height: 22px;
+      border-radius: 5px;
+      background: linear-gradient(135deg, #4ecdc4, #45b7d1);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 800;
+      flex-shrink: 0;
+    }
+    .workspace-name { font-size: 13px; font-weight: 700; }
+    .workspace-arrow { font-size: 10px; color: var(--text-secondary); margin-left: 2px; }
+
+    /* Action buttons antiguos quedan ocultos (sidebar los reemplaza) */
+    .user-bar-hidden-actions { display: none; }
+
+    /* ===== User dropdown (top-right) ===== */
+    .user-dropdown-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 6px 4px 10px;
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      cursor: pointer;
+      color: var(--text-primary);
+      font-family: inherit;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .user-dropdown-toggle:hover {
+      background: var(--bg-hover);
+      border-color: var(--border);
+    }
+    .user-dropdown-name { font-size: 12px; font-weight: 600; }
+    .user-dropdown-role {
+      font-size: 9px;
+      padding: 2px 6px;
+      border-radius: 8px;
+      background: rgba(108, 99, 255, 0.2);
+      color: var(--accent);
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+    }
+    .user-dropdown-menu {
+      display: none;
+      position: absolute;
+      top: calc(100% + 8px);
+      right: 0;
+      min-width: 280px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+      padding: 8px;
+      z-index: 1000;
+      animation: dropdownIn 0.15s ease;
+    }
+    .user-dropdown-menu.open { display: block; }
+    @keyframes dropdownIn {
+      from { opacity: 0; transform: translateY(-6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .user-dropdown-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 8px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 6px;
+    }
+    .user-dropdown-header .user-avatar {
+      width: 38px;
+      height: 38px;
+      font-size: 16px;
+    }
+    .user-dropdown-name-big { font-size: 14px; font-weight: 700; }
+    .user-dropdown-section {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+    .user-dropdown-divider {
+      height: 1px;
+      background: var(--border);
+      margin: 6px 4px;
+    }
+    .user-dropdown-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 10px;
+      background: transparent;
+      border: none;
+      border-radius: 8px;
+      color: var(--text-primary);
+      font-family: inherit;
+      font-size: 13px;
+      cursor: pointer;
+      text-align: left;
+      width: 100%;
+      transition: background 0.12s;
+    }
+    .user-dropdown-item:hover { background: var(--bg-hover); }
+
     /* User bar */
     .user-bar {
       display: flex;
@@ -1552,18 +1681,69 @@
       <div class="app-main">
         <!-- User bar -->
         <div class="user-bar">
-      <div class="user-avatar" id="userAvatar">J</div>
-      <span class="user-name" id="userName">Usuario</span>
-      <span class="user-role" id="userRole">miembro</span>
-      <button class="btn btn-ghost btn-small" id="proModeBtn" title="Modo PRO: tareas + deposito + chat en una sola pantalla" style="margin-left:auto;background:linear-gradient(135deg,#ff6b6b,#ee5a6f);color:white;border:none;font-weight:700;font-size:11px;padding:6px 12px">&#128640; MODO PRO</button>
-      <button class="chat-toggle-btn" id="chatToggleBtn" title="Abrir chat del equipo" style="background:linear-gradient(135deg,#4ecdc4,#3aafa9);color:white;border:none;font-weight:700;font-size:11px;padding:6px 12px">
-        &#128172; CHAT
-        <span class="tab-badge chat-unread-badge" id="chatUnreadBadge" style="display:none">0</span>
+      <!-- Workspace badge (placeholder hasta que activemos multi-workspace en Fase 4) -->
+      <button class="workspace-badge" id="workspaceBadge" title="Workspace actual">
+        <span class="workspace-emoji" id="workspaceEmoji">A</span>
+        <span class="workspace-name" id="workspaceName">Mi Agencia</span>
+        <span class="workspace-arrow">▾</span>
       </button>
-      <button class="btn btn-ghost btn-small" id="cloudBtn" title="Abrir la nube de proyectos en el navegador" style="background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-weight:600;font-size:11px;padding:6px 12px">&#9729; NUBE DE PROYECTO</button>
-      <button class="btn btn-ghost btn-small" id="referencesBtn" title="Banco de referencias del equipo" style="background:linear-gradient(135deg,#7d6cff,#a855f7);color:white;font-weight:700;font-size:11px;padding:6px 12px;position:relative;border:1px solid rgba(168,85,247,0.5)">&#128218; REFERENCIAS <span id="referencesUnreadBadge" style="display:none;background:#ff4757;color:#fff;font-size:10px;font-weight:700;padding:0 6px;border-radius:10px;margin-left:4px;min-width:18px;text-align:center;box-shadow:0 0 6px rgba(255,71,87,0.6)"></span></button>
-      <button class="btn btn-ghost btn-small" id="depositBtn" title="Tareas pendientes por asignar" style="background:linear-gradient(135deg,#ffd93d,#ffb84d);color:#1a1b2e;font-weight:700;font-size:11px;padding:6px 12px;position:relative;border:1px solid #ffd93d">&#128230; TAREAS <span id="depositUnreadBadge" style="display:none;background:#ff4757;color:#fff;font-size:10px;font-weight:700;padding:0 6px;border-radius:10px;margin-left:4px;min-width:18px;text-align:center;box-shadow:0 0 6px rgba(255,71,87,0.6)"></span></button>
-      <button class="logout-btn" id="logoutBtn" title="Cerrar sesion">&#x2716;</button>
+
+      <!-- Botones funcionales escondidos (siguen vivos para que el sidebar y JS los disparen) -->
+      <div class="user-bar-hidden-actions">
+        <button class="chat-toggle-btn" id="chatToggleBtn" title="Abrir chat del equipo">
+          &#128172; CHAT
+          <span class="tab-badge chat-unread-badge" id="chatUnreadBadge" style="display:none">0</span>
+        </button>
+        <button class="btn btn-ghost btn-small" id="cloudBtn" title="Abrir la nube de proyectos">&#9729; NUBE</button>
+        <button class="btn btn-ghost btn-small" id="referencesBtn" title="Banco de referencias">
+          &#128218; REFS
+          <span id="referencesUnreadBadge" style="display:none">0</span>
+        </button>
+        <button class="btn btn-ghost btn-small" id="depositBtn" title="Tareas pendientes">
+          &#128230; PEND
+          <span id="depositUnreadBadge" style="display:none">0</span>
+        </button>
+      </div>
+
+      <!-- User dropdown a la derecha -->
+      <div class="user-dropdown-wrap" style="margin-left:auto;position:relative">
+        <button class="user-dropdown-toggle" id="userDropdownToggle" title="Tu cuenta">
+          <span class="user-dropdown-name" id="userName">Usuario</span>
+          <span class="user-dropdown-role" id="userRole">miembro</span>
+          <span class="user-avatar" id="userAvatar">J</span>
+        </button>
+        <div class="user-dropdown-menu" id="userDropdownMenu">
+          <div class="user-dropdown-header">
+            <span class="user-avatar" id="userAvatarBig">J</span>
+            <div style="display:flex;flex-direction:column;gap:2px;min-width:0">
+              <div class="user-dropdown-name-big" id="userNameBig">Usuario</div>
+              <div class="user-dropdown-email" id="userEmailDropdown" style="font-size:11px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
+            </div>
+          </div>
+          <div class="user-dropdown-section">
+            <button class="user-dropdown-item" id="dropdownProMode">
+              <span style="font-size:14px">&#128640;</span>
+              <span>Modo PRO</span>
+              <span style="margin-left:auto;font-size:10px;color:var(--text-secondary)">Tareas + Depósito + Chat</span>
+            </button>
+            <button class="user-dropdown-item" data-go-tab="settings">
+              <span style="font-size:14px">&#9881;</span>
+              <span>Configuración</span>
+            </button>
+          </div>
+          <div class="user-dropdown-divider"></div>
+          <div class="user-dropdown-section">
+            <button class="user-dropdown-item" id="dropdownLogout" style="color:var(--danger)">
+              <span style="font-size:14px">&#128274;</span>
+              <span>Cerrar sesión</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Botones legacy escondidos (mantenidos vivos para que el sidebar los dispare) -->
+      <button class="btn btn-ghost btn-small" id="proModeBtn" style="display:none">MODO PRO</button>
+      <button class="logout-btn" id="logoutBtn" style="display:none">&#x2716;</button>
     </div>
 
     <!-- Update banner -->
