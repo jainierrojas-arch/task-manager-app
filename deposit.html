@@ -970,5 +970,8 @@
     const db = firebase.firestore();
   </script>
   <script src="deposit-renderer.js"></script>
+  <script>
+    if (window._installWsScopeWrapper) window._installWsScopeWrapper(db);
+  </script>
 </body>
 </html>

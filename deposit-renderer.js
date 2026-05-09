@@ -1,3 +1,33 @@
+// ===== Multi-workspace bridge (v3.8.1) =====
+// El iframe recibe workspaceId via ?workspace=XXX desde el padre.
+const WS_ID = (() => {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('workspace') || null;
+  } catch (e) { return null; }
+})();
+const WS_SCOPED_COLLECTIONS = new Set(['tasks', 'projects', 'depositEntries', 'depositCategories', 'scheduledPosts', 'chatMessages', 'captionTemplates', 'ideas']);
+function _belongsToWs(d) {
+  if (!WS_ID) return true;
+  return !d.workspaceId || d.workspaceId === WS_ID;
+}
+window._installWsScopeWrapper = function(db) {
+  if (!db || !db.collection) return;
+  const orig = db.collection.bind(db);
+  db.collection = function(name) {
+    const ref = orig(name);
+    if (!WS_SCOPED_COLLECTIONS.has(name)) return ref;
+    const origAdd = ref.add.bind(ref);
+    ref.add = function(data) {
+      const enriched = (data && WS_ID && !data.workspaceId)
+        ? Object.assign({}, data, { workspaceId: WS_ID })
+        : data;
+      return origAdd(enriched);
+    };
+    return ref;
+  };
+};
+
 // ===== TEMA — sincronizado con la app principal =====
 const THEME_KEY = 'app-theme';
 function applyDepositTheme(theme) {
@@ -222,7 +252,7 @@ function subscribeAll() {
   unsubscribers = [];
 
   unsubscribers.push(db.collection('depositCategories').orderBy('name').onSnapshot(snap => {
-    categories = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    categories = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(_belongsToWs);
     if (!selectedCategoryId && categories.length > 0) selectedCategoryId = categories[0].id;
     renderCategories();
     renderEntries();
@@ -231,13 +261,13 @@ function subscribeAll() {
   }));
 
   unsubscribers.push(db.collection('depositEntries').orderBy('createdAt', 'desc').onSnapshot(snap => {
-    entries = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    entries = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(_belongsToWs);
     renderCategories();
     renderEntries();
   }));
 
   unsubscribers.push(db.collection('projects').orderBy('name').onSnapshot(snap => {
-    projects = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    projects = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(_belongsToWs);
     renderProjectSelect();
   }));
 

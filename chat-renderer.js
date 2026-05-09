@@ -1,3 +1,38 @@
+// ===== Multi-workspace bridge (v3.8.1) =====
+// El iframe recibe el workspaceId via URL param ?workspace=XXX cuando el
+// padre (renderer.js) lo abre. Lo usamos para:
+// 1) Filtrar listeners (solo mensajes de este workspace)
+// 2) Inyectar workspaceId en docs nuevos
+const WS_ID = (() => {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('workspace') || null;
+  } catch (e) { return null; }
+})();
+const WS_SCOPED_COLLECTIONS = new Set(['tasks', 'projects', 'depositEntries', 'depositCategories', 'scheduledPosts', 'chatMessages', 'captionTemplates', 'ideas']);
+function _belongsToWs(d) {
+  if (!WS_ID) return true;
+  return !d.workspaceId || d.workspaceId === WS_ID;
+}
+// Monkey-patch db.collection().add() — se aplica más abajo después de que
+// firebase.firestore() esté inicializado.
+window._installWsScopeWrapper = function(db) {
+  if (!db || !db.collection) return;
+  const orig = db.collection.bind(db);
+  db.collection = function(name) {
+    const ref = orig(name);
+    if (!WS_SCOPED_COLLECTIONS.has(name)) return ref;
+    const origAdd = ref.add.bind(ref);
+    ref.add = function(data) {
+      const enriched = (data && WS_ID && !data.workspaceId)
+        ? Object.assign({}, data, { workspaceId: WS_ID })
+        : data;
+      return origAdd(enriched);
+    };
+    return ref;
+  };
+};
+
 // ===== TEMA — sincronizado con la app principal =====
 const THEME_KEY = 'app-theme';
 function applyChatTheme(theme) {
@@ -357,7 +392,8 @@ function subscribeAll() {
     .orderBy('createdAt', 'desc')
     .limit(200)
     .onSnapshot((snap) => {
-      const newList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })).reverse();
+      // Filtrar por workspace activo (v3.8.1)
+      const newList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })).reverse().filter(_belongsToWs);
       if (chatNotificationsArmed) {
         const previousIds = new Set(chatMessages.map(m => m.id));
         const newOnes = newList.filter(m => !previousIds.has(m.id));

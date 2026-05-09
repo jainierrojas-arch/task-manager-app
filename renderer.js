@@ -75,6 +75,17 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.8.1': {
+    title: 'Multi-workspace REAL — data filtrada por workspace',
+    features: [
+      '🔒 <strong>Cada workspace ve solo SU data</strong>: ahora cuando cambiás de workspace, las tareas, programación, depósito, ideas, plantillas de captions y chat se filtran automáticamente al workspace activo. Si creás una tarea en "Cliente Pizza", queda dentro de Cliente Pizza — no aparece en Mi Agencia.',
+      '✨ <strong>Cero migración manual</strong>: tu data existente (toda creada antes de v3.8.1) sigue viviendo en "Mi Agencia" automáticamente. Cuando estás en el workspace por defecto ves TODO lo de siempre. Cuando creás un workspace nuevo, arranca vacío y se llena con lo que crees ahí.',
+      '⚙️ <strong>Auto-inyección de workspaceId</strong>: las 25+ funciones que crean datos (nuevas tareas, posts programados, ideas, depósito, etc.) ahora todas inyectan el workspaceId activo automáticamente. No hay forma de olvidarse.',
+      '🪟 <strong>Iframes (chat / depósito) reciben el workspace via URL</strong>: cuando abrís el panel lateral, le pasamos el workspaceId al iframe. Los listeners del chat y depósito filtran por ese workspaceId. Cambiar de workspace recarga los iframes con el nuevo.',
+      '🛣 <strong>Próximo paso (v3.8.2)</strong>: settings per-workspace (Make webhook, Cloudinary, GHL, Telegram bot) — para que cada cliente tenga sus propias automatizaciones.',
+      '⚠️ <strong>Importante</strong>: la Cloud Function que publica posts en IG/TikTok todavía lee la config global. Eso lo arreglamos en v3.8.3 cuando hagamos el backend workspace-aware.'
+    ]
+  },
   '3.8.0': {
     title: 'Multi-workspace — Fundación (creación + switcher)',
     features: [
@@ -716,6 +727,78 @@ let unsubscribeInviteCodes = null;
 let workspaces = [];
 let currentWorkspaceId = null;
 let unsubscribeWorkspaces = null;
+
+// ===== v3.8.1: Filtrado por workspace =====
+// Cada listener almacena en `_all*` la data CRUDA de Firestore. Las arrays
+// públicas (tasks, projects, etc.) son derivadas via filter. Al cambiar de
+// workspace, applyWorkspaceFilter() re-deriva todas y re-renderiza.
+let _allTasks = [];
+let _allProjects = [];
+let _allDepositEntries = [];
+let _allScheduledPosts = [];
+let _allIdeas = [];
+let _allChatMessages = [];
+let _allCaptionTemplates = [];
+
+const WORKSPACE_SCOPED_COLLECTIONS = new Set([
+  'tasks', 'projects', 'depositEntries', 'depositCategories',
+  'scheduledPosts', 'chatMessages', 'captionTemplates', 'ideas'
+]);
+
+// Devuelve true si el doc pertenece al workspace activo.
+// Lógica: si estás en el workspace "default" (Mi Agencia, isDefault=true), también ves
+// docs SIN workspaceId (data legacy pre-v3.8.1). En cualquier otro workspace,
+// solo ves docs con workspaceId === current.
+function belongsToCurrentWs(doc) {
+  if (!currentWorkspaceId) return true;
+  const def = workspaces.find(w => w.isDefault);
+  if (def && currentWorkspaceId === def.id) {
+    return !doc.workspaceId || doc.workspaceId === def.id;
+  }
+  return doc.workspaceId === currentWorkspaceId;
+}
+
+// Re-deriva todas las arrays públicas del workspace activo y dispara renders.
+// Se llama al hacer switch de workspace y desde cada listener tras update.
+function applyWorkspaceFilter() {
+  tasks = _allTasks.filter(t => !t.deletedAt).filter(belongsToCurrentWs);
+  trashTasks = _allTasks.filter(t => t.deletedAt).filter(belongsToCurrentWs);
+  projects = _allProjects.filter(belongsToCurrentWs);
+  depositEntries = _allDepositEntries.filter(belongsToCurrentWs);
+  scheduledPosts = _allScheduledPosts.filter(belongsToCurrentWs);
+  ideas = _allIdeas.filter(belongsToCurrentWs);
+  chatMessages = _allChatMessages.filter(belongsToCurrentWs);
+  captionTemplates = _allCaptionTemplates.filter(belongsToCurrentWs);
+  // Disparar renders relevantes
+  try { renderAll(); } catch (e) {}
+  try { renderTrashList(); } catch (e) {}
+  try { renderProjectSelect(); renderProjectList(); } catch (e) {}
+  try { renderDepositBadge(); renderReferencesBadge(); } catch (e) {}
+  try { renderSchedule(); } catch (e) {}
+  try { renderIdeas(); } catch (e) {}
+  try { renderChatBadge(); } catch (e) {}
+  try { renderCaptionLibrary(); updateCaptionFolderOptions(); } catch (e) {}
+}
+
+// Monkey-patch db.collection().add() para auto-inyectar workspaceId en los
+// documentos nuevos de las colecciones workspace-scoped. Cero cambios en los
+// 25+ sitios de .add() existentes.
+(function installWorkspaceScopeWrapper() {
+  if (!db || !db.collection) return;
+  const origCollection = db.collection.bind(db);
+  db.collection = function(name) {
+    const ref = origCollection(name);
+    if (!WORKSPACE_SCOPED_COLLECTIONS.has(name)) return ref;
+    const origAdd = ref.add.bind(ref);
+    ref.add = function(data) {
+      const enriched = (data && currentWorkspaceId && !data.workspaceId)
+        ? Object.assign({}, data, { workspaceId: currentWorkspaceId })
+        : data;
+      return origAdd(enriched);
+    };
+    return ref;
+  };
+})();
 let editingCaptionTplId = null;
 let scheduledPosts = [];
 let scheduledPostsInitialized = false; // false en primera carga del snapshot
@@ -1279,7 +1362,13 @@ function openSidePanel(kind) {
   titleEl.textContent = cfg.title;
   // Solo recargar iframe si cambió de fuente — evita perder estado al togglear
   if (iframe.dataset.currentKind !== kind) {
-    iframe.src = cfg.src;
+    // Inyectar workspaceId en la URL para que el iframe filtre por workspace
+    let src = cfg.src;
+    if (currentWorkspaceId && !src.startsWith('http')) {
+      const sep = src.includes('?') ? '&' : '?';
+      src += `${sep}workspace=${encodeURIComponent(currentWorkspaceId)}`;
+    }
+    iframe.src = src;
     iframe.dataset.currentKind = kind;
   }
   // Quitar split mode (modo PRO) — single panel desde aquí
@@ -1306,12 +1395,13 @@ function enterProSplitMode() {
   overlay.classList.remove('size-medium', 'size-large');
   overlay.classList.add('pro-split');
   // Cargar iframes solo si no están en sus URLs correctas (preserva estado al togglear)
+  const wsParam = currentWorkspaceId ? `?workspace=${encodeURIComponent(currentWorkspaceId)}` : '';
   if (iframe.dataset.currentKind !== 'pro-deposit') {
-    iframe.src = 'deposit.html';
+    iframe.src = 'deposit.html' + wsParam;
     iframe.dataset.currentKind = 'pro-deposit';
   }
   if (iframe2.dataset.currentKind !== 'pro-chat') {
-    iframe2.src = 'chat.html';
+    iframe2.src = 'chat.html' + wsParam;
     iframe2.dataset.currentKind = 'pro-chat';
   }
   overlay.classList.add('open');
@@ -1373,15 +1463,16 @@ if (referencesBtn) {
 // ===== FIRESTORE REAL-TIME =====
 function subscribeToData() {
   unsubscribeTasks = db.collection('tasks').orderBy('createdAt', 'desc').onSnapshot((snapshot) => {
-    const all = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    tasks = all.filter(t => !t.deletedAt);
-    trashTasks = all.filter(t => t.deletedAt);
+    _allTasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    tasks = _allTasks.filter(t => !t.deletedAt).filter(belongsToCurrentWs);
+    trashTasks = _allTasks.filter(t => t.deletedAt).filter(belongsToCurrentWs);
     renderAll();
     renderTrashList();
   });
 
   unsubscribeProjects = db.collection('projects').orderBy('name').onSnapshot((snapshot) => {
-    projects = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    _allProjects = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    projects = _allProjects.filter(belongsToCurrentWs);
     renderProjectSelect();
     renderProjectList();
   });
@@ -1420,15 +1511,12 @@ function subscribeToData() {
     .orderBy('createdAt', 'desc')
     .limit(CHAT_MESSAGE_LIMIT)
     .onSnapshot(async (snapshot) => {
-      const newList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).reverse();
+      _allChatMessages = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).reverse();
+      const newList = _allChatMessages.filter(belongsToCurrentWs);
       // Sonido de notificacion al recibir mensaje nuevo de OTRO usuario.
-      // Solo suena en main app si la ventana del chat NO esta abierta (cerrada
-      // con X). Si la ventana del chat existe (visible u oculta), el sonido lo
-      // reproduce el chat-renderer para evitar doble notificacion.
       if (chatNotificationsArmed) {
         const previousIds = new Set(chatMessages.map(m => m.id));
         const newOnes = newList.filter(m => !previousIds.has(m.id));
-        // Filtrar mensajes propios — el campo correcto es authorId (no userId)
         const fromOthers = newOnes.filter(m => m.authorId !== currentUser.uid);
         if (fromOthers.length > 0) {
           try {
@@ -1448,7 +1536,8 @@ function subscribeToData() {
     .orderBy('createdAt', 'desc')
     .limit(200)
     .onSnapshot((snapshot) => {
-      depositEntries = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      _allDepositEntries = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      depositEntries = _allDepositEntries.filter(belongsToCurrentWs);
       renderDepositBadge();
       renderReferencesBadge();
     });
@@ -1460,7 +1549,8 @@ function subscribeToData() {
     .orderBy('createdAt', 'desc')
     .limit(500)
     .onSnapshot((snapshot) => {
-      ideas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      _allIdeas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      ideas = _allIdeas.filter(belongsToCurrentWs);
       renderIdeas();
     });
 
@@ -1472,7 +1562,8 @@ function subscribeToData() {
     .orderBy('scheduledAt', 'desc')
     .limit(200)
     .onSnapshot((snapshot) => {
-      const newDocs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      _allScheduledPosts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const newDocs = _allScheduledPosts.filter(belongsToCurrentWs);
       // Comparar estados previos para detectar transiciones a publicado/failed
       const prev = new Map((scheduledPosts || []).map(p => [p.id, p]));
       const isAdmin = currentUserData && currentUserData.role === 'admin';
@@ -1509,7 +1600,8 @@ function subscribeToData() {
     .orderBy('editedAt', 'desc')
     .limit(500)
     .onSnapshot(snap => {
-      captionTemplates = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      _allCaptionTemplates = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      captionTemplates = _allCaptionTemplates.filter(belongsToCurrentWs);
       renderCaptionLibrary();
       updateCaptionFolderOptions();
     }, err => console.warn('[captionTemplates]', err.message));
@@ -6744,8 +6836,28 @@ function switchWorkspace(workspaceId) {
   try { localStorage.setItem('currentWorkspaceId', workspaceId); } catch (e) {}
   renderWorkspaceSwitcher();
   closeWorkspaceDropdown();
-  // En v3.8.0 el cambio es visual — v3.8.1 va a re-cargar los listeners filtrados
+  // v3.8.1: re-derivar arrays públicas y re-renderizar todo con el nuevo workspace
+  applyWorkspaceFilter();
+  // Notificar a iframes activos del cambio (chat / depósito) para que filtren
+  notifyIframesOfWorkspaceChange();
   console.log('[workspaces] switched to', workspaceId);
+}
+
+// Comunica el cambio de workspace a los iframes activos (panel lateral)
+// para que apliquen su propio filtro localmente.
+function notifyIframesOfWorkspaceChange() {
+  try {
+    const iframe = document.getElementById('sidePanelIframe');
+    const iframe2 = document.getElementById('sidePanelIframeSecondary');
+    [iframe, iframe2].forEach(f => {
+      if (!f || !f.contentWindow) return;
+      const url = new URL(f.src, window.location.href);
+      url.searchParams.set('workspace', currentWorkspaceId || '');
+      // Recargar el iframe con el nuevo workspace en la URL
+      const newSrc = url.toString();
+      if (f.src !== newSrc && f.dataset.currentKind) f.src = newSrc;
+    });
+  } catch (e) { /* ignore */ }
 }
 
 function openWorkspaceDropdown() {
