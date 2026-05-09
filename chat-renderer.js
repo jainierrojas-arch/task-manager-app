@@ -1,18 +1,23 @@
 // ===== Multi-workspace bridge (v3.8.1) =====
-// El iframe recibe el workspaceId via URL param ?workspace=XXX cuando el
-// padre (renderer.js) lo abre. Lo usamos para:
-// 1) Filtrar listeners (solo mensajes de este workspace)
-// 2) Inyectar workspaceId en docs nuevos
+// El iframe recibe workspaceId via ?workspace=XXX y ?isDefault=1 si el
+// workspace activo es el default (Mi Agencia) — solo entonces ve docs legacy.
 const WS_ID = (() => {
   try {
     const params = new URLSearchParams(window.location.search);
     return params.get('workspace') || null;
   } catch (e) { return null; }
 })();
+const WS_IS_DEFAULT = (() => {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('isDefault') === '1';
+  } catch (e) { return false; }
+})();
 const WS_SCOPED_COLLECTIONS = new Set(['tasks', 'projects', 'depositEntries', 'depositCategories', 'scheduledPosts', 'chatMessages', 'captionTemplates', 'ideas']);
 function _belongsToWs(d) {
   if (!WS_ID) return true;
-  return !d.workspaceId || d.workspaceId === WS_ID;
+  if (WS_IS_DEFAULT) return !d.workspaceId || d.workspaceId === WS_ID;
+  return d.workspaceId === WS_ID;
 }
 // Monkey-patch db.collection().add() — se aplica más abajo después de que
 // firebase.firestore() esté inicializado.

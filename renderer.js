@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.8.2': {
+    title: 'Fix crítico: Depósito y Chat ahora respetan workspace activo',
+    features: [
+      '🐛 <strong>Bug fix urgente</strong>: en v3.8.1 al estar en un workspace nuevo (no default) y abrir el panel de Depósito, Chat o Referencias, todavía mostraba la data de "Mi Agencia" porque el filtro en los iframes era demasiado permisivo.',
+      '✅ <strong>Fix</strong>: el iframe ahora recibe también el flag <code>isDefault</code> en la URL. Solo el workspace por defecto (Mi Agencia) ve docs sin <code>workspaceId</code> (legacy). Cualquier otro workspace ve únicamente lo suyo.',
+      '🔄 También cuando cambiás de workspace mientras un panel está abierto, los iframes se recargan con la nueva URL parametrizada — ya no quedan colgados con el workspace anterior.'
+    ]
+  },
   '3.8.1': {
     title: 'Multi-workspace REAL — data filtrada por workspace',
     features: [
@@ -1362,13 +1370,7 @@ function openSidePanel(kind) {
   titleEl.textContent = cfg.title;
   // Solo recargar iframe si cambió de fuente — evita perder estado al togglear
   if (iframe.dataset.currentKind !== kind) {
-    // Inyectar workspaceId en la URL para que el iframe filtre por workspace
-    let src = cfg.src;
-    if (currentWorkspaceId && !src.startsWith('http')) {
-      const sep = src.includes('?') ? '&' : '?';
-      src += `${sep}workspace=${encodeURIComponent(currentWorkspaceId)}`;
-    }
-    iframe.src = src;
+    iframe.src = buildIframeSrc(cfg.src);
     iframe.dataset.currentKind = kind;
   }
   // Quitar split mode (modo PRO) — single panel desde aquí
@@ -1395,13 +1397,12 @@ function enterProSplitMode() {
   overlay.classList.remove('size-medium', 'size-large');
   overlay.classList.add('pro-split');
   // Cargar iframes solo si no están en sus URLs correctas (preserva estado al togglear)
-  const wsParam = currentWorkspaceId ? `?workspace=${encodeURIComponent(currentWorkspaceId)}` : '';
   if (iframe.dataset.currentKind !== 'pro-deposit') {
-    iframe.src = 'deposit.html' + wsParam;
+    iframe.src = buildIframeSrc('deposit.html');
     iframe.dataset.currentKind = 'pro-deposit';
   }
   if (iframe2.dataset.currentKind !== 'pro-chat') {
-    iframe2.src = 'chat.html' + wsParam;
+    iframe2.src = buildIframeSrc('chat.html');
     iframe2.dataset.currentKind = 'pro-chat';
   }
   overlay.classList.add('open');
@@ -6843,6 +6844,19 @@ function switchWorkspace(workspaceId) {
   console.log('[workspaces] switched to', workspaceId);
 }
 
+// Construye la URL del iframe inyectando workspace + isDefault
+// para que el iframe filtre correctamente por workspace activo
+function buildIframeSrc(baseSrc) {
+  if (!baseSrc || baseSrc.startsWith('http')) return baseSrc;
+  if (!currentWorkspaceId) return baseSrc;
+  const def = workspaces.find(w => w.isDefault);
+  const isDefault = def && currentWorkspaceId === def.id;
+  const sep = baseSrc.includes('?') ? '&' : '?';
+  let src = `${baseSrc}${sep}workspace=${encodeURIComponent(currentWorkspaceId)}`;
+  if (isDefault) src += '&isDefault=1';
+  return src;
+}
+
 // Comunica el cambio de workspace a los iframes activos (panel lateral)
 // para que apliquen su propio filtro localmente.
 function notifyIframesOfWorkspaceChange() {
@@ -6850,12 +6864,15 @@ function notifyIframesOfWorkspaceChange() {
     const iframe = document.getElementById('sidePanelIframe');
     const iframe2 = document.getElementById('sidePanelIframeSecondary');
     [iframe, iframe2].forEach(f => {
-      if (!f || !f.contentWindow) return;
-      const url = new URL(f.src, window.location.href);
-      url.searchParams.set('workspace', currentWorkspaceId || '');
-      // Recargar el iframe con el nuevo workspace en la URL
-      const newSrc = url.toString();
-      if (f.src !== newSrc && f.dataset.currentKind) f.src = newSrc;
+      if (!f || !f.dataset.currentKind) return;
+      const kind = f.dataset.currentKind;
+      // Mapear kind a base src
+      let baseSrc;
+      if (kind === 'pro-deposit' || kind === 'deposit') baseSrc = 'deposit.html';
+      else if (kind === 'pro-chat' || kind === 'chat') baseSrc = 'chat.html';
+      else if (kind === 'references') baseSrc = 'deposit.html?category=referencias';
+      else return;
+      f.src = buildIframeSrc(baseSrc);
     });
   } catch (e) { /* ignore */ }
 }
