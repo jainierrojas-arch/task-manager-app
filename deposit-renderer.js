@@ -899,8 +899,8 @@ function renderEntryHtml(e) {
         </div>`;
     }
   }
-  // v3.9.0: si la entry tiene un video Cloudinary, ofrecemos transcripcion
-  const videoLink = (e.links || []).find(l => l && l.url && /res\.cloudinary\.com\/.+\/video\/upload\//.test(l.url));
+  // v3.9.1: aceptar más tipos de videos transcribibles, no solo Cloudinary
+  const videoLink = (e.links || []).find(l => isTranscribableLink(l));
   const transcript = e.transcription || null;
   const variations = Array.isArray(e.scriptVariations) ? e.scriptVariations : [];
   let transcriptHtml = '';
@@ -2129,13 +2129,39 @@ document.getElementById('categoryNameInput').addEventListener('keypress', (e) =>
 // La API key se guarda en config/openai_{wsId} desde Settings de la app principal.
 // El iframe lee la key via window.parent._getOpenaiApiKey() (mismo origen file://).
 
-function cloudinaryAudioUrl(videoUrl) {
-  // Cloudinary auto-extrae audio cambiando .mp4 -> .mp3
-  if (!videoUrl) return null;
-  return videoUrl
-    .replace(/\.(mp4|mov|webm|m4v)(\?.*)?$/i, '.mp3')
-    .replace(/\/video\/upload\//, '/video/upload/f_mp3,br_64k/');
+// v3.9.1: detecta si un link es transcribible (Whisper soporta archivos
+// descargables — Cloudinary, direct URLs a mp4/mov/mp3/wav, etc).
+// NO soporta: Instagram, TikTok, YouTube (URLs protegidas).
+function isTranscribableLink(l) {
+  if (!l || !l.url) return false;
+  const url = l.url;
+  // Tipo explícito 'video' en el link → asumimos que se puede
+  if (l.type === 'video') return true;
+  // URLs directas a archivos de audio/video
+  if (/\.(mp4|mov|webm|m4v|m4a|mp3|wav|mpga|mpeg)(\?.*)?$/i.test(url)) return true;
+  // Cloudinary video o audio
+  if (/res\.cloudinary\.com\/.+\/(video|raw)\/upload\//i.test(url)) return true;
+  return false;
 }
+
+// v3.9.1: helper que devuelve la URL óptima de audio para mandar a Whisper.
+// Para Cloudinary: usa transformación a mp3 64kbps (re-comprime).
+// Para todo lo demás: devuelve la URL tal cual (Whisper acepta cualquier
+// formato de audio/video soportado siempre que se pueda descargar).
+function audioFetchUrl(videoUrl) {
+  if (!videoUrl) return null;
+  // Cloudinary: extraer audio comprimido
+  if (/res\.cloudinary\.com\/.+\/video\/upload\//i.test(videoUrl)) {
+    return videoUrl
+      .replace(/\.(mp4|mov|webm|m4v)(\?.*)?$/i, '.mp3')
+      .replace(/\/video\/upload\//, '/video/upload/f_mp3,br_64k/');
+  }
+  // Otros: devolver URL tal cual
+  return videoUrl;
+}
+
+// Mantener nombre legacy por compatibilidad con código v3.9.0
+function cloudinaryAudioUrl(videoUrl) { return audioFetchUrl(videoUrl); }
 
 async function getOpenaiKeyForIframe() {
   // El iframe corre dentro de la app principal — accedemos a la función expuesta
@@ -2150,8 +2176,17 @@ async function getOpenaiKeyForIframe() {
 async function transcribeEntry(entryId, btn) {
   const entry = entries.find(e => e.id === entryId);
   if (!entry) return;
-  const videoLink = (entry.links || []).find(l => l && l.url && /res\.cloudinary\.com\/.+\/video\/upload\//.test(l.url));
-  if (!videoLink) { alert('No hay un video Cloudinary en esta entry para transcribir.'); return; }
+  const videoLink = (entry.links || []).find(l => isTranscribableLink(l));
+  if (!videoLink) {
+    // Detectar plataformas conocidas que no permiten descarga directa
+    const protectedPlatforms = (entry.links || []).find(l => l && l.url && /(instagram\.com|tiktok\.com|youtube\.com|youtu\.be|facebook\.com)/i.test(l.url));
+    if (protectedPlatforms) {
+      alert('Este video está hospedado en una plataforma protegida (Instagram / TikTok / YouTube). Bajalo y subilo a Cloudinary primero, después podés transcribirlo.');
+    } else {
+      alert('No encontré un video transcribible en esta entry. Necesito un video Cloudinary o una URL directa a un archivo .mp4/.mov/.mp3/etc.');
+    }
+    return;
+  }
   const apiKey = await getOpenaiKeyForIframe();
   if (!apiKey) {
     alert('Configurá tu OpenAI API key en Settings de la app principal antes de transcribir.');
@@ -2161,7 +2196,7 @@ async function transcribeEntry(entryId, btn) {
   btn.disabled = true;
   btn.textContent = '⏳ Descargando audio...';
   try {
-    const audioUrl = cloudinaryAudioUrl(videoLink.url);
+    const audioUrl = audioFetchUrl(videoLink.url);
     const audioRes = await fetch(audioUrl);
     if (!audioRes.ok) throw new Error('No se pudo bajar el audio (HTTP ' + audioRes.status + ')');
     const audioBlob = await audioRes.blob();

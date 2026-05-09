@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.9.1': {
+    title: 'Fix: botón Transcribir aparece en más tipos de videos',
+    features: [
+      '🐛 <strong>Bug fix</strong>: en v3.9.0 el botón "Transcribir" solo aparecía en entries con videos Cloudinary específicos. Ahora aparece en cualquier entry que tenga: link de tipo "Video", URL directa a archivo (.mp4/.mov/.mp3/.wav/etc.), o URL de Cloudinary.',
+      '⚠️ <strong>Mensaje claro para plataformas protegidas</strong>: si tenés un link de Instagram/TikTok/YouTube y le das transcribir, te dice claramente que esos no se pueden descargar directos — necesitás bajar el video y subirlo a Cloudinary primero.',
+      '🎯 Esto cubre el flujo real: la mayoría de videos en el Depósito ya están en Cloudinary, pero también algunos son URLs directas — ahora ambos casos funcionan.'
+    ]
+  },
   '3.9.0': {
     title: 'Transcripción de videos + Recreación de guiones con IA',
     features: [
