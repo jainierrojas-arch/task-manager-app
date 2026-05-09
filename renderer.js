@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.7.4': {
+    title: 'Modo PRO embebido — Depósito + Chat dentro de la ventana',
+    features: [
+      '🚀 <strong>Modo PRO embebido</strong>: el botón "Modo PRO" del dropdown de usuario ya no abre 3 ventanas separadas — abre el panel lateral en split horizontal con <strong>Depósito arriba y Chat abajo</strong>, todo dentro de la ventana principal. El panel ocupa 50% de la pantalla.',
+      '🔄 <strong>Toggle</strong>: click una vez → entra en Modo PRO. Click otra vez → sale. ESC también cierra.',
+      '👁 <strong>Mientras estás en Modo PRO</strong>: tareas / programación / lo que sea que estés mirando en el main quedan visibles a la izquierda. Trabajás en paralelo sin perder contexto.',
+      '⚡ <strong>Estado preservado</strong>: si salís y volvés a entrar en Modo PRO, el chat y depósito mantienen su scroll/estado.',
+      '🛣 <strong>Próximo paso (v3.8.0)</strong>: multi-workspace funcional — switcher real para cambiar entre clientes con datos 100% separados.'
+    ]
+  },
   '3.7.3': {
     title: 'Chat / Depósito / Referencias dentro de la ventana + ManyChat en sidebar',
     features: [
@@ -1250,6 +1260,8 @@ function openSidePanel(kind) {
     iframe.src = cfg.src;
     iframe.dataset.currentKind = kind;
   }
+  // Quitar split mode (modo PRO) — single panel desde aquí
+  overlay.classList.remove('pro-split');
   overlay.classList.add('open');
   _currentSidePanel = kind;
 }
@@ -1257,8 +1269,31 @@ function openSidePanel(kind) {
 function closeSidePanel() {
   const overlay = document.getElementById('sidePanel');
   if (!overlay) return;
-  overlay.classList.remove('open');
+  overlay.classList.remove('open', 'pro-split');
   _currentSidePanel = null;
+}
+
+// Modo PRO embebido (v3.7.4): split horizontal con depósito arriba + chat abajo
+function enterProSplitMode() {
+  const overlay = document.getElementById('sidePanel');
+  const titleEl = document.getElementById('sidePanelTitle');
+  const iframe = document.getElementById('sidePanelIframe');
+  const iframe2 = document.getElementById('sidePanelIframeSecondary');
+  if (!overlay || !iframe || !iframe2) return;
+  titleEl.textContent = '🚀 Modo PRO — Depósito + Chat';
+  overlay.classList.remove('size-medium', 'size-large');
+  overlay.classList.add('pro-split');
+  // Cargar iframes solo si no están en sus URLs correctas (preserva estado al togglear)
+  if (iframe.dataset.currentKind !== 'pro-deposit') {
+    iframe.src = 'deposit.html';
+    iframe.dataset.currentKind = 'pro-deposit';
+  }
+  if (iframe2.dataset.currentKind !== 'pro-chat') {
+    iframe2.src = 'chat.html';
+    iframe2.dataset.currentKind = 'pro-chat';
+  }
+  overlay.classList.add('open');
+  _currentSidePanel = 'pro';
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -7970,11 +8005,21 @@ if (proModeBtn) {
 
   proModeBtn.addEventListener('click', async () => {
     try {
-      console.log('[ProMode] click — solicitando toggle...');
-      const state = await window.api.toggleProMode();
-      const s = typeof state === 'string' ? state : (state ? 'full' : 'off');
-      console.log('[ProMode] nuevo estado:', s);
-      applyProBtnLabel(s);
+      // v3.7.4: Modo PRO embebido — abre el side panel en split (depósito arriba + chat abajo)
+      // dentro de la misma ventana en lugar de abrir 3 BrowserWindows separadas.
+      const overlay = document.getElementById('sidePanel');
+      const isPro = overlay && overlay.classList.contains('pro-split') && overlay.classList.contains('open');
+      if (isPro) {
+        // Salir de Modo PRO
+        overlay.classList.remove('pro-split', 'open');
+        _currentSidePanel = null;
+        applyProBtnLabel('off');
+      } else {
+        // Entrar en Modo PRO: split panel con 2 iframes
+        enterProSplitMode();
+        applyProBtnLabel('full');
+      }
+      return;
     } catch (e) {
       console.error('[ProMode] error:', e);
     }

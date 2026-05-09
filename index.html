@@ -412,6 +412,25 @@
     /* Tamaños alternos del panel para que el usuario elija */
     .side-panel-overlay.size-medium { width: 720px; }
     .side-panel-overlay.size-large { width: 50vw; }
+    /* Modo PRO: split horizontal con 2 iframes (depósito arriba + chat abajo) */
+    .side-panel-overlay.pro-split {
+      width: 50vw;
+      max-width: none;
+    }
+    .side-panel-overlay.pro-split .side-panel-body {
+      display: flex;
+      flex-direction: column;
+    }
+    .side-panel-overlay.pro-split .side-panel-iframe { flex: 1; min-height: 0; }
+    .side-panel-overlay.pro-split .side-panel-iframe-secondary {
+      flex: 1;
+      min-height: 0;
+      width: 100%;
+      border: 0;
+      border-top: 2px solid var(--border);
+      background: transparent;
+    }
+    .side-panel-overlay:not(.pro-split) .side-panel-iframe-secondary { display: none; }
 
     /* ===== Workspace badge (top-left) ===== */
     .workspace-badge {
@@ -2344,6 +2363,7 @@
         </div>
         <div class="side-panel-body">
           <iframe class="side-panel-iframe" id="sidePanelIframe" src="about:blank" allow="clipboard-write"></iframe>
+          <iframe class="side-panel-iframe-secondary" id="sidePanelIframeSecondary" src="about:blank" allow="clipboard-write"></iframe>
         </div>
       </div>
 
