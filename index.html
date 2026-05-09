@@ -158,6 +158,150 @@
     }
     .app-container.active { display: flex; }
 
+    /* ===== App Shell con Sidebar lateral ===== */
+    .app-shell {
+      display: flex;
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .app-sidebar {
+      width: 88px;
+      flex-shrink: 0;
+      background: var(--bg-secondary);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      padding: 10px 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      scrollbar-width: thin;
+    }
+    .app-sidebar::-webkit-scrollbar { width: 4px; }
+    .app-sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    .sidebar-brand {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      padding: 6px 4px 12px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 6px;
+    }
+    .sidebar-brand-emoji {
+      font-size: 20px;
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+      background: linear-gradient(135deg, var(--accent), #a855f7);
+      color: white;
+      font-weight: 800;
+    }
+    .sidebar-brand-label {
+      font-size: 9px;
+      font-weight: 700;
+      color: var(--text-secondary);
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+    }
+    .sidebar-nav, .sidebar-footer {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 0 4px;
+    }
+    .sidebar-footer {
+      margin-top: auto;
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
+      padding-bottom: 6px;
+    }
+    .sidebar-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      padding: 8px 4px;
+      border-radius: 8px;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      color: var(--text-secondary);
+      transition: background 0.15s, color 0.15s;
+      position: relative;
+      width: 100%;
+      font-family: inherit;
+    }
+    .sidebar-item:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+    .sidebar-item.active {
+      background: rgba(108, 99, 255, 0.18);
+      color: var(--accent);
+    }
+    .sidebar-item.active::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 8px;
+      bottom: 8px;
+      width: 3px;
+      background: var(--accent);
+      border-radius: 0 2px 2px 0;
+    }
+    .sidebar-icon {
+      font-size: 18px;
+      line-height: 1;
+    }
+    .sidebar-label {
+      font-size: 9.5px;
+      font-weight: 600;
+      letter-spacing: 0.1px;
+      text-align: center;
+      line-height: 1.2;
+    }
+    .sidebar-badge {
+      position: absolute;
+      top: 4px;
+      right: 6px;
+      min-width: 16px;
+      height: 16px;
+      padding: 0 4px;
+      background: var(--danger);
+      color: white;
+      border-radius: 8px;
+      font-size: 9px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+    }
+    .app-main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+    }
+    /* Ocultar barra horizontal de tabs — ahora vive en el sidebar */
+    .app-container.active .nav-tabs { display: none !important; }
+    /* Ocultar botones del user-bar que se mudaron al sidebar */
+    .app-container.active #chatToggleBtn,
+    .app-container.active #referencesBtn,
+    .app-container.active #depositBtn,
+    .app-container.active #cloudBtn { display: none !important; }
+    /* Sidebar responsive: en pantallas chicas mostrar solo iconos */
+    @media (max-width: 720px) {
+      .app-sidebar { width: 60px; }
+      .sidebar-label, .sidebar-brand-label { display: none; }
+    }
+
     /* User bar */
     .user-bar {
       display: flex;
@@ -1322,8 +1466,92 @@
 
   <!-- MAIN APP -->
   <div class="app-container" id="appContainer">
-    <!-- User bar -->
-    <div class="user-bar">
+    <div class="app-shell">
+      <!-- ===== Sidebar lateral (nuevo en v3.7.0) ===== -->
+      <aside class="app-sidebar" id="appSidebar">
+        <div class="sidebar-brand">
+          <div class="sidebar-brand-emoji">TM</div>
+          <div class="sidebar-brand-label">Task Manager</div>
+        </div>
+        <nav class="sidebar-nav">
+          <button class="sidebar-item active" data-go-tab="main" title="Tareas pendientes">
+            <span class="sidebar-icon">📋</span>
+            <span class="sidebar-label">Tareas</span>
+            <span class="sidebar-badge" id="sbBadgeMain" style="display:none">0</span>
+          </button>
+          <button class="sidebar-item" data-go-tab="my-tasks" title="Mis tareas asignadas">
+            <span class="sidebar-icon">👤</span>
+            <span class="sidebar-label">Mis tareas</span>
+            <span class="sidebar-badge" id="sbBadgeMy" style="display:none">0</span>
+          </button>
+          <button class="sidebar-item" data-go-tab="personal" title="Tareas personales">
+            <span class="sidebar-icon">📌</span>
+            <span class="sidebar-label">Personal</span>
+            <span class="sidebar-badge" id="sbBadgePersonal" style="display:none">0</span>
+          </button>
+          <button class="sidebar-item" data-go-tab="calendar" title="Calendario">
+            <span class="sidebar-icon">📅</span>
+            <span class="sidebar-label">Calendario</span>
+          </button>
+          <button class="sidebar-item" data-go-tab="ideas" title="Ideas del equipo">
+            <span class="sidebar-icon">💡</span>
+            <span class="sidebar-label">Ideas</span>
+            <span class="sidebar-badge" id="sbBadgeIdeas" style="display:none">0</span>
+          </button>
+          <button class="sidebar-item" data-go-tab="schedule" title="Programación de contenido">
+            <span class="sidebar-icon">📱</span>
+            <span class="sidebar-label">Programar</span>
+            <span class="sidebar-badge" id="sbBadgeSchedule" style="display:none">0</span>
+          </button>
+          <button class="sidebar-item" data-go-tab="new" title="Nueva tarea">
+            <span class="sidebar-icon">➕</span>
+            <span class="sidebar-label">Nueva</span>
+          </button>
+          <button class="sidebar-item" data-go-tab="approval" title="Por aprobar">
+            <span class="sidebar-icon">🔍</span>
+            <span class="sidebar-label">Aprobar</span>
+            <span class="sidebar-badge" id="sbBadgeApproval" style="display:none">0</span>
+          </button>
+          <button class="sidebar-item" data-go-tab="completed" title="Completadas">
+            <span class="sidebar-icon">✅</span>
+            <span class="sidebar-label">Hechas</span>
+          </button>
+          <button class="sidebar-item" data-go-button="depositBtn" title="Depósito de tareas pendientes">
+            <span class="sidebar-icon">📦</span>
+            <span class="sidebar-label">Depósito</span>
+            <span class="sidebar-badge" id="sbBadgeDeposit" style="display:none">0</span>
+          </button>
+          <button class="sidebar-item" data-go-button="referencesBtn" title="Banco de referencias">
+            <span class="sidebar-icon">📚</span>
+            <span class="sidebar-label">Refs</span>
+            <span class="sidebar-badge" id="sbBadgeRefs" style="display:none">0</span>
+          </button>
+          <button class="sidebar-item" data-go-button="chatToggleBtn" title="Chat del equipo">
+            <span class="sidebar-icon">💬</span>
+            <span class="sidebar-label">Chat</span>
+            <span class="sidebar-badge" id="sbBadgeChat" style="display:none">0</span>
+          </button>
+          <button class="sidebar-item" data-go-tab="team" title="Equipo">
+            <span class="sidebar-icon">👥</span>
+            <span class="sidebar-label">Equipo</span>
+          </button>
+        </nav>
+        <div class="sidebar-footer">
+          <button class="sidebar-item" data-go-button="cloudBtn" title="Nube de proyecto">
+            <span class="sidebar-icon">☁️</span>
+            <span class="sidebar-label">Nube</span>
+          </button>
+          <button class="sidebar-item" data-go-tab="settings" title="Configuración">
+            <span class="sidebar-icon">⚙️</span>
+            <span class="sidebar-label">Config</span>
+          </button>
+        </div>
+      </aside>
+
+      <!-- ===== Main column ===== -->
+      <div class="app-main">
+        <!-- User bar -->
+        <div class="user-bar">
       <div class="user-avatar" id="userAvatar">J</div>
       <span class="user-name" id="userName">Usuario</span>
       <span class="user-role" id="userRole">miembro</span>
@@ -1775,6 +2003,9 @@
         <button class="btn btn-ghost btn-small" id="aiHistoryBtn" title="Ver historial de conversaciones" style="padding:6px 10px">📜</button>
       </div>
     </div>
+
+      </div><!-- /.app-main -->
+    </div><!-- /.app-shell -->
 
     <!-- AI History Modal -->
     <div class="modal-overlay" id="aiHistoryModal">

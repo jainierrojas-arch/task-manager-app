@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.7.0': {
+    title: 'Sidebar lateral estilo ClickUp — primera fase del rediseño',
+    features: [
+      '🪧 <strong>Nuevo sidebar lateral izquierdo</strong>: las pestañas horizontales arriba se reemplazaron por una columna vertical de íconos a la izquierda (estilo ClickUp / Linear / Notion). Más profesional, más espacio vertical para el contenido.',
+      '🎯 <strong>Toda la navegación en un solo lugar</strong>: Tareas, Mis tareas, Personal, Calendario, Ideas, Programar, Nueva, Aprobar, Hechas, Equipo, Depósito, Referencias, Chat, Nube, Config — todo accesible desde el sidebar con íconos claros.',
+      '🏷 <strong>Badges sincronizados</strong>: los contadores de notificaciones (chat sin leer, referencias nuevas, depósito pendiente, etc.) aparecen ahora en el sidebar también.',
+      '🔧 <strong>Bajo riesgo</strong>: la lógica interna de las pestañas no se tocó — el sidebar solo dispara los mismos clicks que harías en los tabs viejos. Si algo no anda bien, lo arreglamos rápido.',
+      '🎨 <strong>Esto es solo Fase 1</strong>: en próximas versiones (3.7.1, 3.7.2) viene refinamiento del header con workspace badge + dropdown de usuario estilo ClickUp y pulido de tipografía/spacing.'
+    ]
+  },
   '3.6.1': {
     title: 'Tonalidad de los colores por tipo más fuerte',
     features: [
@@ -6419,8 +6429,79 @@ document.querySelectorAll('.nav-tab').forEach(tab => {
     if (currentTab === 'calendar') renderCalendar();
     if (currentTab === 'ideas') renderIdeas();
     if (currentTab === 'schedule') renderSchedule();
+    syncSidebarActive();
   });
 });
+
+// ===== Sidebar lateral (v3.7.0): items disparan clicks en tabs/botones existentes
+// y mantienen su estado activo + badges sincronizados con la nav-tab original.
+function syncSidebarActive() {
+  const activeTab = document.querySelector('.nav-tab.active');
+  const activeKey = activeTab ? activeTab.dataset.tab : null;
+  document.querySelectorAll('.sidebar-item[data-go-tab]').forEach(item => {
+    item.classList.toggle('active', item.dataset.goTab === activeKey);
+  });
+}
+
+function syncSidebarBadges() {
+  // Mapa: badgeId del sidebar → badgeId del nav-tab original
+  const map = {
+    sbBadgeMain: 'mainBadge',
+    sbBadgeMy: 'myBadge',
+    sbBadgePersonal: 'personalBadge',
+    sbBadgeIdeas: 'ideasBadge',
+    sbBadgeSchedule: 'scheduleBadge',
+    sbBadgeApproval: 'approvalBadge',
+    sbBadgeChat: 'chatUnreadBadge',
+    sbBadgeRefs: 'referencesUnreadBadge',
+    sbBadgeDeposit: 'depositUnreadBadge'
+  };
+  Object.entries(map).forEach(([sbId, srcId]) => {
+    const sb = document.getElementById(sbId);
+    const src = document.getElementById(srcId);
+    if (!sb) return;
+    if (!src) { sb.style.display = 'none'; return; }
+    const visible = window.getComputedStyle(src).display !== 'none' && (src.textContent || '').trim() !== '';
+    if (visible) {
+      sb.textContent = src.textContent;
+      sb.style.display = 'flex';
+    } else {
+      sb.style.display = 'none';
+    }
+  });
+}
+
+document.querySelectorAll('.sidebar-item[data-go-tab]').forEach(item => {
+  item.addEventListener('click', () => {
+    const targetTab = document.querySelector(`.nav-tab[data-tab="${item.dataset.goTab}"]`);
+    if (targetTab) targetTab.click();
+  });
+});
+document.querySelectorAll('.sidebar-item[data-go-button]').forEach(item => {
+  item.addEventListener('click', () => {
+    const btn = document.getElementById(item.dataset.goButton);
+    if (btn) btn.click();
+  });
+});
+
+// Mirror badges en cada repaint relevante. Reusamos un MutationObserver sobre
+// los badges originales para que cualquier cambio se propague sin que tengamos
+// que llamar manualmente desde cada función de render.
+function setupSidebarBadgeMirror() {
+  const sourceIds = ['mainBadge', 'myBadge', 'personalBadge', 'ideasBadge', 'scheduleBadge', 'approvalBadge', 'chatUnreadBadge', 'referencesUnreadBadge', 'depositUnreadBadge'];
+  sourceIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const obs = new MutationObserver(() => syncSidebarBadges());
+    obs.observe(el, { childList: true, characterData: true, subtree: true, attributes: true });
+  });
+  // Primer sync al cargar
+  syncSidebarBadges();
+  syncSidebarActive();
+}
+document.addEventListener('DOMContentLoaded', setupSidebarBadgeMirror);
+// También intentar después de un breve delay por si los IDs aún no existían al DOMContentLoaded
+setTimeout(setupSidebarBadgeMirror, 1000);
 
 // ===== Programacion: handlers de UI =====
 document.querySelectorAll('.schedule-view-btn[data-schedule-view]').forEach(b => {
