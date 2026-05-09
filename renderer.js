@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.8.4': {
+    title: 'Cloud Function workspace-aware — publica con la config del workspace correcto',
+    features: [
+      '🔧 <strong>Backend completa el círculo</strong>: la Cloud Function que publica posts en Instagram + TikTok ahora lee la config del workspace correcto del post. Si el post lo creaste en "Cliente Pizza", se publica con los webhooks de Cliente Pizza, no los de Mi Agencia.',
+      '🛡 <strong>Validación pre-publicación</strong>: si un post está en un workspace SIN webhooks configurados, falla con un mensaje claro en lugar de intentar publicar con la config equivocada.',
+      '🔁 <strong>Fallback inteligente</strong>: si el workspace no tiene config propia, usa la global. Esto cubre el caso de posts antiguos sin <code>workspaceId</code> y el workspace default.',
+      '✅ <strong>Multi-workspace COMPLETO</strong>: con esta versión cierra el ciclo end-to-end. Cada cliente puede tener su propia agencia separada con sus propios datos, settings y publicaciones automáticas.',
+      '⚠️ <strong>Importante</strong>: para que esta versión funcione, deployear la Cloud Function actualizada (yo lo hice por vos en este push).'
+    ]
+  },
   '3.8.3': {
     title: 'Settings per-workspace — cada cliente, su propio Make/GHL/Cloudinary',
     features: [

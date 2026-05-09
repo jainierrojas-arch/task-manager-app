@@ -5,18 +5,25 @@ const admin = require('firebase-admin');
 admin.initializeApp();
 const db = admin.firestore();
 
-// Lee las URLs de webhook desde el doc config/instagram en Firestore.
-// La app las guarda ahi cuando el usuario las configura en Settings.
-// - makeWebhookUrl    -> Instagram via Make.com
-// - ghlTiktokWebhookUrl -> TikTok via GoHighLevel Social Planner
-async function getWebhookUrls() {
-  const snap = await db.collection('config').doc('instagram').get();
-  if (!snap.exists) return { make: null, ghlTiktok: null };
-  const data = snap.data() || {};
-  return {
-    make: data.makeWebhookUrl || null,
-    ghlTiktok: data.ghlTiktokWebhookUrl || null
+// Lee URLs de webhook. v3.8.4: workspace-aware.
+// Primero intenta config/instagram_{workspaceId} (per-workspace settings,
+// introducido en v3.8.3). Si no existe, fallback a config/instagram global
+// (posts pre-multi-workspace o workspaces sin config propio).
+async function getWebhookUrls(workspaceId) {
+  const tryDoc = async (docId) => {
+    const snap = await db.collection('config').doc(docId).get();
+    if (!snap.exists) return null;
+    const data = snap.data() || {};
+    return {
+      make: data.makeWebhookUrl || null,
+      ghlTiktok: data.ghlTiktokWebhookUrl || null
+    };
   };
+  if (workspaceId) {
+    const wsConfig = await tryDoc(`instagram_${workspaceId}`);
+    if (wsConfig && (wsConfig.make || wsConfig.ghlTiktok)) return wsConfig;
+  }
+  return (await tryDoc('instagram')) || { make: null, ghlTiktok: null };
 }
 
 // Construye el payload exacto que cada webhook espera. Mantiene los campos
@@ -78,12 +85,6 @@ exports.publishScheduledPosts = onSchedule({
   region: 'us-central1',
   retryCount: 0
 }, async (event) => {
-  const urls = await getWebhookUrls();
-  if (!urls.make && !urls.ghlTiktok) {
-    logger.warn('No hay webhooks configurados (ni Make ni GHL TikTok). Skip.');
-    return;
-  }
-
   const now = admin.firestore.Timestamp.now();
   const snap = await db.collection('scheduledPosts')
     .where('status', '==', 'programado')
@@ -121,6 +122,19 @@ exports.publishScheduledPosts = onSchedule({
       ? data.platforms
       : ['instagram']; // legacy: posts sin platforms van a IG por default
     const payload = buildWebhookPayload(doc, doc.id);
+
+    // v3.8.4: leer URLs del workspace del post (cada workspace tiene sus
+    // propios webhooks). Fallback a config global si el workspace no tiene.
+    const urls = await getWebhookUrls(data.workspaceId);
+    if (!urls.make && !urls.ghlTiktok) {
+      await ref.update({
+        status: 'failed',
+        error: `Workspace ${data.workspaceId || '(global)'} no tiene webhooks configurados`,
+        failedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+      logger.error(`Fallo ${doc.id}: workspace sin webhooks (${data.workspaceId || 'global'})`);
+      continue;
+    }
 
     // Disparar en paralelo a las plataformas que correspondan.
     const tasks = [];
