@@ -75,6 +75,18 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.9.0': {
+    title: 'Transcripción de videos + Recreación de guiones con IA',
+    features: [
+      '🎤 <strong>Botón "Transcribir video"</strong> en cada entry del Depósito que tenga un video Cloudinary. Click → la app extrae el audio (compresión 64kbps via Cloudinary), lo manda a OpenAI Whisper, guarda el texto en la entry. Costo: ~$0.36/hora de video.',
+      '✨ <strong>Botón "Recrear guion"</strong>: una vez transcrito, click → Claude reescribe el guion con un ángulo, hook y palabras distintas, manteniendo la idea. Cada variación se guarda — podés generar varias y elegir cuál usar.',
+      '📝 <strong>Visualización inline</strong>: la transcripción aparece colapsada (click para expandir) en la card del entry. Las variaciones se muestran abajo con borde violeta.',
+      '🔄 <strong>Re-transcribir</strong>: botón para volver a procesar (ej. si el primer intento salió mal o querés actualizar).',
+      '🔑 <strong>API key per workspace</strong>: configurás tu OpenAI API key en Settings — se guarda por workspace (cada cliente puede tener la suya o compartir).',
+      '⚠️ <strong>Limitaciones</strong>: video debe ser Cloudinary (uses URL transformation para extraer audio). Audio máx ~25MB tras compresión (≈45 min de audio). Para videos más largos, splitting será futuro.',
+      '🛣 <strong>Futuro</strong>: agregar prompts custom para la reescritura ("hookea más", "más casual", "para TikTok", etc), exportar como caption listo para programar.'
+    ]
+  },
   '3.8.4': {
     title: 'Cloud Function workspace-aware — publica con la config del workspace correcto',
     features: [
@@ -7374,6 +7386,74 @@ async function syncCloudinaryConfigFromFirestore() {
     console.warn('[sync] No se pudo leer Cloudinary config de Firestore:', e.message);
   }
 }
+
+// ===== OpenAI API key (v3.9.0): para transcripción de videos via Whisper =====
+const openaiApiKeyInput = document.getElementById('openaiApiKey');
+const saveOpenaiKeyBtn = document.getElementById('saveOpenaiKey');
+const openaiStatusEl = document.getElementById('openaiStatus');
+
+function setOpenaiStatus(connected, label) {
+  if (!openaiStatusEl) return;
+  const dot = openaiStatusEl.querySelector('.status-dot');
+  const text = openaiStatusEl.querySelector('span:last-child');
+  if (dot) dot.className = 'status-dot ' + (connected ? 'connected' : 'disconnected');
+  if (text) text.textContent = label;
+}
+
+async function loadOpenaiKey() {
+  try {
+    const snap = await wsConfigRef('openai').get();
+    if (!snap.exists) { setOpenaiStatus(false, 'No configurado'); return; }
+    const key = (snap.data() || {}).apiKey || '';
+    if (key && openaiApiKeyInput) {
+      openaiApiKeyInput.value = key.slice(0, 7) + '...' + key.slice(-4); // máscara
+      openaiApiKeyInput.dataset.realKey = key;
+      setOpenaiStatus(true, 'Configurado');
+    } else {
+      setOpenaiStatus(false, 'No configurado');
+    }
+  } catch (e) {
+    setOpenaiStatus(false, 'Error: ' + e.message);
+  }
+}
+if (saveOpenaiKeyBtn) {
+  saveOpenaiKeyBtn.addEventListener('click', async () => {
+    const value = (openaiApiKeyInput.value || '').trim();
+    if (!value || value.includes('...')) { alert('Pegá una API key nueva.'); return; }
+    if (!value.startsWith('sk-')) { alert('La API key debe empezar con sk-'); return; }
+    try {
+      await wsConfigRef('openai').set({
+        apiKey: value,
+        updatedBy: currentUser.email,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+      openaiApiKeyInput.dataset.realKey = value;
+      openaiApiKeyInput.value = value.slice(0, 7) + '...' + value.slice(-4);
+      setOpenaiStatus(true, 'Configurado');
+      alert('OpenAI API key guardada para este workspace.');
+    } catch (e) { alert('Error: ' + e.message); }
+  });
+}
+// Al cambiar de workspace, recargar la key
+async function reloadOpenaiKeyOnWorkspaceChange() {
+  if (openaiApiKeyInput) {
+    openaiApiKeyInput.value = '';
+    delete openaiApiKeyInput.dataset.realKey;
+  }
+  await loadOpenaiKey();
+}
+
+// Helper público para que el iframe del depósito acceda a la API key
+window._getOpenaiApiKey = async function() {
+  try {
+    const snap = await wsConfigRef('openai').get();
+    if (!snap.exists) return null;
+    return (snap.data() || {}).apiKey || null;
+  } catch (e) { return null; }
+};
+
+// Cargar API key cuando hay workspace activo
+setTimeout(() => loadOpenaiKey(), 1500);
 
 // ===== Botones de upload en el modal Programar =====
 const schedUploadSingleBtn = document.getElementById('schedUploadSingleBtn');

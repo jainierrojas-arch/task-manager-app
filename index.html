@@ -2379,6 +2379,28 @@
           </div>
 
           <div class="settings-group">
+            <div class="settings-label">🎤 Transcripción de videos (OpenAI Whisper)</div>
+            <div style="display:flex;gap:6px;flex-direction:column">
+              <input type="password" id="openaiApiKey" placeholder="sk-... (tu OpenAI API key)">
+              <button class="btn btn-primary btn-small" id="saveOpenaiKey">Guardar</button>
+            </div>
+            <div class="status-indicator" id="openaiStatus" style="margin-top:6px">
+              <span class="status-dot disconnected"></span>
+              <span>No configurado</span>
+            </div>
+            <div class="telegram-instructions">
+              <h4>Cómo configurar Whisper (2 minutos):</h4>
+              <ol>
+                <li>Andá a <code>platform.openai.com/api-keys</code> y creá una API key</li>
+                <li>Pegala arriba y guardá</li>
+                <li>En el Depósito, los videos van a tener un botón <strong>🎤 Transcribir</strong> que extrae el texto del audio. Costo: <strong>~$0.006/min</strong> de video (re-barato).</li>
+                <li>Una vez transcrito, podés clickear <strong>✨ Recrear guion</strong> para que Claude reescriba el guion con un ángulo distinto.</li>
+              </ol>
+              <p style="margin-top:8px"><strong>API key se guarda por workspace</strong> — si tenés Mi Agencia y Cliente Pizza, podés tener API keys diferentes (o compartir la misma).</p>
+            </div>
+          </div>
+
+          <div class="settings-group">
             <div class="settings-label">Tema de la interfaz</div>
             <div style="display:flex;gap:8px;flex-wrap:wrap">
               <button class="btn btn-ghost theme-option" data-theme="default" style="flex:1;min-width:100px;padding:10px;border:2px solid var(--border)">

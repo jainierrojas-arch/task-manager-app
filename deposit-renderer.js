@@ -899,6 +899,36 @@ function renderEntryHtml(e) {
         </div>`;
     }
   }
+  // v3.9.0: si la entry tiene un video Cloudinary, ofrecemos transcripcion
+  const videoLink = (e.links || []).find(l => l && l.url && /res\.cloudinary\.com\/.+\/video\/upload\//.test(l.url));
+  const transcript = e.transcription || null;
+  const variations = Array.isArray(e.scriptVariations) ? e.scriptVariations : [];
+  let transcriptHtml = '';
+  if (videoLink || transcript) {
+    if (transcript) {
+      const variationsHtml = variations.length > 0
+        ? variations.map((v, i) => `
+            <div style="background:rgba(108,99,255,0.08);border-left:3px solid var(--accent);padding:8px 10px;border-radius:6px;margin-top:6px;font-size:11.5px;line-height:1.5;white-space:pre-wrap"><strong style="color:var(--accent);font-size:10px;letter-spacing:0.5px;text-transform:uppercase">Variación ${i + 1}</strong><br>${esc(v.text || '')}</div>`).join('')
+        : '';
+      transcriptHtml = `
+        <div class="entry-transcript" style="margin-top:8px;background:rgba(78,205,196,0.06);border:1px solid rgba(78,205,196,0.25);border-radius:8px;padding:10px">
+          <details>
+            <summary style="cursor:pointer;font-size:11px;font-weight:700;color:#4ecdc4;letter-spacing:0.4px;text-transform:uppercase">🎤 Transcripción${variations.length > 0 ? ` &middot; ${variations.length} variación(es)` : ''}</summary>
+            <div style="font-size:11.5px;color:var(--text-primary);margin-top:8px;white-space:pre-wrap;line-height:1.5;max-height:200px;overflow-y:auto">${esc(transcript)}</div>
+            ${variationsHtml}
+            <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+              <button class="btn btn-ghost btn-small" data-rewrite-script="${esc(e.id)}" title="Generar variación con Claude">✨ Recrear guion</button>
+              <button class="btn btn-ghost btn-small" data-retranscribe="${esc(e.id)}" title="Volver a transcribir desde cero">🔄 Re-transcribir</button>
+            </div>
+          </details>
+        </div>`;
+    } else if (videoLink) {
+      transcriptHtml = `
+        <div class="entry-transcript" style="margin-top:8px">
+          <button class="btn btn-ghost btn-small" data-transcribe="${esc(e.id)}" title="Transcribir audio del video con OpenAI Whisper">🎤 Transcribir video</button>
+        </div>`;
+    }
+  }
   return `
     <div class="entry-card ${e.status === 'converted' ? 'converted' : ''} ${hasCarrusel ? 'is-carrusel' : ''}" data-entry-id="${esc(e.id)}">
       ${coverHtml}
@@ -909,6 +939,7 @@ function renderEntryHtml(e) {
         </div>
         ${descHtml}
         ${linkChips ? `<div class="entry-links">${linkChips}</div>` : ''}
+        ${transcriptHtml}
         <div class="entry-card-foot">
           <div class="entry-author">Por <span style="color:${color};font-weight:600">${esc(author)}</span> &middot; ${timeAgo(e.createdAt)}</div>
           <div class="entry-actions">
@@ -1125,6 +1156,16 @@ function bindEntryHandlers(area) {
   });
   area.querySelectorAll('[data-delete-entry]').forEach(btn => {
     btn.addEventListener('click', () => deleteEntry(btn.dataset.deleteEntry));
+  });
+  // v3.9.0: Transcribir / Re-transcribir / Recrear guion
+  area.querySelectorAll('[data-transcribe]').forEach(btn => {
+    btn.addEventListener('click', () => transcribeEntry(btn.dataset.transcribe, btn));
+  });
+  area.querySelectorAll('[data-retranscribe]').forEach(btn => {
+    btn.addEventListener('click', () => transcribeEntry(btn.dataset.retranscribe, btn));
+  });
+  area.querySelectorAll('[data-rewrite-script]').forEach(btn => {
+    btn.addEventListener('click', () => rewriteScriptForEntry(btn.dataset.rewriteScript, btn));
   });
   area.querySelectorAll('[data-reuse]').forEach(btn => {
     btn.addEventListener('click', () => reuseEntry(btn.dataset.reuse));
@@ -2082,3 +2123,117 @@ document.addEventListener('keydown', (e) => {
 document.getElementById('categoryNameInput').addEventListener('keypress', (e) => {
   if (e.key === 'Enter') document.getElementById('confirmCategory').click();
 });
+
+
+// ===== v3.9.0: Transcripción de videos via OpenAI Whisper + reescritura via Claude =====
+// La API key se guarda en config/openai_{wsId} desde Settings de la app principal.
+// El iframe lee la key via window.parent._getOpenaiApiKey() (mismo origen file://).
+
+function cloudinaryAudioUrl(videoUrl) {
+  // Cloudinary auto-extrae audio cambiando .mp4 -> .mp3
+  if (!videoUrl) return null;
+  return videoUrl
+    .replace(/\.(mp4|mov|webm|m4v)(\?.*)?$/i, '.mp3')
+    .replace(/\/video\/upload\//, '/video/upload/f_mp3,br_64k/');
+}
+
+async function getOpenaiKeyForIframe() {
+  // El iframe corre dentro de la app principal — accedemos a la función expuesta
+  try {
+    if (window.parent && window.parent._getOpenaiApiKey) {
+      return await window.parent._getOpenaiApiKey();
+    }
+  } catch (e) {}
+  return null;
+}
+
+async function transcribeEntry(entryId, btn) {
+  const entry = entries.find(e => e.id === entryId);
+  if (!entry) return;
+  const videoLink = (entry.links || []).find(l => l && l.url && /res\.cloudinary\.com\/.+\/video\/upload\//.test(l.url));
+  if (!videoLink) { alert('No hay un video Cloudinary en esta entry para transcribir.'); return; }
+  const apiKey = await getOpenaiKeyForIframe();
+  if (!apiKey) {
+    alert('Configurá tu OpenAI API key en Settings de la app principal antes de transcribir.');
+    return;
+  }
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ Descargando audio...';
+  try {
+    const audioUrl = cloudinaryAudioUrl(videoLink.url);
+    const audioRes = await fetch(audioUrl);
+    if (!audioRes.ok) throw new Error('No se pudo bajar el audio (HTTP ' + audioRes.status + ')');
+    const audioBlob = await audioRes.blob();
+    if (audioBlob.size > 25 * 1024 * 1024) {
+      throw new Error('Audio muy grande (>25MB). Probá con un video más corto.');
+    }
+    btn.textContent = '🎤 Transcribiendo...';
+    const formData = new FormData();
+    formData.append('file', audioBlob, 'audio.mp3');
+    formData.append('model', 'whisper-1');
+    formData.append('language', 'es');
+    const whisperRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + apiKey },
+      body: formData
+    });
+    if (!whisperRes.ok) {
+      const errText = await whisperRes.text().catch(() => '');
+      throw new Error('Whisper API: ' + whisperRes.status + ' ' + errText.slice(0, 200));
+    }
+    const result = await whisperRes.json();
+    const transcript = (result.text || '').trim();
+    if (!transcript) throw new Error('Transcripción vacía. ¿El video tiene audio?');
+    await db.collection('depositEntries').doc(entryId).update({
+      transcription: transcript,
+      transcribedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    btn.textContent = '✓ Listo';
+    setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 1500);
+  } catch (e) {
+    alert('Error: ' + e.message);
+    btn.textContent = originalText;
+    btn.disabled = false;
+  }
+}
+
+async function rewriteScriptForEntry(entryId, btn) {
+  const entry = entries.find(e => e.id === entryId);
+  if (!entry || !entry.transcription) { alert('Primero transcribí el video.'); return; }
+  if (!window.parent || !window.parent.window || !window.parent.window.api || !window.parent.window.api.callClaude) {
+    alert('Claude API no disponible.');
+    return;
+  }
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ Generando...';
+  try {
+    const prompt = 'Recreá el siguiente guion de video manteniendo la misma idea/tema y la misma duración aproximada, pero con un ángulo, hook y palabras DISTINTAS. Que no sea idéntico — quiero una variación creativa que vuelva a contar lo mismo de manera fresca, lista para grabar. Devolvé SOLO el guion nuevo, sin explicaciones ni encabezados.
+
+Guion original:
+
+' + entry.transcription;
+    const result = await window.parent.window.api.callClaude({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 2000,
+      messages: [{ role: 'user', content: prompt }]
+    });
+    const newText = (result && result.content && result.content[0] && result.content[0].text) || '';
+    if (!newText.trim()) throw new Error('Claude devolvió respuesta vacía');
+    const variations = Array.isArray(entry.scriptVariations) ? entry.scriptVariations : [];
+    variations.push({
+      text: newText.trim(),
+      createdAt: new Date().toISOString(),
+      createdBy: (window.parent && window.parent.currentUser) ? window.parent.currentUser.uid : null
+    });
+    await db.collection('depositEntries').doc(entryId).update({ scriptVariations: variations });
+    btn.textContent = '✓ Lista';
+    setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 1500);
+  } catch (e) {
+    alert('Error: ' + e.message);
+    btn.textContent = originalText;
+    btn.disabled = false;
+  }
+}
+
