@@ -342,6 +342,77 @@
       .sidebar-label, .sidebar-brand-label { display: none; }
     }
 
+    /* ===== Side panel (slide-in desde la derecha) =====
+       Embebe chat / depósito / referencias / etc dentro de la ventana principal
+       sin abrir BrowserWindows separadas. */
+    .side-panel-overlay {
+      position: fixed;
+      top: 38px;
+      right: 0;
+      bottom: 0;
+      width: 540px;
+      max-width: 90vw;
+      background: var(--bg-secondary);
+      border-left: 1px solid var(--border);
+      box-shadow: -8px 0 32px rgba(0, 0, 0, 0.3);
+      z-index: 950;
+      display: flex;
+      flex-direction: column;
+      transform: translateX(100%);
+      transition: transform 0.25s cubic-bezier(0.32, 0.72, 0, 1);
+    }
+    .side-panel-overlay.open { transform: translateX(0); }
+    .side-panel-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .side-panel-title {
+      flex: 1;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.2px;
+    }
+    .side-panel-resize {
+      display: flex;
+      gap: 4px;
+    }
+    .side-panel-resize-btn, .side-panel-close {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      transition: background 0.15s, color 0.15s;
+    }
+    .side-panel-resize-btn:hover, .side-panel-close:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+    .side-panel-close { color: var(--danger); }
+    .side-panel-body {
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+      position: relative;
+    }
+    .side-panel-iframe {
+      width: 100%;
+      height: 100%;
+      border: 0;
+      background: transparent;
+    }
+    /* Tamaños alternos del panel para que el usuario elija */
+    .side-panel-overlay.size-medium { width: 720px; }
+    .side-panel-overlay.size-large { width: 50vw; }
+
     /* ===== Workspace badge (top-left) ===== */
     .workspace-badge {
       display: flex;
@@ -1730,6 +1801,10 @@
             <span class="sidebar-label">Chat</span>
             <span class="sidebar-badge" id="sbBadgeChat" style="display:none">0</span>
           </button>
+          <button class="sidebar-item" data-side-panel="manychat" title="Abrir ManyChat">
+            <span class="sidebar-icon">🤖</span>
+            <span class="sidebar-label">ManyChat</span>
+          </button>
           <button class="sidebar-item" data-go-tab="team" title="Equipo">
             <span class="sidebar-icon">👥</span>
             <span class="sidebar-label">Equipo</span>
@@ -2255,6 +2330,23 @@
     </div>
 
       </div><!-- /.app-main -->
+
+      <!-- ===== Side panel: chat / depósito / referencias / manychat embebidos ===== -->
+      <div class="side-panel-overlay" id="sidePanel">
+        <div class="side-panel-header">
+          <span class="side-panel-title" id="sidePanelTitle">Panel</span>
+          <div class="side-panel-resize">
+            <button class="side-panel-resize-btn" data-panel-size="default" title="Ancho normal">◧</button>
+            <button class="side-panel-resize-btn" data-panel-size="medium" title="Ancho medio">◨</button>
+            <button class="side-panel-resize-btn" data-panel-size="large" title="Ancho grande">⬛</button>
+          </div>
+          <button class="side-panel-close" id="sidePanelClose" title="Cerrar panel">✕ Cerrar</button>
+        </div>
+        <div class="side-panel-body">
+          <iframe class="side-panel-iframe" id="sidePanelIframe" src="about:blank" allow="clipboard-write"></iframe>
+        </div>
+      </div>
+
     </div><!-- /.app-shell -->
 
     <!-- AI History Modal -->

@@ -75,6 +75,18 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.7.3': {
+    title: 'Chat / Depósito / Referencias dentro de la ventana + ManyChat en sidebar',
+    features: [
+      '🪟 <strong>Panel lateral embebido</strong>: Chat, Depósito de Ideas y Referencias ahora se abren como un panel deslizante <strong>dentro de la ventana principal</strong>, en vez de como ventanas separadas. Click el ícono del sidebar (o cerrar con ✕ / ESC) para abrir/cerrar.',
+      '📐 <strong>3 tamaños del panel</strong>: tras abrir, en el header del panel hay 3 botones (◧ / ◨ / ⬛) para elegir entre ancho normal (540px), medio (720px) o grande (50% de la pantalla). Útil cuando estás trabajando en el depósito y querés más espacio.',
+      '🤖 <strong>Botón ManyChat en el sidebar</strong>: nuevo ícono 🤖 que abre <code>app.manychat.com</code> en tu browser por defecto. ManyChat bloquea iframes (X-Frame-Options) así que no se puede embeber, pero queda a un click de distancia.',
+      '⌨️ <strong>ESC para cerrar</strong> el panel lateral, igual que cualquier modal moderno.',
+      '🔁 <strong>Estado preservado</strong>: si abrís el chat, lo cerrás y volvés a abrir, no recarga el iframe — mantiene tu posición en la conversación. Solo recarga cuando cambiás de panel (chat → depósito por ejemplo).',
+      '⚠️ <strong>Limitaciones conocidas</strong>: dentro del iframe, los botones de minimizar/cerrar de la ventana del chat/depósito quedan inertes (usá el ✕ del panel en su lugar). El cambio de tema desde la ventana principal puede no propagar al iframe — si pasa, recargá.',
+      '🛣 <strong>Próximo paso (v3.7.4)</strong>: Modo PRO embebido (split layout dentro de la misma ventana sin abrir 3 ventanas separadas).'
+    ]
+  },
   '3.7.2': {
     title: 'Pulido fino — tipografía, spacing y microinteracciones',
     features: [
@@ -1208,26 +1220,96 @@ if (cloudBtn) {
   });
 }
 
+// ===== Side panel embebido (v3.7.3) =====
+// Reemplaza las BrowserWindows separadas (chat, depósito) con un panel
+// lateral inline que carga el HTML en un iframe. Se mantiene la lógica
+// existente — solo cambia DÓNDE se renderiza.
+const SIDE_PANEL_CONFIGS = {
+  chat: { title: '💬 Chat del equipo', src: 'chat.html' },
+  deposit: { title: '📦 Depósito de Ideas', src: 'deposit.html' },
+  references: { title: '📚 Banco de Referencias', src: 'deposit.html?category=referencias' },
+  manychat: { title: '🤖 ManyChat', src: 'https://app.manychat.com/' }
+};
+
+let _currentSidePanel = null;
+function openSidePanel(kind) {
+  const cfg = SIDE_PANEL_CONFIGS[kind];
+  if (!cfg) return;
+  const overlay = document.getElementById('sidePanel');
+  const titleEl = document.getElementById('sidePanelTitle');
+  const iframe = document.getElementById('sidePanelIframe');
+  if (!overlay || !iframe) return;
+  // Si es el mismo panel ya abierto, lo cerramos (toggle)
+  if (_currentSidePanel === kind && overlay.classList.contains('open')) {
+    closeSidePanel();
+    return;
+  }
+  titleEl.textContent = cfg.title;
+  // Solo recargar iframe si cambió de fuente — evita perder estado al togglear
+  if (iframe.dataset.currentKind !== kind) {
+    iframe.src = cfg.src;
+    iframe.dataset.currentKind = kind;
+  }
+  overlay.classList.add('open');
+  _currentSidePanel = kind;
+}
+
+function closeSidePanel() {
+  const overlay = document.getElementById('sidePanel');
+  if (!overlay) return;
+  overlay.classList.remove('open');
+  _currentSidePanel = null;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  // Cerrar panel
+  const closeBtn = document.getElementById('sidePanelClose');
+  if (closeBtn) closeBtn.addEventListener('click', closeSidePanel);
+
+  // Botones de tamaño
+  document.querySelectorAll('[data-panel-size]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const overlay = document.getElementById('sidePanel');
+      if (!overlay) return;
+      overlay.classList.remove('size-medium', 'size-large');
+      const size = btn.dataset.panelSize;
+      if (size === 'medium') overlay.classList.add('size-medium');
+      if (size === 'large') overlay.classList.add('size-large');
+    });
+  });
+
+  // Items del sidebar con data-side-panel: abren el panel directo
+  // Excepción: 'manychat' abre en browser externo (manychat.com bloquea iframes)
+  document.querySelectorAll('.sidebar-item[data-side-panel]').forEach(item => {
+    item.addEventListener('click', () => {
+      const kind = item.dataset.sidePanel;
+      if (kind === 'manychat') {
+        try { window.api.openExternal('https://app.manychat.com/'); }
+        catch (e) { window.open('https://app.manychat.com/', '_blank'); }
+        return;
+      }
+      openSidePanel(kind);
+    });
+  });
+
+  // Cerrar con ESC
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && _currentSidePanel) closeSidePanel();
+  });
+});
+
 const depositBtn = document.getElementById('depositBtn');
 if (depositBtn) {
   depositBtn.addEventListener('click', async () => {
-    await window.api.toggleDeposit();
-    // El badge ya NO se reinicia al cerrar el deposito. Es persistente y cuenta
-    // los items pendientes (status !== 'converted') hasta que se asignen como tareas.
+    // En lugar de abrir BrowserWindow separada, abrimos el panel lateral
+    openSidePanel('deposit');
   });
 }
 
 const referencesBtn = document.getElementById('referencesBtn');
 if (referencesBtn) {
   referencesBtn.addEventListener('click', async () => {
-    // Abre el deposito y navega automaticamente a la categoria Referencias.
-    // El badge ya NO se reinicia al hacer click — es persistente y siempre
-    // refleja el total de items en Referencias (mismas reglas que TAREAS).
-    if (window.api.toggleDepositWithCategory) {
-      await window.api.toggleDepositWithCategory('referencias');
-    } else {
-      await window.api.toggleDeposit();
-    }
+    openSidePanel('references');
   });
 }
 
@@ -7856,7 +7938,8 @@ function renderChatBadge() {
 
 if (el.chatToggleBtn) {
   el.chatToggleBtn.addEventListener('click', async () => {
-    try { await window.api.toggleChat(); } catch (e) { console.error(e); }
+    // v3.7.3: en lugar de abrir BrowserWindow separada, abrimos panel lateral
+    openSidePanel('chat');
   });
 }
 
