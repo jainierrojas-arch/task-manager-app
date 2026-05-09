@@ -75,6 +75,18 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.8.0': {
+    title: 'Multi-workspace — Fundación (creación + switcher)',
+    features: [
+      '🌐 <strong>Workspace switcher funcional</strong>: el badge "Mi Agencia ▾" arriba a la izquierda ahora abre un dropdown con la lista de tus workspaces + botón "+ Nuevo workspace".',
+      '🏢 <strong>Crear workspaces nuevos</strong>: click "+ Nuevo workspace" → modal pidiendo nombre → se crea en Firestore y queda listo.',
+      '🔄 <strong>Workspace por defecto auto-creado</strong>: la primera vez que abras la app post-update, se crea automáticamente "Mi Agencia" con todos los miembros del equipo. No hace falta migrar nada.',
+      '💾 <strong>Persistencia</strong>: tu última selección de workspace se guarda en localStorage — la próxima vez que abras la app vuelve al mismo workspace.',
+      '⚠️ <strong>Importante — esto es solo la fundación</strong>: en v3.8.0 el switcher es VISUAL — la data (tareas, depósito, programación, equipo) sigue compartida entre workspaces. Esto es así por diseño para validar el flujo sin riesgo de mover data accidentalmente.',
+      '📋 <strong>Próximo paso (v3.8.1)</strong>: filtrado real por workspace — cada workspace ve solo SU data. Va a venir con migración automática que asigna toda tu data actual al workspace "Mi Agencia".',
+      '🔐 <strong>IMPORTANTE — actualizar Firestore Rules</strong>: agregamos reglas para la colección /workspaces. Si todavía no actualizaste a las rules de v3.3+, tampoco te van a funcionar éstas. Mirá <code>firestore.rules</code> en el repo.'
+    ]
+  },
   '3.7.4': {
     title: 'Modo PRO embebido — Depósito + Chat dentro de la ventana',
     features: [
@@ -697,6 +709,13 @@ let captionTemplates = [];
 let unsubscribeCaptionTpls = null;
 let inviteCodes = [];
 let unsubscribeInviteCodes = null;
+// ===== Multi-workspace (v3.8.0) =====
+// currentWorkspaceId: el workspace activo del usuario. workspaces: lista de
+// todos los workspaces a los que pertenece. ensureDefaultWorkspace crea
+// "Mi Agencia" la primera vez si todavía no existe.
+let workspaces = [];
+let currentWorkspaceId = null;
+let unsubscribeWorkspaces = null;
 let editingCaptionTplId = null;
 let scheduledPosts = [];
 let scheduledPostsInitialized = false; // false en primera carga del snapshot
@@ -994,6 +1013,8 @@ function showApp() {
   el.userName.textContent = currentUserData.name;
   el.userRole.textContent = currentUserData.role || 'miembro';
   syncUserDropdownInfo();
+  // Multi-workspace: asegurar default + listener real-time
+  ensureDefaultWorkspace().then(() => subscribeWorkspaces());
 
   personalProjectsList = Array.isArray(currentUserData.personalProjects) ? [...currentUserData.personalProjects] : [];
   currentPersonalProject = 'General';
@@ -1142,6 +1163,7 @@ function showLogin() {
   if (unsubscribeScheduled) { unsubscribeScheduled(); unsubscribeScheduled = null; scheduledPostsInitialized = false; }
   if (unsubscribeCaptionTpls) { unsubscribeCaptionTpls(); unsubscribeCaptionTpls = null; captionTemplates = []; }
   if (unsubscribeInviteCodes) { unsubscribeInviteCodes(); unsubscribeInviteCodes = null; inviteCodes = []; }
+  if (unsubscribeWorkspaces) { unsubscribeWorkspaces(); unsubscribeWorkspaces = null; workspaces = []; currentWorkspaceId = null; }
   if (presenceTimer) { clearInterval(presenceTimer); presenceTimer = null; }
 }
 
@@ -6620,6 +6642,179 @@ document.querySelectorAll('.sidebar-item[data-go-button]').forEach(item => {
   item.addEventListener('click', () => {
     const btn = document.getElementById(item.dataset.goButton);
     if (btn) btn.click();
+  });
+});
+
+// ===== Multi-workspace (v3.8.0) — fundación =====
+// 1) Asegurar workspace por defecto al primer arranque del owner
+// 2) Listener real-time de la colección /workspaces
+// 3) Switcher dropdown (workspace badge) que muestra todos los workspaces +
+//    botón "Nuevo workspace"
+// El switching todavía es VISUAL — los listeners de tareas/proyectos/etc no
+// filtran por workspaceId hasta v3.8.1. Esto es para validar el flujo sin
+// riesgo de perder data existente.
+async function ensureDefaultWorkspace() {
+  if (!currentUser || !currentUserData) return;
+  // Solo el owner crea el workspace por defecto. Otros miembros lo heredan
+  // cuando el admin los suma. El owner es la cuenta jainierrojas@gmail.com.
+  const isOwner = (currentUser.email || '').toLowerCase() === 'jainierrojas@gmail.com';
+  if (!isOwner) return;
+  try {
+    const snap = await db.collection('workspaces').limit(1).get();
+    if (!snap.empty) return; // ya hay al menos un workspace
+    // Crear "Mi Agencia" — todos los users existentes son miembros
+    const usersSnap = await db.collection('users').get();
+    const memberIds = usersSnap.docs.map(d => d.id);
+    await db.collection('workspaces').add({
+      name: 'Mi Agencia',
+      ownerId: currentUser.uid,
+      members: memberIds,
+      color: '#4ecdc4',
+      emoji: 'A',
+      isDefault: true,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    console.log('[workspaces] default workspace creado');
+  } catch (e) {
+    console.warn('[workspaces] no se pudo crear default:', e.message);
+  }
+}
+
+function subscribeWorkspaces() {
+  if (unsubscribeWorkspaces) { unsubscribeWorkspaces(); unsubscribeWorkspaces = null; }
+  unsubscribeWorkspaces = db.collection('workspaces').onSnapshot((snapshot) => {
+    workspaces = snapshot.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(w => Array.isArray(w.members) && w.members.includes(currentUser.uid));
+    // Asignar workspace activo si todavía no hay uno
+    if (!currentWorkspaceId && workspaces.length > 0) {
+      const stored = localStorage.getItem('currentWorkspaceId');
+      const found = workspaces.find(w => w.id === stored);
+      currentWorkspaceId = found ? found.id : (workspaces.find(w => w.isDefault) || workspaces[0]).id;
+      try { localStorage.setItem('currentWorkspaceId', currentWorkspaceId); } catch (e) {}
+    }
+    renderWorkspaceSwitcher();
+  }, (err) => {
+    console.warn('[workspaces] error de listener:', err.message);
+  });
+}
+
+function renderWorkspaceSwitcher() {
+  const nameEl = document.getElementById('workspaceName');
+  const emojiEl = document.getElementById('workspaceEmoji');
+  const listEl = document.getElementById('workspaceDropdownList');
+  const current = workspaces.find(w => w.id === currentWorkspaceId);
+  if (current) {
+    if (nameEl) nameEl.textContent = current.name || 'Workspace';
+    if (emojiEl) {
+      emojiEl.textContent = current.emoji || (current.name || 'W').charAt(0).toUpperCase();
+      if (current.color) emojiEl.style.background = `linear-gradient(135deg, ${current.color}, ${current.color})`;
+    }
+  } else {
+    if (nameEl) nameEl.textContent = 'Mi Agencia';
+    if (emojiEl) emojiEl.textContent = 'A';
+  }
+  if (!listEl) return;
+  if (workspaces.length === 0) {
+    listEl.innerHTML = '<div style="font-size:12px;color:var(--text-dim);padding:8px;text-align:center">No tenés workspaces — creá uno</div>';
+    return;
+  }
+  listEl.innerHTML = workspaces.map(w => {
+    const isActive = w.id === currentWorkspaceId;
+    const initial = (w.emoji || (w.name || 'W').charAt(0)).toUpperCase();
+    const color = w.color || '#6c63ff';
+    return `
+      <button class="workspace-dropdown-item ${isActive ? 'active' : ''}" data-ws-id="${esc(w.id)}">
+        <span class="ws-emoji" style="background:linear-gradient(135deg,${color},${color})">${esc(initial)}</span>
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(w.name || 'Workspace')}</span>
+        ${isActive ? '<span class="ws-check">✓</span>' : ''}
+      </button>`;
+  }).join('');
+  listEl.querySelectorAll('[data-ws-id]').forEach(item => {
+    item.addEventListener('click', () => switchWorkspace(item.dataset.wsId));
+  });
+}
+
+function switchWorkspace(workspaceId) {
+  if (!workspaceId || workspaceId === currentWorkspaceId) {
+    closeWorkspaceDropdown();
+    return;
+  }
+  currentWorkspaceId = workspaceId;
+  try { localStorage.setItem('currentWorkspaceId', workspaceId); } catch (e) {}
+  renderWorkspaceSwitcher();
+  closeWorkspaceDropdown();
+  // En v3.8.0 el cambio es visual — v3.8.1 va a re-cargar los listeners filtrados
+  console.log('[workspaces] switched to', workspaceId);
+}
+
+function openWorkspaceDropdown() {
+  const menu = document.getElementById('workspaceDropdownMenu');
+  if (menu) menu.classList.add('open');
+}
+function closeWorkspaceDropdown() {
+  const menu = document.getElementById('workspaceDropdownMenu');
+  if (menu) menu.classList.remove('open');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  // Toggle del badge
+  const badge = document.getElementById('workspaceBadge');
+  const menu = document.getElementById('workspaceDropdownMenu');
+  if (badge && menu) {
+    badge.addEventListener('click', (e) => {
+      e.stopPropagation();
+      menu.classList.toggle('open');
+    });
+    document.addEventListener('click', (e) => {
+      if (!menu.contains(e.target) && e.target !== badge) closeWorkspaceDropdown();
+    });
+  }
+
+  // Modal nuevo workspace
+  const newBtn = document.getElementById('newWorkspaceBtn');
+  const newModal = document.getElementById('newWorkspaceModal');
+  const newInput = document.getElementById('newWorkspaceName');
+  const newErr = document.getElementById('newWorkspaceError');
+  const cancelBtn = document.getElementById('cancelNewWorkspace');
+  const confirmBtn = document.getElementById('confirmNewWorkspace');
+
+  if (newBtn) newBtn.addEventListener('click', () => {
+    closeWorkspaceDropdown();
+    if (newModal) newModal.classList.add('active');
+    if (newInput) { newInput.value = ''; setTimeout(() => newInput.focus(), 50); }
+    if (newErr) newErr.textContent = '';
+  });
+  if (cancelBtn) cancelBtn.addEventListener('click', () => {
+    if (newModal) newModal.classList.remove('active');
+  });
+  if (newModal) newModal.addEventListener('click', (e) => {
+    if (e.target === newModal) newModal.classList.remove('active');
+  });
+  const submitNew = async () => {
+    const name = (newInput.value || '').trim();
+    if (!name) { newErr.textContent = 'Ingresá un nombre'; return; }
+    if (name.length < 2) { newErr.textContent = 'Nombre demasiado corto'; return; }
+    try {
+      const ref = await db.collection('workspaces').add({
+        name,
+        ownerId: currentUser.uid,
+        members: [currentUser.uid],
+        color: '#6c63ff',
+        emoji: name.charAt(0).toUpperCase(),
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      newModal.classList.remove('active');
+      // Cambiar al workspace nuevo automáticamente
+      currentWorkspaceId = ref.id;
+      try { localStorage.setItem('currentWorkspaceId', ref.id); } catch (e) {}
+    } catch (e) {
+      newErr.textContent = 'Error: ' + e.message;
+    }
+  };
+  if (confirmBtn) confirmBtn.addEventListener('click', submitNew);
+  if (newInput) newInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') submitNew();
   });
 });
 
