@@ -75,6 +75,17 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.0': {
+    title: 'Explorador embebido — investigá referencias sin salir de la app',
+    features: [
+      '🌐 <strong>Nuevo botón "Explorar" en el sidebar</strong>: abre un browser embebido (Electron webview) que navega Instagram, TikTok y YouTube Shorts directamente dentro de Task Manager. Login persistente entre sesiones (cookies).',
+      '🚀 <strong>Quick links</strong> en la barra superior: 📷 IG Explore, 🎞 IG Reels, 🎵 TikTok For You, 📺 YouTube Shorts. Un click te lleva a la sección que querés investigar.',
+      '⬅➡🔄 <strong>Controles de navegación</strong>: atrás, adelante, recargar y barra de URL editable. Funciona como un browser normal.',
+      '💾 <strong>Botón "Guardar URL al Depósito"</strong> abajo: cuando estás en un reel o video que te interesa, click → se crea automáticamente la entry en el Depósito con esa URL. El sistema detecta si es video/material y carga la cover OG en background.',
+      '🗂 <strong>Selector de categoría</strong>: antes de guardar, elegí en qué categoría del depósito tirarlo (o dejá "General"). Las categorías se cargan desde Firestore — siempre actualizadas.',
+      '✨ <strong>Cero copy/paste manual</strong>: ya no tenés que abrir Safari/Chrome aparte, copiar el link, volver a la app y pegarlo. Todo en un click.'
+    ]
+  },
   '3.10.5': {
     title: 'Recorder: topbar a la izquierda + guardar en celular',
     features: [
@@ -1713,10 +1724,86 @@ const SIDE_PANEL_CONFIGS = {
   chat: { title: '💬 Chat del equipo', src: 'chat.html' },
   deposit: { title: '📦 Depósito de Ideas', src: 'deposit.html' },
   references: { title: '📚 Banco de Referencias', src: 'deposit.html?category=referencias' },
-  manychat: { title: '🤖 ManyChat', src: 'https://app.manychat.com/' }
+  manychat: { title: '🤖 ManyChat', src: 'https://app.manychat.com/' },
+  explorer: { title: '🌐 Explorar Reels & TikToks', src: 'explorer.html' }
 };
 
 let _currentSidePanel = null;
+// ===== Explorer iframe message handler (v3.11.0) =====
+// El iframe explorer.html postMessage para pedir categorías y guardar URLs al
+// Depósito. Acá las atendemos y respondemos.
+window.addEventListener('message', async (ev) => {
+  const d = ev.data;
+  if (!d || typeof d !== 'object') return;
+
+  if (d.type === 'explorer-request-categories') {
+    try {
+      const snap = await db.collection('depositCategories').orderBy('name').get();
+      const cats = snap.docs.map(doc => Object.assign({ id: doc.id }, doc.data()));
+      ev.source && ev.source.postMessage({ type: 'explorer-categories', categories: cats }, '*');
+    } catch (e) {
+      console.warn('[explorer] failed to load categories', e);
+    }
+    return;
+  }
+
+  if (d.type === 'explorer-save-to-deposit') {
+    const { reqId, url, title, categoryId, workspaceId } = d;
+    const reply = (ok, error) => ev.source && ev.source.postMessage({ type: 'explorer-save-reply', reqId, ok, error }, '*');
+    try {
+      if (!currentUser) { reply(false, 'No estás logueado'); return; }
+      // Detectar tipo de link (video/material) por la URL
+      const lower = (url || '').toLowerCase();
+      const isVideo = /instagram\.com\/(reel|p|tv)\/|tiktok\.com\/.+\/video\/|youtube\.com\/(shorts|watch)|youtu\.be\//.test(lower);
+      const linkType = isVideo ? 'video' : 'material';
+      const cleanTitle = (title || '').trim() || (() => {
+        try { return new URL(url).hostname.replace(/^www\./, ''); } catch (e) { return 'Referencia'; }
+      })();
+      const data = {
+        title: cleanTitle.slice(0, 200),
+        description: '',
+        links: [{ type: linkType, url, label: linkType === 'video' ? 'Video' : 'Material' }],
+        categoryId: categoryId || null,
+        status: 'idea',
+        createdBy: currentUser.uid,
+        createdByName: (currentUserData && currentUserData.name) || (currentUser.email || '').split('@')[0],
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      };
+      // workspace tag — el wrapper de db.collection ya lo agrega vía
+      // _installWsScopeWrapper, pero por consistencia explícita:
+      if (workspaceId) data.workspaceId = workspaceId;
+      // Categoría: resolver nombre/icon si nos pasaron categoryId
+      if (categoryId) {
+        try {
+          const cs = await db.collection('depositCategories').doc(categoryId).get();
+          if (cs.exists) {
+            const cd = cs.data();
+            data.categoryName = cd.name || '';
+          }
+        } catch (e) {}
+      }
+      const ref = await db.collection('depositEntries').add(data);
+      // Best-effort: fetch OG metadata para la cover (no esperar)
+      if (window.api && window.api.fetchOgData) {
+        window.api.fetchOgData(url).then(og => {
+          if (og && (og.image || og.title || og.description)) {
+            const upd = { coverFetcherV: 6 };
+            if (og.image) upd.coverImage = og.image;
+            if (og.title && !data.title) upd.title = og.title.slice(0, 200);
+            if (og.description) upd.description = og.description.slice(0, 500);
+            db.collection('depositEntries').doc(ref.id).update(upd).catch(() => {});
+          }
+        }).catch(() => {});
+      }
+      reply(true);
+    } catch (e) {
+      console.error('[explorer] save failed', e);
+      reply(false, e.message || 'Error desconocido');
+    }
+    return;
+  }
+});
+
 function openSidePanel(kind) {
   const cfg = SIDE_PANEL_CONFIGS[kind];
   if (!cfg) return;

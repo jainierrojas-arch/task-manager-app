@@ -516,7 +516,9 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: path.join(__dirname, 'preload.js')
+      preload: path.join(__dirname, 'preload.js'),
+      // v3.11.0: habilitar <webview> tag para el Explorador embebido (IG/TikTok)
+      webviewTag: true
     },
     titleBarStyle: 'hidden',
     trafficLightPosition: { x: -100, y: -100 }
