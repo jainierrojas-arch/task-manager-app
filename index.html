@@ -876,65 +876,126 @@
     .tab-content { display: none; }
     .tab-content.active { display: block; }
 
-    /* ===== Explorer (v3.11.2) ===== */
+    /* ===== Explorer (v3.11.9): sidebar lateral + multi-tab ===== */
     .explorer-shell {
       width: 100%; height: 100%;
-      display: flex; flex-direction: column;
+      display: flex; flex-direction: row;
       background: var(--bg-primary, #0f1115);
     }
-    .explorer-toolbar {
-      display: flex; align-items: center; gap: 6px;
-      padding: 8px;
+    /* Sidebar vertical de controles */
+    .explorer-side {
+      width: 180px;
+      flex: 0 0 180px;
+      display: flex; flex-direction: column;
+      gap: 6px;
+      padding: 10px 8px;
       background: var(--bg-card, #1a1d24);
-      border-bottom: 1px solid var(--border, rgba(255,255,255,0.08));
-      flex-wrap: nowrap; overflow-x: auto;
+      border-right: 1px solid var(--border, rgba(255,255,255,0.08));
+      overflow-y: auto;
     }
-    .explorer-toolbar button, .explorer-toolbar input {
+    .explorer-side button, .explorer-side input, .explorer-side select {
       background: var(--bg-card, #20242c);
       color: var(--text-primary, #f5f7fa);
       border: 1px solid var(--border, rgba(255,255,255,0.08));
       border-radius: 8px;
-      padding: 7px 10px;
+      padding: 8px 10px;
       font-size: 12px;
       font-family: inherit;
       cursor: pointer;
+      width: 100%;
+      text-align: left;
+    }
+    .explorer-side button:hover { background: rgba(255,255,255,0.08); }
+    .explorer-side button.explorer-primary {
+      background: var(--accent, #4ecdc4); color: #0a0c10;
+      border-color: var(--accent, #4ecdc4); font-weight: 700;
+      text-align: center;
+    }
+    .explorer-side input { font-size: 11px; padding: 6px 8px; cursor: text; }
+    .explorer-side-group { display: flex; gap: 4px; }
+    .explorer-side-group button { padding: 8px 6px; text-align: center; }
+    .explorer-side-divider { height: 1px; background: var(--border, rgba(255,255,255,0.06)); margin: 4px 0; }
+    .explorer-save-btn {
+      background: var(--accent, #4ecdc4) !important; color: #0a0c10 !important;
+      border-color: var(--accent, #4ecdc4) !important;
+      font-weight: 700 !important; text-align: center !important;
+      padding: 10px !important;
+    }
+    .explorer-save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Main area: tabs bar + webview stack */
+    .explorer-main {
+      flex: 1; min-width: 0;
+      display: flex; flex-direction: column;
+      background: var(--bg-primary, #0f1115);
+    }
+    .explorer-tabs-bar {
+      display: flex; align-items: center;
+      background: var(--bg-card, #1a1d24);
+      border-bottom: 1px solid var(--border, rgba(255,255,255,0.08));
+      padding: 4px 4px 0;
+      gap: 2px;
+      overflow-x: auto;
+      flex: 0 0 auto;
+    }
+    .explorer-tabs { display: flex; gap: 2px; flex: 1; min-width: 0; }
+    .explorer-tab {
+      display: flex; align-items: center; gap: 6px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid transparent;
+      border-bottom: none;
+      border-top-left-radius: 8px;
+      border-top-right-radius: 8px;
+      padding: 6px 8px 5px;
+      font-size: 11px;
+      color: var(--text-secondary, #9aa3b2);
+      cursor: pointer;
+      max-width: 220px;
+      min-width: 80px;
+      flex: 0 1 auto;
       white-space: nowrap;
+      overflow: hidden;
+      transition: background 0.15s ease;
     }
-    .explorer-toolbar button:hover { background: rgba(255,255,255,0.08); }
-    .explorer-toolbar button.explorer-primary {
-      background: var(--accent, #4ecdc4); color: #0a0c10; border-color: var(--accent, #4ecdc4); font-weight: 700;
+    .explorer-tab:hover { background: rgba(255,255,255,0.08); color: var(--text-primary, #f5f7fa); }
+    .explorer-tab.active {
+      background: var(--bg-primary, #0f1115);
+      color: var(--text-primary, #f5f7fa);
+      border-color: var(--border, rgba(255,255,255,0.08));
     }
-    .explorer-toolbar input {
-      flex: 1; min-width: 180px; font-size: 12px; padding: 7px 10px;
+    .explorer-tab-title {
+      flex: 1; min-width: 0;
+      overflow: hidden; text-overflow: ellipsis;
     }
-    .explorer-nav-group { display: flex; gap: 4px; }
-    .explorer-quick-links { display: flex; gap: 4px; }
-    .explorer-quick-links button { padding: 6px 10px; font-size: 11px; font-weight: 600; }
+    .explorer-tab-close {
+      background: transparent !important;
+      border: none !important;
+      color: var(--text-secondary, #9aa3b2);
+      padding: 0 !important;
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px;
+      flex: 0 0 auto !important;
+      cursor: pointer;
+    }
+    .explorer-tab-close:hover { background: rgba(255,255,255,0.15) !important; color: #fff; }
+    .explorer-add-tab {
+      background: transparent !important;
+      border: none !important;
+      color: var(--text-secondary, #9aa3b2) !important;
+      padding: 6px 12px !important;
+      font-size: 16px; font-weight: 700;
+      cursor: pointer;
+      flex: 0 0 auto;
+    }
+    .explorer-add-tab:hover { color: var(--text-primary, #f5f7fa) !important; background: rgba(255,255,255,0.05) !important; }
 
     .explorer-browser-wrap { flex: 1; position: relative; background: #000; min-height: 0; }
-    #explorerBrowser { width: 100%; height: 100%; display: flex; }
-
-    .explorer-actions-bar {
-      display: flex; align-items: center; gap: 8px;
-      padding: 8px;
-      background: var(--bg-card, #1a1d24);
-      border-top: 1px solid var(--border, rgba(255,255,255,0.08));
+    .explorer-browser-wrap webview {
+      width: 100%; height: 100%; display: none;
     }
-    .explorer-actions-bar select {
-      background: var(--bg-card, #20242c);
-      color: var(--text-primary, #f5f7fa);
-      border: 1px solid var(--border, rgba(255,255,255,0.08));
-      border-radius: 8px; padding: 7px 10px; font-size: 12px;
-      font-family: inherit; flex: 1; min-width: 0;
-    }
-    .explorer-save-btn {
-      background: var(--accent, #4ecdc4); color: #0a0c10;
-      border: 1px solid var(--accent, #4ecdc4);
-      border-radius: 8px; padding: 9px 14px;
-      font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap;
-    }
-    .explorer-save-btn:hover { filter: brightness(1.1); }
-    .explorer-save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .explorer-browser-wrap webview.active { display: flex; }
 
     .explorer-toast {
       position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
@@ -956,9 +1017,16 @@
     .explorer-loading-bar.active { width: 80%; }
     .explorer-loading-bar.done { width: 100%; opacity: 0; transition: width 0.2s ease, opacity 0.4s ease 0.2s; }
 
-    /* Tab content for explorer needs to be flex column to fill the height */
     #tabExplorer.active { display: flex !important; flex-direction: column; }
     #tabExplorer.active .explorer-shell { flex: 1; min-height: 0; }
+
+    /* ManyChat embed via webview (bypasses iframe X-Frame-Options block) */
+    .manychat-shell {
+      width: 100%; height: 100%;
+      display: flex; flex-direction: column;
+      background: var(--bg-primary, #0f1115);
+    }
+    .manychat-shell webview { flex: 1; min-height: 0; }
 
     /* Tabs embebidos con iframe full-height (v3.11.3) */
     #tabDeposit.active, #tabReferences.active, #tabChat.active {
@@ -2005,7 +2073,7 @@
             <span class="sidebar-label">Chat</span>
             <span class="sidebar-badge" id="sbBadgeChat" style="display:none">0</span>
           </button>
-          <button class="sidebar-item" data-side-panel="manychat" title="Abrir ManyChat">
+          <button class="sidebar-item" data-go-tab="manychat" title="ManyChat embebido en la app">
             <span class="sidebar-icon">🤖</span>
             <span class="sidebar-label">ManyChat</span>
           </button>
@@ -2175,6 +2243,9 @@
       </div>
       <div class="nav-tab" data-tab="chat" style="display:none">
         &#128172; Chat
+      </div>
+      <div class="nav-tab" data-tab="manychat" style="display:none">
+        &#129302; ManyChat
       </div>
       <div class="nav-tab" data-tab="settings">
         &#9881; Config
@@ -2359,49 +2430,50 @@
         </div>
       </div>
 
-      <!-- Explorer (v3.11.2): webview embebido directo en el renderer principal
-           (sin iframe intermedio — webview tag tiene quirks dentro de iframes). -->
+      <!-- Explorer (v3.11.9): sidebar vertical con controles + barra de tabs +
+           webview area. Multi-tab estilo Chrome. -->
       <div class="tab-content" id="tabExplorer" style="padding:0;height:100%;display:none">
         <div class="explorer-shell">
-          <div class="explorer-toolbar">
-            <div class="explorer-nav-group">
+          <!-- Sidebar vertical con todos los controles para liberar espacio horizontal -->
+          <div class="explorer-side">
+            <div class="explorer-side-group">
               <button id="explorerBack" title="Atrás">⬅</button>
               <button id="explorerForward" title="Adelante">➡</button>
               <button id="explorerReload" title="Recargar">🔄</button>
             </div>
-            <input type="url" id="explorerUrlBar" placeholder="https://..." spellcheck="false">
-            <button id="explorerGo" class="explorer-primary">Ir</button>
-            <div class="explorer-quick-links">
-              <button data-explorer-quick="https://www.instagram.com/explore/" title="Instagram Explore">📷 IG</button>
-              <button data-explorer-quick="https://www.instagram.com/reels/" title="Reels">🎞 Reels</button>
-              <button data-explorer-quick="https://www.tiktok.com/foryou" title="TikTok For You">🎵 TikTok</button>
-              <button data-explorer-quick="https://www.youtube.com/shorts" title="YouTube Shorts">📺 Shorts</button>
-            </div>
-          </div>
-
-          <div class="explorer-browser-wrap">
-            <div class="explorer-loading-bar" id="explorerLoadingBar"></div>
-            <webview
-              id="explorerBrowser"
-              src="https://www.google.com/"
-              allowpopups
-              partition="persist:explorer"
-              useragent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-              style="width:100%;height:100%;display:flex"></webview>
-            <div class="explorer-toast" id="explorerToast"></div>
-          </div>
-
-          <div class="explorer-actions-bar">
-            <select id="explorerTypeSelect" title="Tipo del link" style="flex:0 0 auto;max-width:130px">
+            <div class="explorer-side-divider"></div>
+            <input type="url" id="explorerUrlBar" placeholder="URL..." spellcheck="false">
+            <button id="explorerGo" class="explorer-primary">▶ Ir</button>
+            <div class="explorer-side-divider"></div>
+            <button data-explorer-quick="https://www.google.com/" title="Google">🔎 Google</button>
+            <button data-explorer-quick="https://www.instagram.com/explore/" title="Instagram Explore">📷 IG</button>
+            <button data-explorer-quick="https://www.instagram.com/reels/" title="Reels">🎞 Reels</button>
+            <button data-explorer-quick="https://www.tiktok.com/foryou" title="TikTok For You">🎵 TikTok</button>
+            <button data-explorer-quick="https://www.youtube.com/shorts" title="YouTube Shorts">📺 Shorts</button>
+            <div class="explorer-side-divider"></div>
+            <select id="explorerTypeSelect" title="Tipo del link al guardar">
               <option value="auto">Tipo: Auto</option>
               <option value="video">Tipo: Video</option>
               <option value="carrusel">Tipo: Carrusel</option>
               <option value="material">Tipo: Material</option>
             </select>
-            <select id="explorerCategorySelect">
-              <option value="">Sin categoría — General</option>
+            <select id="explorerCategorySelect" title="Categoría al guardar">
+              <option value="">Sin categoría</option>
             </select>
-            <button class="explorer-save-btn" id="explorerSaveToDeposit">💾 Guardar URL actual al Depósito</button>
+            <button class="explorer-save-btn" id="explorerSaveToDeposit">💾 Guardar al Depósito</button>
+          </div>
+
+          <!-- Área principal: tabs bar + webview stack -->
+          <div class="explorer-main">
+            <div class="explorer-tabs-bar">
+              <div class="explorer-tabs" id="explorerTabs"></div>
+              <button class="explorer-add-tab" id="explorerAddTab" title="Nueva pestaña">+</button>
+            </div>
+            <div class="explorer-browser-wrap" id="explorerBrowserWrap">
+              <div class="explorer-loading-bar" id="explorerLoadingBar"></div>
+              <!-- Los <webview> se crean dinámicamente al abrir/cerrar tabs -->
+              <div class="explorer-toast" id="explorerToast"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -2428,6 +2500,13 @@
                 src="about:blank"
                 style="width:100%;height:100%;border:0;display:block;background:#0f1115"
                 allow="autoplay; encrypted-media"></iframe>
+      </div>
+
+      <!-- ManyChat (v3.11.9): webview embebido (bypasses iframe X-Frame-Options block) -->
+      <div class="tab-content" id="tabManychat" style="padding:0;height:100%">
+        <div class="manychat-shell" id="manychatShell">
+          <!-- webview se crea dinámicamente al activar la pestaña la primera vez -->
+        </div>
       </div>
 
       <!-- Settings -->

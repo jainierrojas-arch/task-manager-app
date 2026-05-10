@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.9': {
+    title: 'Explorer multi-pestañas + sidebar lateral + ManyChat embebido',
+    features: [
+      '🗂 <strong>Pestañas múltiples estilo Chrome</strong>: el Explorador ahora abre varias pestañas independientes a la vez. Click el botón ➕ arriba para nueva pestaña; cerrá con la × en cada tab. Las cookies de IG/TikTok se comparten entre todas (login persiste).',
+      '👈 <strong>Toolbar movido a sidebar izquierdo</strong>: los controles (atrás/adelante/recargar, URL bar, Ir, quick links IG/Reels/TikTok/Shorts, selectores Tipo y Categoría, botón Guardar) ahora son una columna vertical de 180px a la izquierda. Liberé toda la zona de arriba — más espacio horizontal y vertical para el browser.',
+      '🤖 <strong>ManyChat embebido en la app</strong>: antes abría en browser externo porque ManyChat bloquea iframes. Ahora usa <code>&lt;webview&gt;</code> que NO es un iframe (es un sub-proceso de Chromium aparte) y bypassea la restricción. Click "ManyChat" en el sidebar y se carga adentro de Task Manager con su propio login persistente.',
+      '🔄 <strong>Cada pestaña es un webview separado</strong>: cambiar de tab no recarga el contenido — la otra sigue corriendo en background. Podés tener varios reels abiertos y switchear sin perder el estado.'
+    ]
+  },
   '3.11.8': {
     title: 'Explorer detecta el reel específico que estás viendo (no la página de explore)',
     features: [
@@ -1800,8 +1809,7 @@ if (cloudBtn) {
 const SIDE_PANEL_CONFIGS = {
   chat: { title: '💬 Chat del equipo', src: 'chat.html' },
   deposit: { title: '📦 Depósito de Ideas', src: 'deposit.html' },
-  references: { title: '📚 Banco de Referencias', src: 'deposit.html?category=referencias' },
-  manychat: { title: '🤖 ManyChat', src: 'https://app.manychat.com/' }
+  references: { title: '📚 Banco de Referencias', src: 'deposit.html?category=referencias' }
 };
 
 let _currentSidePanel = null;
@@ -1881,15 +1889,10 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Items del sidebar con data-side-panel: abren el panel directo
-  // Excepción: 'manychat' abre en browser externo (manychat.com bloquea iframes)
+  // (v3.11.9: ManyChat ahora es tab data-go-tab='manychat', no side-panel)
   document.querySelectorAll('.sidebar-item[data-side-panel]').forEach(item => {
     item.addEventListener('click', () => {
       const kind = item.dataset.sidePanel;
-      if (kind === 'manychat') {
-        try { window.api.openExternal('https://app.manychat.com/'); }
-        catch (e) { window.open('https://app.manychat.com/', '_blank'); }
-        return;
-      }
       openSidePanel(kind);
     });
   });
@@ -7177,6 +7180,10 @@ document.querySelectorAll('.nav-tab').forEach(tab => {
         ifr.src = buildIframeSrc('chat.html');
         ifr.dataset.loaded = '1';
       }
+    }
+    if (currentTab === 'manychat') {
+      // v3.11.9: ManyChat ahora embebido vía <webview> (bypasses iframe X-Frame-Options)
+      if (typeof window._setupManyChat === 'function') window._setupManyChat();
     }
     syncSidebarActive();
   });
