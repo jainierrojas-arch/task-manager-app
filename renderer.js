@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.11': {
+    title: 'Fix dropdowns workspace/usuario + fix portada en feed genérico',
+    features: [
+      '🐛 <strong>Fix dropdowns no abrían</strong>: el menú de workspace y de usuario en el sidebar no aparecían porque <code>.app-sidebar</code> tiene <code>overflow: hidden</code> que los clipeaba. Ahora se posicionan con <code>position:fixed</code> (calculado por JS al abrir) — aparecen a la derecha del sidebar sin importar el clipping.',
+      '🖼 <strong>Fix portada genérica en feed</strong>: cuando estabas en <code>instagram.com/explore/</code> sin abrir un reel específico, Microlink scrapeaba esa página y devolvía la imagen genérica de IG (las 9 fotos collage). Ahora detecto cuando la URL es un feed genérico y SOLO uso la imagen del DOM (el poster del video visible). Microlink solo se llama para URLs específicas con content ID.',
+      '⚠ <strong>Aviso "feed genérico"</strong>: si guardás sin tener un reel específico abierto, el toast ahora dice <code>"⚠ feed genérico"</code> — significa que la portada salió del DOM (puede no ser perfecta). Para mejor cover, abrí el reel específico antes de guardar.',
+      '🔍 <strong>Regex stricter</strong>: ahora <code>/reel/</code> o <code>/p/</code> sin content ID NO se considera URL específica. Así <code>/reels/</code> (feed) se trata como genérico, no como reel.'
+    ]
+  },
   '3.11.10': {
     title: 'Workspace + usuario integrados al sidebar — barra superior eliminada',
     features: [
@@ -7476,10 +7485,22 @@ document.addEventListener('DOMContentLoaded', () => {
   if (badge && menu) {
     badge.addEventListener('click', (e) => {
       e.stopPropagation();
-      menu.classList.toggle('open');
+      const isOpen = menu.classList.contains('open');
+      if (isOpen) {
+        menu.classList.remove('open');
+        return;
+      }
+      // v3.11.11: posicionar el menu como fixed para evitar el clipping del
+      // overflow:hidden del sidebar. Anchor a la derecha del badge.
+      const r = badge.getBoundingClientRect();
+      menu.classList.add('open');
+      menu.style.left = (r.right + 6) + 'px';
+      menu.style.top = r.top + 'px';
+      menu.style.right = 'auto';
+      menu.style.bottom = 'auto';
     });
     document.addEventListener('click', (e) => {
-      if (!menu.contains(e.target) && e.target !== badge) closeWorkspaceDropdown();
+      if (!menu.contains(e.target) && e.target !== badge && !badge.contains(e.target)) closeWorkspaceDropdown();
     });
   }
 
@@ -7537,13 +7558,24 @@ function setupUserDropdown() {
   if (!toggle || !menu) return;
   let isOpen = false;
   const close = () => { menu.classList.remove('open'); isOpen = false; };
-  const open = () => { menu.classList.add('open'); isOpen = true; };
+  // v3.11.11: posicionar el menú como fixed (anchor a la derecha del toggle,
+  // crece hacia ARRIBA porque el toggle está al final del sidebar).
+  const open = () => {
+    menu.classList.add('open');
+    isOpen = true;
+    const r = toggle.getBoundingClientRect();
+    const menuHeight = 280; // estimación; el menu puede ser scrollable
+    menu.style.left = (r.right + 6) + 'px';
+    menu.style.top = Math.max(8, r.bottom - menuHeight) + 'px';
+    menu.style.right = 'auto';
+    menu.style.bottom = 'auto';
+  };
   toggle.addEventListener('click', (e) => {
     e.stopPropagation();
     isOpen ? close() : open();
   });
   document.addEventListener('click', (e) => {
-    if (isOpen && !menu.contains(e.target) && e.target !== toggle) close();
+    if (isOpen && !menu.contains(e.target) && !toggle.contains(e.target)) close();
   });
   // Items con data-go-tab dentro del dropdown
   menu.querySelectorAll('[data-go-tab]').forEach(item => {

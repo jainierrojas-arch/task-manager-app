@@ -890,11 +890,11 @@
     .app-sidebar.collapsed .sidebar-workspace-badge .workspace-arrow {
       display: none;
     }
-    /* Dropdowns dentro del sidebar deberían aparecer a la derecha */
-    .sidebar-workspace-area .workspace-dropdown-menu {
-      left: 100%;
-      top: 0;
-      margin-left: 4px;
+    /* Dropdowns dentro del sidebar usan position:fixed (se posicionan vía JS)
+       para evitar el clipping del overflow:hidden de .app-shell y .app-sidebar */
+    .sidebar-workspace-area .workspace-dropdown-menu.open {
+      position: fixed;
+      z-index: 10000;
     }
     .sidebar-user-wrap { width: 100%; margin-top: 4px; }
     .sidebar-user-toggle {
@@ -930,12 +930,9 @@
       padding: 1px 5px;
     }
     .app-sidebar.collapsed .sidebar-user-info { display: none; }
-    .sidebar-user-wrap .user-dropdown-menu {
-      left: 100%;
-      bottom: 0;
-      top: auto;
-      margin-left: 4px;
-      right: auto;
+    .sidebar-user-wrap .user-dropdown-menu.open {
+      position: fixed;
+      z-index: 10000;
     }
 
     /* ===== Explorer (v3.11.10): toolbar HORIZONTAL compacto arriba (estilo bookmarks Chrome) ===== */

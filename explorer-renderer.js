@@ -389,15 +389,28 @@
 
     try {
       const pageData = await extractPageData();
-      const targetUrl = (pageData && pageData.url && /\/(reel|reels|p|tv)\//.test(pageData.url))
+      // v3.11.11: regex estricta — requerir CONTENT ID después de /reel/, etc.
+      // Antes /reels/ (feed page) matcheaba. Ahora solo /reel/CXXX/ pasa.
+      const RE_SPECIFIC = /\/(reel|reels|p|tv)\/[A-Za-z0-9_-]+/;
+      const targetUrl = (pageData && pageData.url && RE_SPECIFIC.test(pageData.url))
         ? pageData.url
         : url;
       const usingDetectedReel = targetUrl !== url;
+      // Detectar si la URL final es genérica (feed/explore/home, sin contenido específico)
+      const isGenericFeedUrl =
+        /^https?:\/\/(www\.)?instagram\.com\/(explore|reels|reel)\/?(\?|#|$)/i.test(targetUrl) ||
+        /^https?:\/\/(www\.)?instagram\.com\/?(\?|#|$)/i.test(targetUrl) ||
+        /^https?:\/\/(www\.)?tiktok\.com\/(foryou|explore|trending)\/?(\?|#|$)/i.test(targetUrl) ||
+        /^https?:\/\/(www\.)?tiktok\.com\/?(\?|#|$)/i.test(targetUrl) ||
+        /^https?:\/\/(www\.)?youtube\.com\/(shorts|feed)\/?(\?|#|$)/i.test(targetUrl);
 
       saveBtn.textContent = '⏳ Buscando portada...';
-      const og = await ((window.api && window.api.fetchOgData)
-        ? window.api.fetchOgData(targetUrl).catch(() => null)
-        : Promise.resolve(null));
+      // Solo llamar Microlink si tenemos URL ESPECÍFICA. Si estamos en /explore/
+      // y no detectamos un reel concreto, Microlink devolvería la imagen
+      // genérica del feed — peor que el video.poster del DOM.
+      const og = (!isGenericFeedUrl && window.api && window.api.fetchOgData)
+        ? await window.api.fetchOgData(targetUrl).catch(() => null)
+        : null;
       saveBtn.textContent = '⏳ Guardando...';
 
       const lower = targetUrl.toLowerCase();
@@ -438,11 +451,18 @@
         if (firstLine) finalTitle = firstLine;
       }
 
-      let coverImage = (og && og.image) || (pageData && pageData.image) || '';
-      let coverSource = '';
-      if (coverImage) {
-        if (og && og.image && og.image === coverImage) coverSource = 'microlink';
-        else coverSource = 'webview-dom';
+      // En feed genérico, preferir pageData.image (poster del video visible) sobre og.image.
+      // En URL específica, og.image (Microlink server-side) es más confiable.
+      let coverImage, coverSource = '';
+      if (isGenericFeedUrl) {
+        coverImage = (pageData && pageData.image) || (og && og.image) || '';
+        if (coverImage) coverSource = 'webview-dom';
+      } else {
+        coverImage = (og && og.image) || (pageData && pageData.image) || '';
+        if (coverImage) {
+          if (og && og.image && og.image === coverImage) coverSource = 'microlink';
+          else coverSource = 'webview-dom';
+        }
       }
       if (!coverImage && getActiveTab() && getActiveTab().ready) {
         try {
@@ -511,6 +531,7 @@
       if (coverImage) summary.push('portada=' + (coverSource || 'sí'));
       if (description) summary.push('caption');
       if (usingDetectedReel) summary.push('reel detectado');
+      if (isGenericFeedUrl && !usingDetectedReel) summary.push('⚠ feed genérico');
       const detail = summary.length ? ` (${summary.join(', ')})` : '';
       showToast('✓ ' + linkType + detail);
       const ts = document.getElementById('explorerTypeSelect');
