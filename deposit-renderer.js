@@ -2227,12 +2227,16 @@ document.getElementById('categoryNameInput').addEventListener('keypress', (e) =>
 function isTranscribableLink(l) {
   if (!l || !l.url) return false;
   const url = l.url;
-  // Tipo explícito 'video' en el link → asumimos que se puede
-  if (l.type === 'video') return true;
-  // URLs directas a archivos de audio/video
-  if (/\.(mp4|mov|webm|m4v|m4a|mp3|wav|mpga|mpeg)(\?.*)?$/i.test(url)) return true;
-  // Cloudinary video o audio
+  // Rechazar plataformas protegidas (no se pueden descargar directo) ANTES
+  // de cualquier otra check, sin importar el l.type
+  if (/(instagram\.com|tiktok\.com|youtube\.com|youtu\.be|facebook\.com|fb\.com|cdninstagram\.com|fbcdn\.net|tiktokcdn\.com)/i.test(url)) return false;
+  // Cloudinary video/raw — descargable directo
   if (/res\.cloudinary\.com\/.+\/(video|raw)\/upload\//i.test(url)) return true;
+  // URL directa a archivo de audio/video
+  if (/\.(mp4|mov|webm|m4v|m4a|mp3|wav|mpga|mpeg|flac|ogg|oga)(\?.*)?$/i.test(url)) return true;
+  // Si está marcado como video pero NO es de plataforma protegida ni Cloudinary,
+  // intentamos igual — podría ser un link directo no-estándar
+  if (l.type === 'video') return true;
   return false;
 }
 
@@ -2294,15 +2298,30 @@ async function transcribeEntry(entryId, btn) {
     return;
   }
   try {
-    _setTranscriptionStatus('⏳ Descargando audio...');
     const audioUrl = audioFetchUrl(videoLink.url);
+    _setTranscriptionStatus('⏳ Descargando audio desde: ' + audioUrl.slice(0, 60) + '...');
     const audioRes = await fetch(audioUrl);
     if (!audioRes.ok) throw new Error('No se pudo bajar el audio (HTTP ' + audioRes.status + ')');
+    const contentType = audioRes.headers.get('content-type') || '';
+    // Si el server devuelve HTML, es porque el URL no es realmente un archivo de audio
+    if (contentType.includes('text/html') || contentType.includes('application/xhtml')) {
+      throw new Error('El URL no apunta a un archivo de audio — devolvió HTML. Probablemente es un link de YouTube/Instagram/TikTok. Subí el video a Cloudinary primero.');
+    }
     const audioBlob = await audioRes.blob();
+    if (audioBlob.size < 1000) {
+      throw new Error('Archivo demasiado chico (' + audioBlob.size + ' bytes). Probablemente el URL no devolvió un audio válido.');
+    }
     if (audioBlob.size > 25 * 1024 * 1024) throw new Error('Audio muy grande (>25MB).');
-    _setTranscriptionStatus('🎤 Enviando a Whisper...');
+    _setTranscriptionStatus('🎤 Enviando a Whisper (' + Math.round(audioBlob.size / 1024) + ' KB)...');
+    // Determinar el filename con extensión correcta para Whisper
+    let filename = 'audio.mp3';
+    if (contentType.includes('video/mp4') || /\.mp4(\?|$)/i.test(audioUrl)) filename = 'audio.mp4';
+    else if (contentType.includes('video/quicktime') || /\.mov(\?|$)/i.test(audioUrl)) filename = 'audio.mov';
+    else if (contentType.includes('audio/mpeg') || /\.mp3(\?|$)/i.test(audioUrl)) filename = 'audio.mp3';
+    else if (contentType.includes('audio/wav') || /\.wav(\?|$)/i.test(audioUrl)) filename = 'audio.wav';
+    else if (contentType.includes('video/webm') || /\.webm(\?|$)/i.test(audioUrl)) filename = 'audio.webm';
     const formData = new FormData();
-    formData.append('file', audioBlob, 'audio.mp3');
+    formData.append('file', audioBlob, filename);
     formData.append('model', 'whisper-1');
     formData.append('language', 'es');
     const whisperRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
@@ -2312,7 +2331,7 @@ async function transcribeEntry(entryId, btn) {
     });
     if (!whisperRes.ok) {
       const errText = await whisperRes.text().catch(() => '');
-      throw new Error('Whisper API: ' + whisperRes.status + ' ' + errText.slice(0, 200));
+      throw new Error('Whisper API ' + whisperRes.status + ': ' + errText.slice(0, 300));
     }
     const result = await whisperRes.json();
     const transcript = (result.text || '').trim();

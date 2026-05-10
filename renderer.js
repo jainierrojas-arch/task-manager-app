@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.9.14': {
+    title: 'Fix Transcribir: detectar URLs no descargables + filename correcto',
+    features: [
+      '🔍 <strong>Detección estricta de plataformas protegidas</strong>: si el video está en YouTube/Instagram/TikTok/Facebook (incluso CDN URLs como cdninstagram.com), el botón Transcribir NO intenta procesar — muestra error claro pidiendo subir a Cloudinary primero.',
+      '📦 <strong>Check de Content-Type</strong>: si el server devuelve HTML (típico cuando el URL no es realmente un archivo), error inmediato en lugar de mandar HTML a Whisper.',
+      '📝 <strong>Filename correcto</strong>: el archivo enviado a Whisper ahora tiene extensión que coincide con el Content-Type real (mp4/mov/mp3/wav/webm), así Whisper acepta sin error de formato.',
+      '👁 <strong>Status visible del URL</strong>: el modal muestra los primeros 60 caracteres del URL que se está descargando — útil para diagnosticar qué está pasando.',
+      '⚠️ <strong>Para tus videos HEYGEN/HIGGSFIELD</strong>: si están en YouTube o sin URL directa de Cloudinary, hay que subir el archivo a Cloudinary primero. La transcripción solo funciona con archivos descargables directos.'
+    ]
+  },
   '3.9.13': {
     title: 'Fix click Transcribir — event delegation global',
     features: [
