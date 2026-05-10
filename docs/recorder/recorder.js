@@ -376,7 +376,9 @@ function startRecording() {
     canvas.height = TARGET_H;
   }
   // captureStream del canvas — track de video 1080×1920 que MediaRecorder graba.
-  const canvasStream = canvas.captureStream(30);
+  // v3.11.23: 60 fps (antes 30) para movimiento más fluido. Si el celular no
+  // puede sostenerlo, captureStream baja automáticamente.
+  const canvasStream = canvas.captureStream(60);
   const cTrack = canvasStream.getVideoTracks()[0];
   if (cTrack && cTrack.applyConstraints) {
     cTrack.applyConstraints({ width: { ideal: 1080 }, height: { ideal: 1920 } }).catch(() => {});
@@ -389,7 +391,10 @@ function startRecording() {
   canvasStream.getVideoTracks().forEach(t => combined.addTrack(t));
   combined.addTrack(audioTrack);
   try {
-    mediaRecorder = new MediaRecorder(combined, mime ? { mimeType: mime, videoBitsPerSecond: 6_000_000 } : { videoBitsPerSecond: 6_000_000 });
+    // v3.11.23: bitrate 10 Mbps (antes 6) para mejor calidad visual. La cámara
+    // nativa del iPhone graba a ~30-100 Mbps; 10 Mbps es lo más alto que
+    // MediaRecorder maneja confiablemente sin saturar en celulares modestos.
+    mediaRecorder = new MediaRecorder(combined, mime ? { mimeType: mime, videoBitsPerSecond: 10_000_000 } : { videoBitsPerSecond: 10_000_000 });
   } catch (e) {
     console.error('[rec] new MediaRecorder failed', e);
     alert('No se pudo iniciar la grabación: ' + e.message);
