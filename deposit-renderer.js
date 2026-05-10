@@ -9,13 +9,43 @@ const _wsParams = (() => {
 })();
 const WS_ID = _wsParams.get('workspace') || null;
 const DEFAULT_WS_ID = _wsParams.get('defaultWs') || null;
-const WS_IS_DEFAULT = _wsParams.get('isDefault') === '1' || (DEFAULT_WS_ID && WS_ID === DEFAULT_WS_ID);
+// _ws_actualIsDefault es mutable — se actualiza via async verify si la URL no traía la info
+let _ws_actualIsDefault = _wsParams.get('isDefault') === '1' || (DEFAULT_WS_ID && WS_ID === DEFAULT_WS_ID);
 const WS_SCOPED_COLLECTIONS = new Set(['tasks', 'projects', 'depositEntries', 'depositCategories', 'scheduledPosts', 'chatMessages', 'captionTemplates', 'ideas']);
 function _belongsToWs(d) {
   if (!WS_ID) return true;
-  if (WS_IS_DEFAULT) return !d.workspaceId || d.workspaceId === WS_ID;
+  if (_ws_actualIsDefault) return !d.workspaceId || d.workspaceId === WS_ID;
   return d.workspaceId === WS_ID;
 }
+
+// v3.9.4: verificación async — si el padre no nos pasó isDefault correcto via URL,
+// consultamos Firestore para deducirlo. Si éste WS es el default, re-renderizamos.
+window._verifyWsIsDefault = async function(dbRef) {
+  if (!WS_ID || _ws_actualIsDefault) return;
+  try {
+    const snap = await dbRef.collection('workspaces').get();
+    if (snap.empty) return;
+    const docs = snap.docs.map(d => Object.assign({ id: d.id }, d.data()));
+    let defId = null;
+    const explicit = docs.find(w => w.isDefault === true);
+    if (explicit) defId = explicit.id;
+    else if (docs.length === 1) defId = docs[0].id;
+    else {
+      const sorted = docs.sort((a, b) => {
+        const at = (a.createdAt && a.createdAt.toDate) ? a.createdAt.toDate().getTime() : 0;
+        const bt = (b.createdAt && b.createdAt.toDate) ? b.createdAt.toDate().getTime() : 0;
+        return at - bt;
+      });
+      defId = sorted[0] ? sorted[0].id : null;
+    }
+    if (defId === WS_ID) {
+      console.log('[ws] async verify: este WS es el default — re-renderizando');
+      _ws_actualIsDefault = true;
+      try { if (typeof renderCategories === 'function') renderCategories(); } catch (e) {}
+      try { if (typeof renderEntries === 'function') renderEntries(); } catch (e) {}
+    }
+  } catch (e) { console.warn('[ws] verify failed:', e.message); }
+};
 window._installWsScopeWrapper = function(db) {
   if (!db || !db.collection) return;
   const orig = db.collection.bind(db);

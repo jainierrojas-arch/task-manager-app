@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.9.4': {
+    title: 'Fix definitivo Depósito vacío — auto-fix workspace default',
+    features: [
+      '🩹 <strong>Auto-fix del workspace default</strong>: si tu workspace "Mi Agencia" no tenía marcado <code>isDefault: true</code> en Firestore (por venir de versiones anteriores), ahora se marca automáticamente al cargar.',
+      '🔍 <strong>Verificación async en iframe</strong>: además, el panel del Depósito y Chat verifican contra Firestore por su cuenta — si descubren que están en el workspace default, re-renderizan mostrando toda la data legacy. Triple seguro.',
+      '✅ Después de instalar y reiniciar la app, todo tu contenido histórico (99+ Refs, 6 Depósito) debería aparecer cuando estés en Mi Agencia.'
+    ]
+  },
   '3.9.3': {
     title: 'Fix crítico: Depósito y Refs vacíos en Mi Agencia',
     features: [
@@ -809,6 +817,29 @@ const WORKSPACE_SCOPED_COLLECTIONS = new Set([
   'tasks', 'projects', 'depositEntries', 'depositCategories',
   'scheduledPosts', 'chatMessages', 'captionTemplates', 'ideas'
 ]);
+
+// v3.9.4: si ningún workspace tiene isDefault=true (caso de cuenta migrada
+// desde una versión que no lo seteó), marca el más viejo automáticamente.
+// Idempotente — solo escribe si realmente falta.
+async function autoFixDefaultWorkspaceFlag() {
+  if (!workspaces || workspaces.length === 0) return;
+  const hasExplicit = workspaces.some(w => w.isDefault === true);
+  if (hasExplicit) return;
+  const sorted = workspaces.slice().sort((a, b) => {
+    const at = (a.createdAt && a.createdAt.toDate) ? a.createdAt.toDate().getTime() : 0;
+    const bt = (b.createdAt && b.createdAt.toDate) ? b.createdAt.toDate().getTime() : 0;
+    return at - bt;
+  });
+  if (!sorted[0]) return;
+  try {
+    await db.collection('workspaces').doc(sorted[0].id).update({ isDefault: true });
+    console.log('[ws] auto-fix: marcado isDefault=true en', sorted[0].id, sorted[0].name);
+    // Notificar iframes para que recarguen con la nueva info
+    setTimeout(() => notifyIframesOfWorkspaceChange(), 500);
+  } catch (e) {
+    console.warn('[ws] no se pudo marcar default:', e.message);
+  }
+}
 
 // Determina el workspace ID que actúa como "default" — el que muestra docs legacy
 // sin workspaceId. Multiple fallbacks por robustez.
@@ -6905,6 +6936,8 @@ function subscribeWorkspaces() {
     renderWorkspaceSwitcher();
     // v3.8.3: migrar config global → workspace default (idempotente)
     migrateGlobalConfigToDefaultWorkspace().catch(() => {});
+    // v3.9.4: auto-marcar workspace más viejo como isDefault si ninguno lo tiene
+    autoFixDefaultWorkspaceFlag().catch(() => {});
   }, (err) => {
     console.warn('[workspaces] error de listener:', err.message);
   });
