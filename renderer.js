@@ -75,6 +75,13 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.9.13': {
+    title: 'Fix click Transcribir — event delegation global',
+    features: [
+      '🐛 <strong>Fix</strong>: el binding del click sobre "Transcribir video" se hacía vía <code>area.querySelectorAll</code> en cada renderEntries. Por algún motivo (timing, re-render, scope), el handler no se enganchaba. Ahora usamos <strong>event delegation a nivel document</strong> — un solo listener global captura clicks en cualquier botón con data-transcribe, sin importar cuándo se renderice.',
+      '✅ Click ahora funciona robusto contra re-renders y cambios de DOM.'
+    ]
+  },
   '3.9.12': {
     title: 'Fix wireup del modal Transcripción',
     features: [

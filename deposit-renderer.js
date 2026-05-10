@@ -1257,16 +1257,8 @@ function bindEntryHandlers(area) {
   area.querySelectorAll('[data-delete-entry]').forEach(btn => {
     btn.addEventListener('click', () => deleteEntry(btn.dataset.deleteEntry));
   });
-  // v3.9.0: Transcribir / Re-transcribir / Recrear guion
-  area.querySelectorAll('[data-transcribe]').forEach(btn => {
-    btn.addEventListener('click', () => transcribeEntry(btn.dataset.transcribe, btn));
-  });
-  area.querySelectorAll('[data-retranscribe]').forEach(btn => {
-    btn.addEventListener('click', () => transcribeEntry(btn.dataset.retranscribe, btn));
-  });
-  area.querySelectorAll('[data-rewrite-script]').forEach(btn => {
-    btn.addEventListener('click', () => rewriteScriptForEntry(btn.dataset.rewriteScript, btn));
-  });
+  // v3.9.13: usamos event delegation a nivel document (más abajo, una sola vez)
+  // así no dependemos de re-bindear cada renderEntries.
   area.querySelectorAll('[data-reuse]').forEach(btn => {
     btn.addEventListener('click', () => reuseEntry(btn.dataset.reuse));
   });
@@ -2455,6 +2447,33 @@ function _renderTranscriptionModalContent(entryId) {
     }));
   }
 }
+
+// v3.9.13: event delegation global para los botones de transcribir/recrear
+// — robusto contra re-renders del entries area
+document.addEventListener('click', (ev) => {
+  const transcribeBtn = ev.target.closest('[data-transcribe]');
+  if (transcribeBtn) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    console.log('[delegate] transcribe click on', transcribeBtn.dataset.transcribe);
+    transcribeEntry(transcribeBtn.dataset.transcribe, transcribeBtn);
+    return;
+  }
+  const retransBtn = ev.target.closest('[data-retranscribe]');
+  if (retransBtn) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    transcribeEntry(retransBtn.dataset.retranscribe, retransBtn);
+    return;
+  }
+  const rewriteBtn = ev.target.closest('[data-rewrite-script]');
+  if (rewriteBtn) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    rewriteScriptForEntry(rewriteBtn.dataset.rewriteScript, rewriteBtn);
+    return;
+  }
+});
 
 // Wireup del modal y teleprompter — si DOMContentLoaded ya disparó, ejecutar directo
 function _wireupTranscriptionAndTeleprompter() {
