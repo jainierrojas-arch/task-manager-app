@@ -22,10 +22,12 @@ if (_wsParams.get('isDefault') === '1' || (DEFAULT_WS_ID && WS_ID === DEFAULT_WS
 console.log('[ws] iframe init: WS_ID=' + WS_ID + ' DEFAULT_WS_ID=' + DEFAULT_WS_ID + ' status=' + _ws_status);
 const WS_SCOPED_COLLECTIONS = new Set(['tasks', 'projects', 'depositEntries', 'depositCategories', 'scheduledPosts', 'chatMessages', 'captionTemplates', 'ideas']);
 function _belongsToWs(d) {
-  if (!WS_ID) return true;
-  if (_ws_status === 'non-default') return d.workspaceId === WS_ID;
-  // 'default' o 'unknown' → permisivo (muestra docs sin workspaceId también)
-  return !d.workspaceId || d.workspaceId === WS_ID;
+  // v3.9.6: filtro DESACTIVADO temporalmente — el iframe muestra TODO.
+  // Esto fue un cambio de emergencia porque el filtro estaba ocultando data
+  // legítima. La filtrada workspace-correcta volverá en una versión futura
+  // con un mecanismo más robusto (probablemente data passing via postMessage
+  // desde el padre).
+  return true;
 }
 
 // v3.9.5: verificación async — sólo confirma si somos default o no.

@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.9.6': {
+    title: 'Hotfix: Depósito y Refs muestran todo (filtro workspace OFF en iframes)',
+    features: [
+      '🩹 <strong>Hotfix de emergencia</strong>: el filtro de workspace en los iframes (Depósito, Chat, Refs) estaba escondiendo data legítima. Lo desactivé completamente para que veas TODO tu contenido histórico.',
+      '⚠️ <strong>Trade-off temporal</strong>: si tenés varios workspaces, los iframes van a mostrar data de TODOS (no solo el activo). El main window sigue filtrando correctamente — esto solo afecta a los paneles laterales.',
+      '🔧 <strong>Solución definitiva</strong>: en una próxima versión voy a refactorear cómo los iframes reciben data — probablemente passing via postMessage desde el padre, así el filtrado es 100% confiable.'
+    ]
+  },
   '3.9.5': {
     title: 'Fix definitivo Depósito vacío — filosofía permisiva por defecto',
     features: [
