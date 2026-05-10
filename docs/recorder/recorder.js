@@ -699,45 +699,147 @@ $('btnDone').addEventListener('click', () => {
   }
 });
 
-// v3.11.21: btnPreviewLast — overlay rápido para ver el último clip sin salir
-// de la pantalla de grabación. Útil para acordarse en qué parte se quedó.
-$('btnPreviewLast').addEventListener('click', () => {
-  if (recordedSegments.length === 0) return;
-  const last = recordedSegments[recordedSegments.length - 1];
-  if (!last || !last.blob) return;
-  const overlay = $('quickPreview');
-  const video = $('quickPreviewVideo');
-  const info = $('quickPreviewInfo');
-  if (!overlay || !video) return;
-  // Limpiar src previo y crear nuevo
-  if (video.dataset.objectUrl) {
+// ===== Quick preview overlay con lista de clips (v3.11.22) =====
+// Permite ver cada clip individualmente, eliminar selectivamente, y reproducir
+// todos seguidos (playlist). Estilo Instagram/TikTok native camera.
+let _qpCurrentIdx = -1;     // índice del clip actualmente reproduciéndose
+let _qpPlaylistMode = false; // true = reproducir todos seguidos
+let _qpPlaylistIdx = 0;
+
+function _qpRevokeObjectUrl(video) {
+  if (video && video.dataset.objectUrl) {
     try { URL.revokeObjectURL(video.dataset.objectUrl); } catch (e) {}
+    delete video.dataset.objectUrl;
   }
-  const url = URL.createObjectURL(last.blob);
+}
+
+function renderQuickPreviewClips() {
+  const container = $('quickPreviewClips');
+  if (!container) return;
+  const N = recordedSegments.length;
+  if (N === 0) {
+    container.innerHTML = '<div style="text-align:center;color:#666;padding:20px">Sin clips</div>';
+    return;
+  }
+  container.innerHTML = recordedSegments.map((s, i) => {
+    const sec = Math.round((s.durationMs || 0) / 1000);
+    const playing = (i === _qpCurrentIdx) ? ' playing' : '';
+    return `
+      <div class="qp-clip${playing}" data-clip-idx="${i}">
+        <div class="qp-clip-num">${i + 1}</div>
+        <div class="qp-clip-info">
+          <div class="qp-clip-title">Clip ${i + 1}</div>
+          <div class="qp-clip-dur">${sec}s</div>
+        </div>
+        <button class="qp-clip-btn play" data-qp-play="${i}" title="Reproducir">▶</button>
+        <button class="qp-clip-btn del" data-qp-del="${i}" title="Eliminar este clip">🗑</button>
+      </div>
+    `;
+  }).join('');
+  container.querySelectorAll('[data-qp-play]').forEach(btn => {
+    btn.addEventListener('click', (e) => { e.stopPropagation(); qpPlayClip(parseInt(btn.dataset.qpPlay, 10)); });
+  });
+  container.querySelectorAll('[data-qp-del]').forEach(btn => {
+    btn.addEventListener('click', (e) => { e.stopPropagation(); qpDeleteClip(parseInt(btn.dataset.qpDel, 10)); });
+  });
+}
+
+function qpPlayClip(idx, playlistMode) {
+  const seg = recordedSegments[idx];
+  if (!seg || !seg.blob) return;
+  const video = $('quickPreviewVideo');
+  if (!video) return;
+  _qpRevokeObjectUrl(video);
+  const url = URL.createObjectURL(seg.blob);
   video.src = url;
   video.dataset.objectUrl = url;
+  _qpCurrentIdx = idx;
+  _qpPlaylistMode = !!playlistMode;
+  if (_qpPlaylistMode) _qpPlaylistIdx = idx;
+  // Info
+  const info = $('quickPreviewInfo');
   if (info) {
-    const sec = Math.round((last.durationMs || 0) / 1000);
-    info.textContent = 'Clip ' + recordedSegments.length + ' de ' + recordedSegments.length + ' · ' + sec + 's';
+    const sec = Math.round((seg.durationMs || 0) / 1000);
+    info.textContent = `Reproduciendo clip ${idx + 1} de ${recordedSegments.length} · ${sec}s${_qpPlaylistMode ? ' · modo playlist' : ''}`;
   }
-  overlay.style.display = 'flex';
+  video.onended = () => {
+    if (_qpPlaylistMode) {
+      const next = _qpPlaylistIdx + 1;
+      if (next < recordedSegments.length) qpPlayClip(next, true);
+      else { _qpPlaylistMode = false; _qpCurrentIdx = -1; renderQuickPreviewClips(); }
+    } else {
+      _qpCurrentIdx = -1;
+      renderQuickPreviewClips();
+    }
+  };
+  renderQuickPreviewClips();
   setTimeout(() => video.play().catch(() => {}), 50);
-});
+}
 
-$('quickPreviewClose').addEventListener('click', () => {
+function qpDeleteClip(idx) {
+  if (idx < 0 || idx >= recordedSegments.length) return;
+  const removed = recordedSegments.splice(idx, 1)[0];
+  if (removed && typeof removed.durationMs === 'number') {
+    segmentsTotalMs = Math.max(0, segmentsTotalMs - removed.durationMs);
+  }
+  // Si estábamos reproduciendo el clip eliminado, parar
+  if (_qpCurrentIdx === idx) {
+    const video = $('quickPreviewVideo');
+    if (video) { try { video.pause(); } catch (e) {} _qpRevokeObjectUrl(video); video.src = ''; }
+    _qpCurrentIdx = -1;
+    _qpPlaylistMode = false;
+  } else if (_qpCurrentIdx > idx) {
+    _qpCurrentIdx -= 1;
+  }
+  updateTimer();
+  renderQuickPreviewClips();
+  updateMultiSegmentUI();
+  // Si no quedan clips, cerrar el overlay
+  if (recordedSegments.length === 0) {
+    qpClose();
+  }
+}
+
+function qpOpen() {
+  if (recordedSegments.length === 0) return;
+  const overlay = $('quickPreview');
+  if (!overlay) return;
+  _qpCurrentIdx = -1;
+  _qpPlaylistMode = false;
+  overlay.style.display = 'flex';
+  const info = $('quickPreviewInfo');
+  if (info) info.textContent = `${recordedSegments.length} clip${recordedSegments.length === 1 ? '' : 's'} grabado${recordedSegments.length === 1 ? '' : 's'} · tap ▶ para ver`;
+  // Por defecto cargar el último clip pero NO reproducir auto
+  const last = recordedSegments[recordedSegments.length - 1];
+  const video = $('quickPreviewVideo');
+  if (video && last) {
+    _qpRevokeObjectUrl(video);
+    const url = URL.createObjectURL(last.blob);
+    video.src = url;
+    video.dataset.objectUrl = url;
+  }
+  renderQuickPreviewClips();
+}
+
+function qpClose() {
   const overlay = $('quickPreview');
   const video = $('quickPreviewVideo');
   if (video) {
     try { video.pause(); } catch (e) {}
-    if (video.dataset.objectUrl) {
-      try { URL.revokeObjectURL(video.dataset.objectUrl); } catch (e) {}
-      delete video.dataset.objectUrl;
-    }
+    _qpRevokeObjectUrl(video);
     video.src = '';
   }
+  _qpCurrentIdx = -1;
+  _qpPlaylistMode = false;
   if (overlay) overlay.style.display = 'none';
-  // Reanudar el draw loop por si rAF se durmió mientras veía el preview
   ensureDrawLoopAlive();
+}
+
+$('btnPreviewLast').addEventListener('click', qpOpen);
+$('quickPreviewClose').addEventListener('click', qpClose);
+$('quickPreviewPlayAll').addEventListener('click', () => {
+  if (recordedSegments.length === 0) return;
+  qpPlayClip(0, true);
 });
 
 $('btnPlayPause').addEventListener('click', tpPlayPause);

@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Task Manager — Grabar</title>
   <link rel="icon" type="image/png" href="../icon.png">
-  <link rel="stylesheet" href="recorder.css?v=31121">
+  <link rel="stylesheet" href="recorder.css?v=31122">
 </head>
 <body>
 
@@ -89,11 +89,18 @@
         <button class="iconbtn ghost" id="btnPlayPause" title="Play/Pausa autoscroll">▶</button>
       </div>
 
-      <!-- Overlay de preview rápido (último clip) sin salir de la grabación -->
+      <!-- Overlay de preview rápido — lista TODOS los clips con play/delete por clip -->
       <div class="quick-preview" id="quickPreview" style="display:none">
+        <div class="quick-preview-header">
+          <span id="quickPreviewTitle">Mis clips</span>
+          <button class="quick-preview-close" id="quickPreviewClose" title="Cerrar">✕</button>
+        </div>
         <video id="quickPreviewVideo" controls playsinline></video>
-        <button class="quick-preview-close" id="quickPreviewClose" title="Cerrar">✕ Cerrar</button>
         <div class="quick-preview-info" id="quickPreviewInfo"></div>
+        <div class="quick-preview-actions">
+          <button class="qp-action" id="quickPreviewPlayAll" title="Reproducir todos los clips seguidos">▶ Ver todo seguido</button>
+        </div>
+        <div class="quick-preview-clips" id="quickPreviewClips"></div>
       </div>
     </section>
 
@@ -148,6 +155,6 @@
     window.db = firebase.firestore();
     window.auth = firebase.auth();
   </script>
-  <script src="recorder.js?v=31121"></script>
+  <script src="recorder.js?v=31122"></script>
 </body>
 </html>
