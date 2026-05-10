@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.10': {
+    title: 'Workspace + usuario integrados al sidebar — barra superior eliminada',
+    features: [
+      '⬆ <strong>Top header eliminado</strong>: la barra horizontal con el workspace switcher (Prueba Cliente / Mi Agencia) y el menú de usuario (Jainier ADMIN) DESAPARECIÓ. Toda esa franja de arriba ahora es espacio libre para el contenido.',
+      '👈 <strong>Workspace switcher en el sidebar</strong>: el badge "P Prueba Cliente ▾" ahora vive arriba del menú de navegación en el sidebar izquierdo. Click para cambiar de workspace o crear uno nuevo, igual que antes.',
+      '👤 <strong>Menú de usuario al fondo del sidebar</strong>: avatar + nombre + rol abajo de Config/Nube. Click → dropdown con Modo PRO, Configuración, Cerrar sesión.',
+      '🌐 <strong>Explorer revertido al estilo Chrome</strong>: los controles ya no están en columna izquierda. Ahora son una barra horizontal compacta arriba (toolbar de navegación + bookmark bar con quick links + selectores y botón guardar). El webview vuelve a tener todo el ancho.',
+      '📐 <strong>Más espacio vertical</strong>: con el header eliminado, todas las pestañas (Tareas, Depósito, Explorer, etc) ganan ~50px de altura.'
+    ]
+  },
   '3.11.9': {
     title: 'Explorer multi-pestañas + sidebar lateral + ManyChat embebido',
     features: [
