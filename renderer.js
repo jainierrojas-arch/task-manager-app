@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.9.5': {
+    title: 'Fix definitivo Depósito vacío — filosofía permisiva por defecto',
+    features: [
+      '🔄 <strong>Nueva estrategia de filtro</strong>: el iframe del Depósito y Chat ahora usa 3 estados: <code>unknown</code> (permisivo), <code>default</code> (permisivo), <code>non-default</code> (estricto).',
+      '✅ <strong>Cuando hay duda, mostramos todo</strong>: si el iframe no recibe info clara del workspace, asume que sos default y muestra toda la data legacy. Mejor mostrar de más que esconder de menos.',
+      '🔍 <strong>Verificación async actualiza el estado</strong>: si el workspace no es realmente default, el iframe lo detecta y aplica filtro estricto. Mientras tanto ya tenés tu data visible.',
+      '✅ Después de instalar y reiniciar, el Depósito y Refs van a mostrar todo tu contenido histórico SI O SI.'
+    ]
+  },
   '3.9.4': {
     title: 'Fix definitivo Depósito vacío — auto-fix workspace default',
     features: [

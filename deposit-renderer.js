@@ -9,19 +9,31 @@ const _wsParams = (() => {
 })();
 const WS_ID = _wsParams.get('workspace') || null;
 const DEFAULT_WS_ID = _wsParams.get('defaultWs') || null;
-// _ws_actualIsDefault es mutable — se actualiza via async verify si la URL no traía la info
-let _ws_actualIsDefault = _wsParams.get('isDefault') === '1' || (DEFAULT_WS_ID && WS_ID === DEFAULT_WS_ID);
+// v3.9.5: estado de 3 valores. 'unknown' por defecto → permisivo (muestra legacy + WS_ID).
+// 'default' → permisivo. 'non-default' → estricto (solo WS_ID).
+// Filosofía: WORST case es mostrar data extra (UX confusa pero no data loss). NO mostrar
+// data correcta es mucho peor para el usuario.
+let _ws_status = 'unknown';
+if (_wsParams.get('isDefault') === '1' || (DEFAULT_WS_ID && WS_ID === DEFAULT_WS_ID)) {
+  _ws_status = 'default';
+} else if (DEFAULT_WS_ID && WS_ID !== DEFAULT_WS_ID) {
+  _ws_status = 'non-default';
+}
+console.log('[ws] iframe init: WS_ID=' + WS_ID + ' DEFAULT_WS_ID=' + DEFAULT_WS_ID + ' status=' + _ws_status);
 const WS_SCOPED_COLLECTIONS = new Set(['tasks', 'projects', 'depositEntries', 'depositCategories', 'scheduledPosts', 'chatMessages', 'captionTemplates', 'ideas']);
 function _belongsToWs(d) {
   if (!WS_ID) return true;
-  if (_ws_actualIsDefault) return !d.workspaceId || d.workspaceId === WS_ID;
-  return d.workspaceId === WS_ID;
+  if (_ws_status === 'non-default') return d.workspaceId === WS_ID;
+  // 'default' o 'unknown' → permisivo (muestra docs sin workspaceId también)
+  return !d.workspaceId || d.workspaceId === WS_ID;
 }
 
-// v3.9.4: verificación async — si el padre no nos pasó isDefault correcto via URL,
-// consultamos Firestore para deducirlo. Si éste WS es el default, re-renderizamos.
+// v3.9.5: verificación async — sólo confirma si somos default o no.
+// El estado por defecto es permisivo (muestra todo), así que esto solo
+// ajusta a 'non-default' si hace falta restringir.
 window._verifyWsIsDefault = async function(dbRef) {
-  if (!WS_ID || _ws_actualIsDefault) return;
+  if (!WS_ID) return;
+  if (_ws_status !== 'unknown') return; // ya conocemos el estado
   try {
     const snap = await dbRef.collection('workspaces').get();
     if (snap.empty) return;
@@ -39,8 +51,12 @@ window._verifyWsIsDefault = async function(dbRef) {
       defId = sorted[0] ? sorted[0].id : null;
     }
     if (defId === WS_ID) {
-      console.log('[ws] async verify: este WS es el default — re-renderizando');
-      _ws_actualIsDefault = true;
+      _ws_status = 'default';
+      console.log('[ws] verify: este WS es default');
+      // Ya estábamos permisivos, no hace falta re-renderizar
+    } else if (defId) {
+      _ws_status = 'non-default';
+      console.log('[ws] verify: este WS NO es default — re-renderizando con filtro estricto');
       try { if (typeof renderCategories === 'function') renderCategories(); } catch (e) {}
       try { if (typeof renderEntries === 'function') renderEntries(); } catch (e) {}
     }

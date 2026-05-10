@@ -5,16 +5,22 @@ const _wsParams = (() => {
 })();
 const WS_ID = _wsParams.get('workspace') || null;
 const DEFAULT_WS_ID = _wsParams.get('defaultWs') || null;
-let _ws_actualIsDefault = _wsParams.get('isDefault') === '1' || (DEFAULT_WS_ID && WS_ID === DEFAULT_WS_ID);
+// v3.9.5: 'unknown' por defecto = permisivo
+let _ws_status = 'unknown';
+if (_wsParams.get('isDefault') === '1' || (DEFAULT_WS_ID && WS_ID === DEFAULT_WS_ID)) {
+  _ws_status = 'default';
+} else if (DEFAULT_WS_ID && WS_ID !== DEFAULT_WS_ID) {
+  _ws_status = 'non-default';
+}
 const WS_SCOPED_COLLECTIONS = new Set(['tasks', 'projects', 'depositEntries', 'depositCategories', 'scheduledPosts', 'chatMessages', 'captionTemplates', 'ideas']);
 function _belongsToWs(d) {
   if (!WS_ID) return true;
-  if (_ws_actualIsDefault) return !d.workspaceId || d.workspaceId === WS_ID;
-  return d.workspaceId === WS_ID;
+  if (_ws_status === 'non-default') return d.workspaceId === WS_ID;
+  return !d.workspaceId || d.workspaceId === WS_ID;
 }
 
 window._verifyWsIsDefault = async function(dbRef) {
-  if (!WS_ID || _ws_actualIsDefault) return;
+  if (!WS_ID || _ws_status !== 'unknown') return;
   try {
     const snap = await dbRef.collection('workspaces').get();
     if (snap.empty) return;
@@ -31,8 +37,9 @@ window._verifyWsIsDefault = async function(dbRef) {
       });
       defId = sorted[0] ? sorted[0].id : null;
     }
-    if (defId === WS_ID) {
-      _ws_actualIsDefault = true;
+    if (defId === WS_ID) _ws_status = 'default';
+    else if (defId) {
+      _ws_status = 'non-default';
       try { if (typeof renderMessages === 'function') renderMessages(); } catch (e) {}
     }
   } catch (e) { /* ignore */ }
