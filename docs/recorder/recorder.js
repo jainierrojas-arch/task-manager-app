@@ -649,8 +649,10 @@ function tpPlayPause() {
 
 // ===== Cloudinary upload =====
 async function uploadAndCommit() {
-  // Sube cada clip a Cloudinary, después construye una URL de concat para que
-  // el video final sea UNO solo (Cloudinary genera el video unido on-demand).
+  // v3.11.29: simplificación. Cada clip se sube por separado a Cloudinary.
+  // Las URLs van a recordedVideos[] del entry — el desktop muestra todos los
+  // clips en la card del entry y en el modal de transcripción. Antes intenté
+  // armar URL de concat de Cloudinary pero no se hidrataba bien.
   const segments = recordedSegments.length > 0 ? recordedSegments : (recordedBlob ? [{ blob: recordedBlob, mime: recordedMime }] : []);
   if (segments.length === 0) return;
   show('screenUploading');
@@ -676,7 +678,6 @@ async function uploadAndCommit() {
       });
       uploaded.push({
         url: r.secure_url,
-        publicId: r.public_id,
         bytes: r.bytes || null,
         format: r.format || null,
         duration: r.duration || null,
@@ -685,41 +686,21 @@ async function uploadAndCommit() {
       });
     }
 
-    // v3.11.25: Cloudinary concat — construye una URL que une todos los clips
-    // en uno. Format: https://res.cloudinary.com/<cloud>/video/upload/
-    //   l_video:<clip2_id>,fl_splice/l_video:<clip3_id>,fl_splice/<clip1_id>.<ext>
-    // Cloudinary genera el video concatenado on-demand la primera vez que se accede.
-    function buildConcatUrl(items) {
-      if (items.length === 1) return items[0].url;
-      const base = items[0];
-      // Extraer el "cloud prefix" del URL del base clip
-      // URL: https://res.cloudinary.com/<cloud>/video/upload/<v123>/<publicId>.<ext>
-      const m = base.url.match(/^(https:\/\/res\.cloudinary\.com\/[^/]+\/video\/upload\/)(?:v\d+\/)?(.+?)\.([a-z0-9]+)(?:\?.*)?$/i);
-      if (!m) return base.url;
-      const prefix = m[1];
-      const baseExt = m[3];
-      // Escapar / en public_id como :
-      const escapeId = (id) => id.replace(/\//g, ':');
-      const layers = items.slice(1).map(it => `l_video:${escapeId(it.publicId)},fl_splice`).join('/');
-      return `${prefix}${layers}/${escapeId(base.publicId)}.${baseExt}`;
-    }
-
-    const concatUrl = buildConcatUrl(uploaded);
     const last = uploaded[uploaded.length - 1];
-
     const updateData = {
       status: 'completed',
-      videoUrl: concatUrl,
+      // Video "principal" para el modal de preview en el desktop = último clip
+      videoUrl: last.url,
       videoBytes: last.bytes,
       videoFormat: last.format,
-      videoDuration: null, // duration is unknown for the concat (Cloudinary generates on-demand)
+      videoDuration: last.duration,
       videoWidth: last.width,
       videoHeight: last.height,
       completedAt: firebase.firestore.FieldValue.serverTimestamp()
     };
-    // Guardar también las URLs individuales (por si se quieren bajar separadas)
+    // Si hay multi-clips, todas las URLs (incluida la principal) en allClipUrls
     if (uploaded.length > 1) {
-      updateData.individualClipUrls = uploaded.map(u => u.url);
+      updateData.allClipUrls = uploaded.map(u => u.url);
     }
     await sessionRef.update(updateData);
     show('screenDone');
@@ -1020,27 +1001,59 @@ $('btnSaveLocalAfter').addEventListener('click', () => saveLocally($('btnSaveLoc
 // vídeo" en la hoja de compartir del sistema. En Android Chrome y desktop,
 // el <a download> funciona y baja directo a la carpeta de descargas.
 async function saveLocally(btn) {
-  // v3.11.26: si hay multi-clip, guardar TODOS los clips por separado
+  // v3.11.29: en iOS los <a download> en cascada solo bajan UNO (browser bloquea
+  // popups). Usar Web Share API con TODOS los archivos en UN solo share — iOS
+  // abre el share sheet y permite "Guardar en Fotos" todo de una.
   const segments = recordedSegments.length > 0 ? recordedSegments : (recordedBlob ? [{ blob: recordedBlob, mime: recordedMime }] : []);
   if (segments.length === 0) {
     alert('No hay video para guardar');
     return;
   }
-  // Si hay multi-clip, llamar saveLocally por cada uno
-  if (segments.length > 1) {
-    if (btn) { btn.disabled = true; btn.textContent = '⏳ Guardando 1/' + segments.length + '...'; }
-    for (let i = 0; i < segments.length; i++) {
-      if (btn) btn.textContent = '⏳ Guardando ' + (i + 1) + '/' + segments.length + '...';
-      await saveSingleBlob(segments[i].blob, segments[i].mime, i + 1, segments.length);
-      // Pequeña pausa entre downloads para que el browser no se confunda
-      await new Promise(r => setTimeout(r, 400));
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const N = segments.length;
+  const files = segments.map((s, i) => {
+    const mime = s.mime || 'video/webm';
+    const ext = mime.includes('mp4') ? 'mp4' : 'webm';
+    const suffix = N > 1 ? `-clip${i + 1}of${N}` : '';
+    return new File([s.blob], `taskmgr-${stamp}${suffix}.${ext}`, { type: mime });
+  });
+
+  // 1) Web Share API con MÚLTIPLES archivos (iOS 15+, Android Chrome).
+  //    Esto es lo único que funciona confiablemente en iOS para guardar varios.
+  if (navigator.canShare && navigator.canShare({ files })) {
+    try {
+      if (btn) { btn.disabled = true; btn.textContent = '⏳ Abriendo...'; }
+      await navigator.share({ files, title: N > 1 ? `${N} clips grabados` : 'Video grabado', text: 'Videos del Task Manager Recorder' });
+      if (btn) { btn.textContent = '✓ Compartido'; setTimeout(() => { btn.textContent = '💾 Guardar'; btn.disabled = false; }, 1800); }
+      return;
+    } catch (e) {
+      if (e && e.name !== 'AbortError') console.warn('[saveLocally] share failed', e);
+      if (btn) { btn.disabled = false; btn.textContent = '💾 Guardar'; }
     }
-    if (btn) { btn.disabled = false; btn.textContent = '✓ ' + segments.length + ' clips guardados'; setTimeout(() => { btn.textContent = '💾 Guardar'; }, 2200); }
-    return;
   }
-  // Single clip — flujo original
-  const seg = segments[0];
-  await saveSingleBlob(seg.blob, seg.mime, 1, 1, btn);
+
+  // 2) Fallback Android/Desktop: <a download> en cascada con delay.
+  try {
+    if (btn) btn.disabled = true;
+    for (let i = 0; i < files.length; i++) {
+      if (btn) btn.textContent = '⏳ ' + (i + 1) + '/' + files.length;
+      const url = URL.createObjectURL(files[i]);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = files[i].name;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      await new Promise(r => setTimeout(r, 500));
+    }
+    if (btn) { btn.textContent = '✓ ' + N + ' descargado' + (N > 1 ? 's' : ''); setTimeout(() => { btn.textContent = '💾 Guardar'; btn.disabled = false; }, 1800); }
+  } catch (e) {
+    console.error('[saveLocally] download failed', e);
+    alert('No se pudo guardar: ' + e.message);
+    if (btn) { btn.disabled = false; btn.textContent = '💾 Guardar'; }
+  }
 }
 
 async function saveSingleBlob(blob, mime, idx, total, btn) {

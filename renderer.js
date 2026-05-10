@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.29': {
+    title: 'Recorder multi-clip: cada clip como video separado + save local con share múltiple',
+    features: [
+      '🎬 <strong>Cada clip como video separado en el entry</strong>: en v3.11.25 intenté unir los clips en uno solo vía Cloudinary concat URL, pero no se hidrataba bien y los videos no aparecían. Ahora subo cada clip por separado y los attacho como videos separados al entry — aparecen todos en la sección "🎥 Videos grabados" del entry, con su propio player + delete individual.',
+      '💾 <strong>Save local con Web Share múltiple</strong>: antes en iOS solo bajaba el último o el primer clip por limitación del browser. Ahora uso <code>navigator.share({ files: [...] })</code> con TODOS los archivos en un solo share — iOS abre el share sheet una vez con todos los videos y podés "Guardar en Fotos" todos de una.',
+      '🔢 <strong>Toast confirma cantidad</strong>: cuando termina el upload el toast dice "3 clips del celular agregados al entry" para que sepas cuántos se procesaron.'
+    ]
+  },
   '3.11.25': {
     title: 'Recorder multi-clip: video concat via Cloudinary + PWA + scanner QR + calidad bumped',
     features: [

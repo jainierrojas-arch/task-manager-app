@@ -2943,12 +2943,14 @@ async function openPhoneRecorderModal() {
     } else if (d.status === 'completed' && d.videoUrl) {
       document.getElementById('phoneRecStatusText').textContent = '✓ Video recibido! Asociando al entry...';
       try {
-        // v3.11.25: d.videoUrl ahora es la URL CONCAT (todos los clips unidos
-        // en un solo video vía Cloudinary). individualClipUrls son los originales
-        // por si el editor los quiere bajar separados.
-        await _attachRecordedVideoToEntry(d.entryId, d.videoUrl);
-        const clipCount = Array.isArray(d.individualClipUrls) ? d.individualClipUrls.length : 1;
-        try { showToast && showToast(`🎬 Video del celular agregado al entry${clipCount > 1 ? ` (${clipCount} clips unidos)` : ''}`); } catch (e) {}
+        // v3.11.29: si hay multi-clips (allClipUrls), attachar TODOS al entry
+        // como recordedVideos separados. Sino, solo el videoUrl.
+        const allUrls = Array.isArray(d.allClipUrls) && d.allClipUrls.length > 0 ? d.allClipUrls : [d.videoUrl];
+        for (const u of allUrls) {
+          await _attachRecordedVideoToEntry(d.entryId, u);
+        }
+        const clipCount = allUrls.length;
+        try { showToast && showToast(`🎬 ${clipCount > 1 ? clipCount + ' clips' : 'Video'} del celular agregado${clipCount > 1 ? 's' : ''} al entry`); } catch (e) {}
         _showPhoneRecResult(d.videoUrl);
       } catch (e) {
         console.error('[phoneRec] attach failed', e);
