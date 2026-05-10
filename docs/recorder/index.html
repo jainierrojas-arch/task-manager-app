@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Task Manager — Grabar</title>
   <link rel="icon" type="image/png" href="../icon.png">
-  <link rel="stylesheet" href="recorder.css">
+  <link rel="stylesheet" href="recorder.css?v=3107">
 </head>
 <body>
 
@@ -37,8 +37,13 @@
       <video id="hiddenCam" autoplay muted playsinline style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none"></video>
       <!-- Visible canvas — both preview AND recording source. captureStream() is continuous
            even if we swap which camera fills the hidden video, so we can record across
-           front/back camera switches. -->
-      <canvas id="captureCanvas"></canvas>
+           front/back camera switches. width/height attributes lock backing store to
+           1080x1920 (9:16 portrait) BEFORE JS runs, garantizando que el output siempre
+           sea vertical aunque la cámara devuelva 4:3 o landscape. -->
+      <canvas id="captureCanvas" width="1080" height="1920"></canvas>
+
+      <!-- Debug overlay — muestra dimensiones del source y output para diagnosticar -->
+      <div class="debug-overlay" id="debugOverlay" style="display:none"></div>
 
       <!-- Teleprompter overlay (draggable + resizable) -->
       <div class="teleprompter" id="teleprompter">
@@ -126,6 +131,6 @@
     window.db = firebase.firestore();
     window.auth = firebase.auth();
   </script>
-  <script src="recorder.js"></script>
+  <script src="recorder.js?v=3107"></script>
 </body>
 </html>

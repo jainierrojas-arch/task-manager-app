@@ -101,57 +101,130 @@ async function startCamera(facing) {
   try {
     // Liberar el video stream anterior (no tocar audio).
     if (videoStream) videoStream.getTracks().forEach(t => t.stop());
-    // Pedimos 9:16 portrait explícitamente. Si el browser lo respeta, el stream
-    // ya viene 9:16 y no hace falta recortar. Si no, el draw loop center-cropea
-    // al canvas 9:16 fijo (1080x1920) — output siempre 9:16 vertical.
-    videoStream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: facing === 'environment' ? { ideal: 'environment' } : { ideal: 'user' },
-        width: { ideal: 1080 },
-        height: { ideal: 1920 },
-        aspectRatio: { ideal: 9/16 }
-      }
-    });
+    const facingConstraint = facing === 'environment' ? { ideal: 'environment' } : { ideal: 'user' };
+    // Estrategia: pedimos 9:16 lo más fuerte posible. Si el celular no puede dar
+    // exactamente esa resolución, igual el canvas 1080x1920 fuerza el output 9:16.
+    try {
+      videoStream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: facingConstraint,
+          width: { ideal: 1080 },
+          height: { ideal: 1920 },
+          aspectRatio: { ideal: 0.5625 } // 9/16
+        }
+      });
+    } catch (e1) {
+      console.warn('[camera] strict 9:16 failed, fallback', e1.message);
+      videoStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: facingConstraint }
+      });
+    }
+
     const hidden = $('hiddenCam');
     hidden.srcObject = videoStream;
     try { await hidden.play(); } catch (e) { /* autoplay may already be running */ }
+
+    // applyConstraints: algunos browsers (Safari iOS) ignoran width/height en
+    // getUserMedia pero respetan applyConstraints sobre el track. Best effort.
+    const track = videoStream.getVideoTracks()[0];
+    if (track && track.applyConstraints) {
+      try {
+        await track.applyConstraints({
+          width: { ideal: 1080 },
+          height: { ideal: 1920 },
+          aspectRatio: { ideal: 0.5625 }
+        });
+      } catch (e) { console.warn('[camera] applyConstraints failed', e.message); }
+    }
+
     currentFacing = facing;
     const canvas = $('captureCanvas');
     if (canvas) canvas.classList.toggle('mirror', facing === 'user');
     setupDrawLoop();
+
+    // Debug overlay: confirma al usuario que el output es 9:16 y muestra
+    // qué le da realmente la cámara (para diagnosticar quejas futuras).
+    if (track) {
+      const s = track.getSettings();
+      showDebug(`📹 Cam: ${s.width || '?'}×${s.height || '?'} → 📦 Output: 1080×1920 (9:16)`);
+    }
   } catch (e) {
     console.error('[camera] failed', e);
     setError('No se pudo abrir la cámara', e.message + ' — Asegurate de dar permiso en el navegador y abrir desde HTTPS.');
   }
 }
 
+let _debugTimer = null;
+function showDebug(text) {
+  const el = $('debugOverlay');
+  if (!el) return;
+  el.textContent = text;
+  el.style.display = 'block';
+  if (_debugTimer) clearTimeout(_debugTimer);
+  _debugTimer = setTimeout(() => { el.style.display = 'none'; }, 5000);
+}
+
+// Canvas size constante para todo el ciclo de vida — se setea en HTML attribute
+// y aquí lo verificamos defensivamente. NO se cambia nunca, asegura output 9:16.
+const TARGET_W = 1080;
+const TARGET_H = 1920;
+
+function lockCanvas() {
+  const canvas = $('captureCanvas');
+  if (!canvas) return;
+  if (canvas.width !== TARGET_W) canvas.width = TARGET_W;
+  if (canvas.height !== TARGET_H) canvas.height = TARGET_H;
+}
+// Lockear ya — antes de que cualquier código toque el canvas.
+lockCanvas();
+
 function setupDrawLoop() {
   if (canvasReady) return; // ya corriendo
   const canvas = $('captureCanvas');
   const hidden = $('hiddenCam');
   if (!canvas || !hidden) return;
+  lockCanvas();
   const ctx = canvas.getContext('2d');
 
-  // Canvas FIJO en 9:16 portrait (1080x1920). El output siempre tiene este aspect
-  // ratio sin importar la orientación del celular. Si el celular devuelve un
-  // stream con otra proporción (ej: 4:3 default 1080x1440 o 16:9 landscape),
-  // el draw loop lo center-cropea para llenar el canvas — exactamente como
-  // hace Instagram Reels / TikTok.
-  if (canvas.width !== 1080 || canvas.height !== 1920) {
-    canvas.width = 1080;
-    canvas.height = 1920;
-  }
-
   function draw() {
+    // Defensive: si algo resizeó el canvas (no debería pasar pero por las dudas),
+    // lo restauramos. Importante: NO hacer esto durante recording — captureStream
+    // se rompe si la dim cambia mid-record.
+    if (!mediaRecorder || mediaRecorder.state === 'inactive') lockCanvas();
+
     const sw = hidden.videoWidth, sh = hidden.videoHeight;
     if (sw > 0 && sh > 0) {
       const dw = canvas.width, dh = canvas.height;
-      const scale = Math.max(dw / sw, dh / sh);
-      const w = sw * scale, h = sh * scale;
-      const x = (dw - w) / 2, y = (dh - h) / 2;
+
+      // Detectar si el source es landscape — eso pasa cuando iOS devuelve el
+      // stream rotado (ej: hold portrait pero pixel buffer 1280x720 horizontal).
+      // En ese caso, ROTAR 90° CW al dibujar para que la imagen aparezca portrait
+      // en el canvas portrait. Sin esta rotación, la cara saldría de costado.
+      const sourceLandscape = sw > sh;
+      const canvasPortrait = dw < dh;
+
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, dw, dh);
-      ctx.drawImage(hidden, x, y, w, h);
+
+      if (sourceLandscape && canvasPortrait) {
+        // Rotar el source 90° CW. Después de rotar, el "ancho" original se
+        // convierte en altura visual y viceversa, así que pasamos sh y sw
+        // intercambiados a la lógica de cover-fit.
+        ctx.save();
+        ctx.translate(dw / 2, dh / 2);
+        ctx.rotate(Math.PI / 2);
+        // Cover-fit con dimensiones efectivas intercambiadas:
+        const scale = Math.max(dh / sw, dw / sh);
+        const w = sw * scale, h = sh * scale;
+        ctx.drawImage(hidden, -w / 2, -h / 2, w, h);
+        ctx.restore();
+      } else {
+        // Source y canvas en la misma orientación — cover-fit normal.
+        const scale = Math.max(dw / sw, dh / sh);
+        const w = sw * scale, h = sh * scale;
+        const x = (dw - w) / 2, y = (dh - h) / 2;
+        ctx.drawImage(hidden, x, y, w, h);
+      }
     }
     drawHandle = requestAnimationFrame(draw);
   }
