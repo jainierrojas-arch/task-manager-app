@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.9.21': {
+    title: 'Botón "Ver transcripción" + Renombrar/Eliminar workspaces',
+    features: [
+      '🎤 <strong>Botón "Ver transcripción" en cada entry transcrita</strong>: una vez transcrita, en lugar de mostrar la transcripción inline (que era poco usable), aparece un botón turquesa que <strong>abre el modal completo</strong> con todas las opciones: variaciones, teleprompter, copiar, borrar.',
+      '✏ <strong>Renombrar workspaces</strong>: en el dropdown del workspace switcher, hover sobre cualquier workspace muestra un ✎ — click para renombrar. Útil si pusiste un nombre temporal.',
+      '🗑 <strong>Eliminar workspaces</strong>: junto al ✎ aparece un ✕ rojo (excepto en el workspace default). Click → confirma → se elimina. La data tagged con ese workspace queda en Firestore (no se borra) pero no será visible.',
+      '👤 <strong>Permisos</strong>: solo admins o el owner del workspace pueden editar/eliminar.'
+    ]
+  },
   '3.9.20': {
     title: 'Fix Recrear guion con Claude — handler de texto libre',
     features: [
@@ -7111,20 +7120,74 @@ function renderWorkspaceSwitcher() {
     listEl.innerHTML = '<div style="font-size:12px;color:var(--text-dim);padding:8px;text-align:center">No tenés workspaces — creá uno</div>';
     return;
   }
+  const isAdmin = currentUserData && currentUserData.role === 'admin';
   listEl.innerHTML = workspaces.map(w => {
     const isActive = w.id === currentWorkspaceId;
     const initial = (w.emoji || (w.name || 'W').charAt(0)).toUpperCase();
     const color = w.color || '#6c63ff';
+    const canManage = isAdmin || w.ownerId === currentUser.uid;
+    const editBtn = canManage
+      ? `<button class="ws-action-btn" data-ws-rename="${esc(w.id)}" title="Renombrar workspace">✎</button>`
+      : '';
+    const delBtn = (canManage && !w.isDefault && workspaces.length > 1)
+      ? `<button class="ws-action-btn" data-ws-delete="${esc(w.id)}" title="Eliminar workspace" style="color:var(--danger)">✕</button>`
+      : '';
     return `
-      <button class="workspace-dropdown-item ${isActive ? 'active' : ''}" data-ws-id="${esc(w.id)}">
-        <span class="ws-emoji" style="background:linear-gradient(135deg,${color},${color})">${esc(initial)}</span>
-        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(w.name || 'Workspace')}</span>
-        ${isActive ? '<span class="ws-check">✓</span>' : ''}
-      </button>`;
+      <div class="workspace-dropdown-row ${isActive ? 'active' : ''}" data-ws-row="${esc(w.id)}">
+        <button class="workspace-dropdown-item" data-ws-id="${esc(w.id)}">
+          <span class="ws-emoji" style="background:linear-gradient(135deg,${color},${color})">${esc(initial)}</span>
+          <span class="ws-name-text" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(w.name || 'Workspace')}</span>
+          ${isActive ? '<span class="ws-check">✓</span>' : ''}
+        </button>
+        <div class="ws-actions" style="display:flex;gap:2px">${editBtn}${delBtn}</div>
+      </div>`;
   }).join('');
   listEl.querySelectorAll('[data-ws-id]').forEach(item => {
     item.addEventListener('click', () => switchWorkspace(item.dataset.wsId));
   });
+  listEl.querySelectorAll('[data-ws-rename]').forEach(btn => {
+    btn.addEventListener('click', (e) => { e.stopPropagation(); renameWorkspace(btn.dataset.wsRename); });
+  });
+  listEl.querySelectorAll('[data-ws-delete]').forEach(btn => {
+    btn.addEventListener('click', (e) => { e.stopPropagation(); deleteWorkspace(btn.dataset.wsDelete); });
+  });
+}
+
+window.renameWorkspace = async function(workspaceId) {
+  const w = workspaces.find(x => x.id === workspaceId);
+  if (!w) return;
+  const newName = prompt('Nuevo nombre del workspace:', w.name || '');
+  if (newName === null) return; // cancelled
+  const trimmed = (newName || '').trim();
+  if (!trimmed || trimmed === w.name) return;
+  try {
+    const newEmoji = trimmed.charAt(0).toUpperCase();
+    await db.collection('workspaces').doc(workspaceId).update({
+      name: trimmed,
+      emoji: newEmoji
+    });
+  } catch (e) { alert('No se pudo renombrar: ' + e.message); }
+};
+
+window.deleteWorkspace = async function(workspaceId) {
+  const w = workspaces.find(x => x.id === workspaceId);
+  if (!w) return;
+  if (w.isDefault) { alert('El workspace por defecto no se puede eliminar.'); return; }
+  if (workspaces.length === 1) { alert('No podés eliminar el único workspace que queda.'); return; }
+  if (!confirm(`¿Eliminar el workspace "${w.name}"?\n\nLa data tagged con este workspace queda en Firestore pero no será visible. Esta acción no es reversible desde la UI.`)) return;
+  try {
+    await db.collection('workspaces').doc(workspaceId).delete();
+    if (currentWorkspaceId === workspaceId) {
+      // Cambiar al default o al primer disponible
+      const def = workspaces.find(x => x.isDefault) || workspaces.find(x => x.id !== workspaceId);
+      if (def) {
+        currentWorkspaceId = def.id;
+        try { localStorage.setItem('currentWorkspaceId', def.id); } catch (e) {}
+        applyWorkspaceFilter();
+        notifyIframesOfWorkspaceChange();
+      }
+    }
+  } catch (e) { alert('No se pudo eliminar: ' + e.message); }
 }
 
 function switchWorkspace(workspaceId) {

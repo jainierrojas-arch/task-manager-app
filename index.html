@@ -530,6 +530,30 @@
     .workspace-dropdown-item .ws-check {
       margin-left: auto; color: var(--accent); font-size: 14px;
     }
+    .workspace-dropdown-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 0 4px;
+      border-radius: 8px;
+      transition: background 0.12s;
+    }
+    .workspace-dropdown-row .workspace-dropdown-item { background: transparent; }
+    .workspace-dropdown-row:hover { background: var(--bg-hover); }
+    .workspace-dropdown-row.active { background: rgba(108, 99, 255, 0.12); }
+    .ws-action-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      font-size: 12px;
+      padding: 4px 6px;
+      border-radius: 4px;
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity 0.15s, background 0.15s;
+    }
+    .workspace-dropdown-row:hover .ws-action-btn { opacity: 0.8; }
+    .ws-action-btn:hover { background: var(--bg-card); opacity: 1; }
 
     /* Action buttons antiguos quedan ocultos (sidebar los reemplaza) */
     .user-bar-hidden-actions { display: none; }

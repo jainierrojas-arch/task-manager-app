@@ -1006,21 +1006,12 @@ function renderEntryHtml(e) {
   let transcriptHtml = '';
   if (hasAnyLink || transcript) {
     if (transcript) {
-      const variationsHtml = variations.length > 0
-        ? variations.map((v, i) => `
-            <div style="background:rgba(108,99,255,0.08);border-left:3px solid var(--accent);padding:8px 10px;border-radius:6px;margin-top:6px;font-size:11.5px;line-height:1.5;white-space:pre-wrap"><strong style="color:var(--accent);font-size:10px;letter-spacing:0.5px;text-transform:uppercase">Variación ${i + 1}</strong><br>${esc(v.text || '')}</div>`).join('')
-        : '';
+      // v3.9.21: en lugar de inline expandable, un solo botón que abre el modal
+      // completo con todas las opciones (variaciones, teleprompter, copiar, etc).
+      const variationLabel = variations.length > 0 ? ` · ${variations.length} variación(es)` : '';
       transcriptHtml = `
-        <div class="entry-transcript" style="margin-top:8px;background:rgba(78,205,196,0.06);border:1px solid rgba(78,205,196,0.25);border-radius:8px;padding:10px">
-          <details>
-            <summary style="cursor:pointer;font-size:11px;font-weight:700;color:#4ecdc4;letter-spacing:0.4px;text-transform:uppercase">🎤 Transcripción${variations.length > 0 ? ` &middot; ${variations.length} variación(es)` : ''}</summary>
-            <div style="font-size:11.5px;color:var(--text-primary);margin-top:8px;white-space:pre-wrap;line-height:1.5;max-height:200px;overflow-y:auto">${esc(transcript)}</div>
-            ${variationsHtml}
-            <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
-              <button class="btn btn-ghost btn-small" data-rewrite-script="${esc(e.id)}" title="Generar variación con Claude">✨ Recrear guion</button>
-              <button class="btn btn-ghost btn-small" data-retranscribe="${esc(e.id)}" title="Volver a transcribir desde cero">🔄 Re-transcribir</button>
-            </div>
-          </details>
+        <div class="entry-transcript" style="margin-top:8px">
+          <button class="btn btn-ghost btn-small" data-open-transcript="${esc(e.id)}" title="Abrir editor de transcripción con teleprompter y variaciones" style="background:rgba(78,205,196,0.12);color:#4ecdc4;border:1px solid rgba(78,205,196,0.35);font-weight:600">🎤 Ver transcripción${variationLabel}</button>
         </div>`;
     } else if (hasAnyLink) {
       transcriptHtml = `
@@ -2533,6 +2524,13 @@ document.addEventListener('click', (ev) => {
     ev.preventDefault();
     ev.stopPropagation();
     rewriteScriptForEntry(rewriteBtn.dataset.rewriteScript, rewriteBtn);
+    return;
+  }
+  const openTranscriptBtn = ev.target.closest('[data-open-transcript]');
+  if (openTranscriptBtn) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    openTranscriptionModal(openTranscriptBtn.dataset.openTranscript);
     return;
   }
 });
