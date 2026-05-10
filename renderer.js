@@ -75,6 +75,17 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.3': {
+    title: 'Depósito + Refs + Chat ahora son pestañas integradas',
+    features: [
+      '📦 <strong>Depósito como pestaña</strong>: ya no abre un panel lateral encima de la pantalla — ocupa toda la interfaz como cualquier otra pestaña. Más espacio para ver y gestionar las referencias.',
+      '📚 <strong>Banco de Referencias como pestaña</strong>: igual integrado. Click "Refs" en el sidebar y la app entera se transforma en el banco.',
+      '💬 <strong>Chat como pestaña</strong>: mismo tratamiento. Más espacio horizontal para ver mensajes y miembros del equipo.',
+      '⚡ <strong>Lazy-load</strong>: cada tab se inicializa solo cuando la abrís la primera vez (no todo al arranque).',
+      '🔄 <strong>Workspace switching</strong>: al cambiar de workspace, los iframes ya cargados se recargan automáticamente para mostrar la data del nuevo workspace.',
+      '🚀 <strong>Modo PRO sigue funcionando</strong>: el split horizontal Depósito + Chat sigue intacto para los que lo usan, ahora coexiste con las pestañas.'
+    ]
+  },
   '3.11.2': {
     title: 'Fix navegación: webview directo en el renderer principal (sin iframe)',
     features: [
@@ -1851,19 +1862,22 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
+// v3.11.3: depositBtn y referencesBtn ahora cambian de pestaña en vez de abrir
+// panel lateral. Otros entry points (modal "Modo PRO" split, etc) siguen usando
+// openSidePanel('deposit') directamente.
+function _goToTab(tabName) {
+  const t = document.querySelector(`.nav-tab[data-tab="${tabName}"]`);
+  if (t) t.click();
+}
+
 const depositBtn = document.getElementById('depositBtn');
 if (depositBtn) {
-  depositBtn.addEventListener('click', async () => {
-    // En lugar de abrir BrowserWindow separada, abrimos el panel lateral
-    openSidePanel('deposit');
-  });
+  depositBtn.addEventListener('click', async () => _goToTab('deposit'));
 }
 
 const referencesBtn = document.getElementById('referencesBtn');
 if (referencesBtn) {
-  referencesBtn.addEventListener('click', async () => {
-    openSidePanel('references');
-  });
+  referencesBtn.addEventListener('click', async () => _goToTab('references'));
 }
 
 // ===== FIRESTORE REAL-TIME =====
@@ -7093,6 +7107,29 @@ document.querySelectorAll('.nav-tab').forEach(tab => {
       // (no en iframe). Solo cargamos las categorías la primera vez.
       if (typeof window._explorerLoadCategories === 'function') window._explorerLoadCategories();
     }
+    // v3.11.3: lazy-load de iframes para Depósito / Refs / Chat — antes eran
+    // paneles laterales, ahora son tabs integrados.
+    if (currentTab === 'deposit') {
+      const ifr = document.getElementById('depositTabIframe');
+      if (ifr && ifr.dataset.loaded !== '1') {
+        ifr.src = buildIframeSrc('deposit.html');
+        ifr.dataset.loaded = '1';
+      }
+    }
+    if (currentTab === 'references') {
+      const ifr = document.getElementById('referencesTabIframe');
+      if (ifr && ifr.dataset.loaded !== '1') {
+        ifr.src = buildIframeSrc('deposit.html?category=referencias');
+        ifr.dataset.loaded = '1';
+      }
+    }
+    if (currentTab === 'chat') {
+      const ifr = document.getElementById('chatTabIframe');
+      if (ifr && ifr.dataset.loaded !== '1') {
+        ifr.src = buildIframeSrc('chat.html');
+        ifr.dataset.loaded = '1';
+      }
+    }
     syncSidebarActive();
   });
 });
@@ -7334,13 +7371,22 @@ function notifyIframesOfWorkspaceChange() {
     [iframe, iframe2].forEach(f => {
       if (!f || !f.dataset.currentKind) return;
       const kind = f.dataset.currentKind;
-      // Mapear kind a base src
       let baseSrc;
       if (kind === 'pro-deposit' || kind === 'deposit') baseSrc = 'deposit.html';
       else if (kind === 'pro-chat' || kind === 'chat') baseSrc = 'chat.html';
       else if (kind === 'references') baseSrc = 'deposit.html?category=referencias';
       else return;
       f.src = buildIframeSrc(baseSrc);
+    });
+    // v3.11.3: también recargar los iframes embebidos como tabs
+    const tabIframes = [
+      { id: 'depositTabIframe', baseSrc: 'deposit.html' },
+      { id: 'referencesTabIframe', baseSrc: 'deposit.html?category=referencias' },
+      { id: 'chatTabIframe', baseSrc: 'chat.html' }
+    ];
+    tabIframes.forEach(({ id, baseSrc }) => {
+      const f = document.getElementById(id);
+      if (f && f.dataset.loaded === '1') f.src = buildIframeSrc(baseSrc);
     });
   } catch (e) { /* ignore */ }
 }
@@ -8833,8 +8879,9 @@ function renderChatBadge() {
 
 if (el.chatToggleBtn) {
   el.chatToggleBtn.addEventListener('click', async () => {
-    // v3.7.3: en lugar de abrir BrowserWindow separada, abrimos panel lateral
-    openSidePanel('chat');
+    // v3.11.3: cambia a la pestaña Chat (en vez del panel lateral). El modo
+    // PRO split aún usa openSidePanel('chat') directamente.
+    _goToTab('chat');
   });
 }
 

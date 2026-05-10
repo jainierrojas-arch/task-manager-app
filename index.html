@@ -960,6 +960,16 @@
     #tabExplorer.active { display: flex !important; flex-direction: column; }
     #tabExplorer.active .explorer-shell { flex: 1; min-height: 0; }
 
+    /* Tabs embebidos con iframe full-height (v3.11.3) */
+    #tabDeposit.active, #tabReferences.active, #tabChat.active {
+      display: block !important;
+    }
+    #tabDeposit.active iframe, #tabReferences.active iframe, #tabChat.active iframe {
+      width: 100%;
+      height: 100%;
+      min-height: calc(100vh - 100px);
+    }
+
     /* Input area */
     .input-area {
       padding: 12px;
@@ -1976,12 +1986,12 @@
             <span class="sidebar-icon">✅</span>
             <span class="sidebar-label">Hechas</span>
           </button>
-          <button class="sidebar-item" data-go-button="depositBtn" title="Depósito de tareas pendientes">
+          <button class="sidebar-item" data-go-tab="deposit" title="Depósito de tareas pendientes">
             <span class="sidebar-icon">📦</span>
             <span class="sidebar-label">Depósito</span>
             <span class="sidebar-badge" id="sbBadgeDeposit" style="display:none">0</span>
           </button>
-          <button class="sidebar-item" data-go-button="referencesBtn" title="Banco de referencias">
+          <button class="sidebar-item" data-go-tab="references" title="Banco de referencias">
             <span class="sidebar-icon">📚</span>
             <span class="sidebar-label">Refs</span>
             <span class="sidebar-badge" id="sbBadgeRefs" style="display:none">0</span>
@@ -1990,7 +2000,7 @@
             <span class="sidebar-icon">🌐</span>
             <span class="sidebar-label">Explorar</span>
           </button>
-          <button class="sidebar-item" data-go-button="chatToggleBtn" title="Chat del equipo">
+          <button class="sidebar-item" data-go-tab="chat" title="Chat del equipo">
             <span class="sidebar-icon">💬</span>
             <span class="sidebar-label">Chat</span>
             <span class="sidebar-badge" id="sbBadgeChat" style="display:none">0</span>
@@ -2156,6 +2166,15 @@
       </button>
       <div class="nav-tab" data-tab="explorer" style="display:none">
         &#127760; Explorar
+      </div>
+      <div class="nav-tab" data-tab="deposit" style="display:none">
+        &#128230; Depósito
+      </div>
+      <div class="nav-tab" data-tab="references" style="display:none">
+        &#128218; Refs
+      </div>
+      <div class="nav-tab" data-tab="chat" style="display:none">
+        &#128172; Chat
       </div>
       <div class="nav-tab" data-tab="settings">
         &#9881; Config
@@ -2379,6 +2398,30 @@
             <button class="explorer-save-btn" id="explorerSaveToDeposit">💾 Guardar URL actual al Depósito</button>
           </div>
         </div>
+      </div>
+
+      <!-- Depósito (v3.11.3): integrado como tab en lugar de panel lateral -->
+      <div class="tab-content" id="tabDeposit" style="padding:0;height:100%">
+        <iframe id="depositTabIframe"
+                src="about:blank"
+                style="width:100%;height:100%;border:0;display:block;background:#0f1115"
+                allow="autoplay; encrypted-media; clipboard-read; clipboard-write"></iframe>
+      </div>
+
+      <!-- Refs / Banco de Referencias -->
+      <div class="tab-content" id="tabReferences" style="padding:0;height:100%">
+        <iframe id="referencesTabIframe"
+                src="about:blank"
+                style="width:100%;height:100%;border:0;display:block;background:#0f1115"
+                allow="autoplay; encrypted-media; clipboard-read; clipboard-write"></iframe>
+      </div>
+
+      <!-- Chat -->
+      <div class="tab-content" id="tabChat" style="padding:0;height:100%">
+        <iframe id="chatTabIframe"
+                src="about:blank"
+                style="width:100%;height:100%;border:0;display:block;background:#0f1115"
+                allow="autoplay; encrypted-media"></iframe>
       </div>
 
       <!-- Settings -->
