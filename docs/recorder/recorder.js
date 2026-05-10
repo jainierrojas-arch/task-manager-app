@@ -53,25 +53,36 @@ async function loadSession() {
   }
 }
 
-// ===== Camera (direct stream recording, v3.10.8) =====
-// SIN canvas. Grabamos el videoStream directo de la cámara. iOS Safari encode
-// el archivo con dimensiones y rotation metadata correctas — si tenés el
-// celular vertical, el archivo se reproduce 9:16. Si está horizontal, 16:9.
-// WYSIWYG real.
+// ===== Camera + canvas pipeline (v3.10.9) =====
+// iOS Safari getUserMedia siempre devuelve el pixel buffer en orientación del
+// sensor (landscape para front cam). MediaRecorder graba lo que recibe, sin
+// rotation metadata, así que grabar el stream directo da archivo landscape
+// aunque el usuario tenga el celular vertical.
 //
-// Trade-off: cambiar de cámara mid-recording NO produce un archivo único —
-// se cierra el clip actual y se inicia uno nuevo. Cada clip se sube por
-// separado al desktop (recordedSegments).
-let videoStream = null;     // cambia al swappear cámara
-let audioStream = null;     // persistente toda la sesión
+// Solución: pipeline canvas con rotación manual.
+// - <video id="hiddenCam"> recibe el stream landscape.
+// - <canvas 1080x1920> se redibuja con requestAnimationFrame, ROTANDO 90° CW
+//   si el source es landscape — así el frame queda portrait en el canvas.
+// - canvas.captureStream(30) feeds the MediaRecorder.
+// - Audio track persistente capturado UNA vez al inicio.
+// - Resultado: archivo 1080x1920 (9:16 portrait) garantizado.
+//
+// Camera swap mid-recording: stop + new segment con la otra cámara (igual que
+// v3.10.8 — múltiples clips suben separados al desktop).
+let videoStream = null;
+let audioStream = null;
 let audioTrack = null;
 let currentFacing = 'user';
 let mediaRecorder = null;
 let recordedChunks = [];
 let recordedBlob = null;
 let recordedMime = '';
-let recordedSegments = []; // [{ blob, mime }] — uno por cada clip antes de un swap
+let recordedSegments = [];
 let _pendingSwapAfterStop = null;
+let drawHandle = null;
+let canvasReady = false;
+const TARGET_W = 1080;
+const TARGET_H = 1920;
 
 function pickMime() {
   const candidates = [
@@ -111,53 +122,87 @@ async function _doStartCamera(facing) {
   try {
     if (videoStream) videoStream.getTracks().forEach(t => t.stop());
     const facingConstraint = facing === 'environment' ? { ideal: 'environment' } : { ideal: 'user' };
-    // Pedimos 1080x1920 9:16 portrait. iOS Safari va a darnos lo más cercano
-    // que pueda — para iPhones con front cam HD eso es exactamente 1080x1920
-    // o 720x1280 (ambos 9:16). Si el device responde con landscape pixel
-    // buffer, el <video> aplica la rotation metadata automáticamente para
-    // mostrar (y grabar) en orientación correcta.
     try {
       videoStream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: facingConstraint,
-          width: { ideal: 1080 },
-          height: { ideal: 1920 },
-          aspectRatio: { ideal: 0.5625 }
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
         }
       });
     } catch (e1) {
-      console.warn('[camera] 9:16 ideal failed, fallback', e1.message);
       videoStream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: facingConstraint }
       });
     }
 
-    const preview = $('preview');
-    preview.srcObject = videoStream;
-    try { await preview.play(); } catch (e) { /* may be playing already */ }
-
-    const track = videoStream.getVideoTracks()[0];
-    if (track && track.applyConstraints) {
-      try {
-        await track.applyConstraints({
-          width: { ideal: 1080 },
-          height: { ideal: 1920 },
-          aspectRatio: { ideal: 0.5625 }
-        });
-      } catch (e) { /* best effort */ }
-    }
+    const hidden = $('hiddenCam');
+    hidden.srcObject = videoStream;
+    try { await hidden.play(); } catch (e) {}
 
     currentFacing = facing;
-    preview.classList.toggle('mirror', facing === 'user');
+    const canvas = $('captureCanvas');
+    if (canvas) canvas.classList.toggle('mirror', facing === 'user');
+    setupDrawLoop();
 
+    const track = videoStream.getVideoTracks()[0];
     if (track) {
       const s = track.getSettings();
-      showDebug(`📹 Cam: ${s.width || '?'}×${s.height || '?'} (grabación directa)`);
+      const orient = (s.width || 0) > (s.height || 0) ? 'landscape (rotando 90° CW)' : 'portrait';
+      showDebug(`📹 Cam: ${s.width || '?'}×${s.height || '?'} ${orient} → 📦 1080×1920 (9:16)`);
     }
   } catch (e) {
     console.error('[camera] failed', e);
     setError('No se pudo abrir la cámara', e.message + ' — Asegurate de dar permiso en el navegador y abrir desde HTTPS.');
   }
+}
+
+function lockCanvas() {
+  const canvas = $('captureCanvas');
+  if (!canvas) return;
+  if (canvas.width !== TARGET_W) canvas.width = TARGET_W;
+  if (canvas.height !== TARGET_H) canvas.height = TARGET_H;
+}
+lockCanvas();
+
+function setupDrawLoop() {
+  if (canvasReady) return;
+  const canvas = $('captureCanvas');
+  const hidden = $('hiddenCam');
+  if (!canvas || !hidden) return;
+  lockCanvas();
+  const ctx = canvas.getContext('2d');
+
+  function draw() {
+    if (!mediaRecorder || mediaRecorder.state === 'inactive') lockCanvas();
+    const sw = hidden.videoWidth, sh = hidden.videoHeight;
+    if (sw > 0 && sh > 0) {
+      const dw = canvas.width, dh = canvas.height;
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, dw, dh);
+      const sourceLandscape = sw > sh;
+      const canvasPortrait = dw < dh;
+      if (sourceLandscape && canvasPortrait) {
+        // ROTAR 90° CW. Source landscape (1920x1080) llena perfecto canvas
+        // portrait (1080x1920) después de rotar.
+        ctx.save();
+        ctx.translate(dw / 2, dh / 2);
+        ctx.rotate(Math.PI / 2);
+        const scale = Math.max(dh / sw, dw / sh);
+        const w = sw * scale, h = sh * scale;
+        ctx.drawImage(hidden, -w / 2, -h / 2, w, h);
+        ctx.restore();
+      } else {
+        const scale = Math.max(dw / sw, dh / sh);
+        const w = sw * scale, h = sh * scale;
+        const x = (dw - w) / 2, y = (dh - h) / 2;
+        ctx.drawImage(hidden, x, y, w, h);
+      }
+    }
+    drawHandle = requestAnimationFrame(draw);
+  }
+  drawHandle = requestAnimationFrame(draw);
+  canvasReady = true;
 }
 
 let _debugTimer = null;
@@ -228,24 +273,33 @@ let recPausedAccum = 0; // ms acumulados en pausa para que el timer siga siendo 
 let recPausedAt = 0;
 
 function startRecording() {
-  if (!videoStream || !audioTrack) return;
+  const canvas = $('captureCanvas');
+  if (!canvas || !audioTrack) return;
   recordedChunks = [];
   recPausedAccum = 0;
   recPausedAt = 0;
-  // Si NO hay swap pendiente, este es un nuevo recording: limpiar segmentos previos.
   if (!_pendingSwapAfterStop) recordedSegments = [];
   const mime = pickMime();
   recordedMime = mime || 'video/webm';
 
-  // Combinar la pista de video DEL STREAM DIRECTO de la cámara con el audio
-  // track persistente. iOS encode con dimensiones nativas + rotation metadata.
-  const vTrack = videoStream.getVideoTracks()[0];
-  if (vTrack && vTrack.getSettings) {
-    const s = vTrack.getSettings();
-    showDebug(`🎬 Grabando ${s.width || '?'}×${s.height || '?'}`);
+  // Forzar dimensiones del canvas justo antes — iOS Safari puede evaluar
+  // tamaño en este momento.
+  if (canvas.width !== TARGET_W || canvas.height !== TARGET_H) {
+    canvas.width = TARGET_W;
+    canvas.height = TARGET_H;
+  }
+  // captureStream del canvas — track de video 1080×1920 que MediaRecorder graba.
+  const canvasStream = canvas.captureStream(30);
+  const cTrack = canvasStream.getVideoTracks()[0];
+  if (cTrack && cTrack.applyConstraints) {
+    cTrack.applyConstraints({ width: { ideal: 1080 }, height: { ideal: 1920 } }).catch(() => {});
+  }
+  if (cTrack && cTrack.getSettings) {
+    const cs = cTrack.getSettings();
+    showDebug(`🎬 Grabando track: ${cs.width || '?'}×${cs.height || '?'}`);
   }
   const combined = new MediaStream();
-  videoStream.getVideoTracks().forEach(t => combined.addTrack(t));
+  canvasStream.getVideoTracks().forEach(t => combined.addTrack(t));
   combined.addTrack(audioTrack);
   try {
     mediaRecorder = new MediaRecorder(combined, mime ? { mimeType: mime, videoBitsPerSecond: 6_000_000 } : { videoBitsPerSecond: 6_000_000 });
@@ -325,14 +379,27 @@ function showPreview() {
   v.src = url;
   v.load();
   show('screenPreview');
-  // Diagnóstico: medir dimensiones reales del archivo grabado
-  v.addEventListener('loadedmetadata', () => {
+  const banner = $('dimBanner');
+  if (banner) banner.textContent = '⏳ Midiendo dimensiones del archivo...';
+  // Diagnóstico: medir dimensiones reales del archivo grabado.
+  // Fallbacks porque loadedmetadata a veces no dispara en iOS Safari.
+  let measured = false;
+  const measure = () => {
+    if (measured) return;
     const w = v.videoWidth, h = v.videoHeight;
+    if (!w || !h) return;
+    measured = true;
     const ratio = (w / h).toFixed(3);
-    const isPortrait916 = w === 1080 && h === 1920;
+    const isPortrait916 = Math.abs((w / h) - 0.5625) < 0.01;
     console.log(`[rec] file dimensions: ${w}x${h} ratio=${ratio}`);
-    showDebug(`📁 Archivo: ${w}×${h} ${isPortrait916 ? '✓ 9:16' : '⚠ NO 9:16'}`);
-  }, { once: true });
+    if (banner) {
+      banner.textContent = `📁 Archivo: ${w}×${h} ${isPortrait916 ? '✓ 9:16' : '⚠ NO 9:16 (' + ratio + ')'}`;
+      banner.classList.toggle('bad', !isPortrait916);
+    }
+  };
+  v.addEventListener('loadedmetadata', measure);
+  v.addEventListener('canplay', measure);
+  setTimeout(measure, 1500);
 }
 
 // ===== Teleprompter auto-scroll =====

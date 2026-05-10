@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Task Manager — Grabar</title>
   <link rel="icon" type="image/png" href="../icon.png">
-  <link rel="stylesheet" href="recorder.css?v=31010">
+  <link rel="stylesheet" href="recorder.css?v=31011">
 </head>
 <body>
 
@@ -33,11 +33,13 @@
 
     <!-- Pantalla 3: lista para grabar -->
     <section class="screen screen-record" id="screenRecord">
-      <!-- Video element directo (sin canvas) — la grabación es del videoStream
-           tal cual lo da el celular. iOS Safari encode el archivo con la
-           rotation metadata correcta, así que se reproduce 9:16 si grabás
-           portrait, 16:9 si grabás landscape. WYSIWYG real. -->
-      <video id="preview" autoplay muted playsinline></video>
+      <!-- Hidden video element — recibe el stream landscape de iOS y se dibuja
+           rotado en el canvas. El display visible es el canvas. -->
+      <video id="hiddenCam" autoplay muted playsinline style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none"></video>
+      <!-- Canvas 1080×1920 (9:16) — preview Y fuente del MediaRecorder. El
+           draw loop rota 90° si iOS da landscape, garantizando 9:16 portrait.
+           width/height attributes locked desde HTML antes de JS. -->
+      <canvas id="captureCanvas" width="1080" height="1920"></canvas>
 
       <!-- Debug overlay — muestra dimensiones del source y output para diagnosticar -->
       <div class="debug-overlay" id="debugOverlay" style="display:none"></div>
@@ -82,6 +84,8 @@
     <!-- Pantalla 4: previsualización + subir -->
     <section class="screen screen-preview" id="screenPreview">
       <video id="recordedPreview" controls playsinline></video>
+      <!-- Banner persistente con las dimensiones REALES del archivo grabado -->
+      <div class="dim-banner" id="dimBanner"></div>
       <div class="preview-controls">
         <button class="btn btn-ghost" id="btnRetake">🔄 Repetir</button>
         <button class="btn btn-ghost" id="btnSaveLocal">💾 Guardar</button>
@@ -128,6 +132,6 @@
     window.db = firebase.firestore();
     window.auth = firebase.auth();
   </script>
-  <script src="recorder.js?v=31010"></script>
+  <script src="recorder.js?v=31011"></script>
 </body>
 </html>

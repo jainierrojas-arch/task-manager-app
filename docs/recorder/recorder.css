@@ -78,21 +78,40 @@ html, body {
   background: #000;
 }
 
-#preview {
+#captureCanvas {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-  /* contain = WYSIWYG: ves exactamente el frame que se va a guardar.
-     Si tu pantalla no tiene la misma proporción que el video, hay letterbox
-     negro. Mejor que mentir con cover (que rellenaría pero recortaría). */
-  object-fit: contain;
+  /* cover = el canvas portrait 9:16 llena toda la pantalla del celular,
+     recortando arriba/abajo si la pantalla es 9:19.5. La pantalla queda
+     llena sin barras negras. El archivo final sigue siendo 9:16 completo
+     porque la captureStream se hace de los pixeles del canvas, no del
+     display. */
+  object-fit: cover;
   background: #000;
   display: block;
 }
-/* Mirror solo en preview (CSS), no afecta los pixeles grabados — el archivo
-   queda sin espejar (igual que la cámara nativa del celular). */
-#preview.mirror { transform: scaleX(-1); }
+#captureCanvas.mirror { transform: scaleX(-1); }
+
+/* Banner permanente con dimensiones reales del archivo grabado — NO se va
+   automáticamente, se queda hasta que el usuario sale de la pantalla. */
+.dim-banner {
+  position: absolute;
+  top: max(14px, env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.85);
+  color: #fff;
+  font-size: 12px;
+  font-family: monospace;
+  font-weight: 700;
+  padding: 8px 14px;
+  border-radius: 10px;
+  z-index: 8;
+  border: 2px solid #4ecdc4;
+}
+.dim-banner.bad { border-color: #ff6b6b; color: #ff8787; }
 
 .teleprompter {
   position: absolute;
