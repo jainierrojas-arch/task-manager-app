@@ -1008,8 +1008,24 @@
           <button class="btn btn-ghost btn-small" id="transcriptionRetry" title="Re-transcribir desde cero">🔄</button>
         </div>
         <div class="transcript-text" id="transcriptionOriginalText"></div>
+
+        <div style="margin-top:14px;padding:12px;background:rgba(108,99,255,0.06);border:1px solid rgba(108,99,255,0.2);border-radius:8px">
+          <div style="font-size:11px;font-weight:700;color:var(--accent);letter-spacing:0.4px;text-transform:uppercase;margin-bottom:8px">✨ Generar variación con Claude</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+            <div style="flex:1;min-width:160px">
+              <label style="display:block;font-size:10px;color:var(--text-secondary);margin-bottom:4px;font-weight:600">Tono</label>
+              <select id="variationTono" style="width:100%;padding:8px 10px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);font-family:inherit;font-size:12px"></select>
+            </div>
+            <div style="flex:1;min-width:160px">
+              <label style="display:block;font-size:10px;color:var(--text-secondary);margin-bottom:4px;font-weight:600">Estilo / hook</label>
+              <select id="variationEstilo" style="width:100%;padding:8px 10px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);font-family:inherit;font-size:12px"></select>
+            </div>
+          </div>
+          <div id="variationDesc" style="font-size:10.5px;color:var(--text-dim);margin-bottom:8px;line-height:1.5;font-style:italic"></div>
+          <button class="btn btn-primary" id="transcriptionGenerate" style="width:100%">✨ Generar variación</button>
+        </div>
+
         <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap">
-          <button class="btn btn-primary btn-small" id="transcriptionGenerate">✨ Generar variación con Claude</button>
           <button class="btn btn-ghost btn-small" id="transcriptionTeleprompter" data-source="original">🎬 Teleprompter (original)</button>
           <button class="btn btn-ghost btn-small" id="transcriptionCopyOriginal">📋 Copiar</button>
         </div>

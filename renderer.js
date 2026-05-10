@@ -75,6 +75,18 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.9.22': {
+    title: 'Variación con Tono + Estilo + Eliminar workspace fix',
+    features: [
+      '🎨 <strong>Selectores de Tono y Estilo</strong> al generar variaciones: dentro del modal de transcripción ahora hay 2 dropdowns para elegir el perfil de la nueva versión.',
+      '🎵 <strong>8 tonos disponibles</strong>: Educativo, Energético, Motivacional, Storytelling, Controversial, Casual, Dramático, Neutro.',
+      '🎯 <strong>8 estilos / hooks</strong>: Hook + dato impactante, Pregunta provocadora, Lista de pasos, Mito vs realidad, Antes/Después, Caso real, Tutorial directo, Comparativa.',
+      '🪝 <strong>Hook viral obligatorio</strong>: el prompt fuerza a Claude a empezar con un gancho de retención de audiencia (los primeros 3s deciden), mantener la idea, cambiar palabras y ángulo, y cerrar con cliffhanger/CTA.',
+      '🏷 <strong>Cada variación queda taggeada</strong> con su tono y estilo — visible en la card de la variación.',
+      '🗑 <strong>Fix Eliminar workspace</strong>: botones ✎/✕ ahora visibles siempre (antes solo al hover). Firestore Rules actualizadas: el owner también puede eliminar su workspace (antes solo admin).',
+      '⚠️ <strong>Importante</strong>: si actualizaste las Firestore Rules antes, andá a Firebase Console → Firestore → Reglas y pegá las nuevas desde firestore.rules en el repo.'
+    ]
+  },
   '3.9.21': {
     title: 'Botón "Ver transcripción" + Renombrar/Eliminar workspaces',
     features: [

@@ -2374,17 +2374,61 @@ async function transcribeEntry(entryId, btn) {
   }
 }
 
-async function rewriteScriptForEntry(entryId, btn) {
+// v3.9.22: Tonos y estilos predefinidos para guiar la variación.
+// Todos los guiones DEBEN empezar con hook viral de retención, mantener la idea
+// pero presentarla distinto. Estos profiles ajustan tono y estructura.
+const SCRIPT_TONOS = {
+  educativo:     { label: 'Educativo',     desc: 'Tono claro, didáctico, como un profe explicando' },
+  energetico:    { label: 'Energético',    desc: 'Ritmo rápido, frases cortas, mucha energía' },
+  motivacional:  { label: 'Motivacional',  desc: 'Inspirador, llamado a la acción, transforma al espectador' },
+  storytelling:  { label: 'Storytelling',  desc: 'Narrativo con conflicto y resolución, contás una historia' },
+  controversial: { label: 'Controversial', desc: 'Provoca, cuestiona lo obvio, opina fuerte' },
+  casual:        { label: 'Casual',        desc: 'Como charla con un amigo cercano, lenguaje coloquial' },
+  dramatico:     { label: 'Dramático',     desc: 'Suspenso, tensión, pausas estratégicas' },
+  neutro:        { label: 'Neutro',        desc: 'Tono balanceado, ni emocional ni frío' }
+};
+const SCRIPT_ESTILOS = {
+  hook_dato:     { label: 'Hook + dato impactante', desc: 'Empezá con un dato/cifra que sorprenda' },
+  pregunta:      { label: 'Pregunta provocadora',   desc: 'Empezá con una pregunta que active al espectador' },
+  pasos:         { label: 'Lista de pasos',         desc: 'Estructura "1, 2, 3..." con cada paso accionable' },
+  mito_realidad: { label: 'Mito vs realidad',       desc: 'Desmentí algo que la mayoría cree erróneamente' },
+  antes_despues: { label: 'Antes / Después',        desc: 'Contraste de transformación, narrativa de cambio' },
+  caso_real:     { label: 'Caso real',              desc: 'Ejemplo concreto narrado, alguien específico' },
+  tutorial:      { label: 'Tutorial directo',       desc: 'Cómo hacer X en pocos pasos, sin rodeos' },
+  comparativa:   { label: 'Comparativa',            desc: 'Comparás 2 opciones / 2 enfoques / 2 resultados' }
+};
+
+async function rewriteScriptForEntry(entryId, btn, opts) {
   const entry = entries.find(e => e.id === entryId);
   if (!entry || !entry.transcription) { alert('Primero transcribí el video.'); return; }
   if (!window.api || !window.api.generateWithClaude) {
     _setTranscriptionStatus('❌ generateWithClaude no disponible. Update la app.', 'error');
     return;
   }
+  const tonoKey = (opts && opts.tono) || 'educativo';
+  const estiloKey = (opts && opts.estilo) || 'hook_dato';
+  const tono = SCRIPT_TONOS[tonoKey] || SCRIPT_TONOS.educativo;
+  const estilo = SCRIPT_ESTILOS[estiloKey] || SCRIPT_ESTILOS.hook_dato;
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Generando...'; }
-  _setTranscriptionStatus('⏳ Claude generando variación...');
+  _setTranscriptionStatus(`⏳ Claude generando variación (${tono.label} · ${estilo.label})...`);
   try {
-    const prompt = 'Recreá el siguiente guion de video manteniendo la misma idea/tema y la misma duración aproximada, pero con un ángulo, hook y palabras DISTINTAS. Que no sea idéntico — quiero una variación creativa que vuelva a contar lo mismo de manera fresca, lista para grabar. Devolvé SOLO el guion nuevo, sin explicaciones ni encabezados.\n\nGuion original:\n\n' + entry.transcription;
+    const prompt = `Recreá el siguiente guion de video.
+
+REGLAS OBLIGATORIAS:
+1. EMPEZÁ con un HOOK VIRAL de retención de audiencia — los primeros 3 segundos definen si la persona se queda o pasa de largo. Sé brutal: dato impactante, pregunta provocadora, frase polémica, o lo que aplique según el estilo.
+2. Mantené la MISMA idea/tema central y la duración aproximada (similar cantidad de palabras).
+3. Cambiá las palabras, el ángulo, el orden — que NO sea reconocible como copia del original.
+4. Cerralo con un cliffhanger, CTA o pregunta que mantenga al espectador hasta el final.
+5. Escribilo en español neutro, listo para grabar.
+
+PERFIL DE ESTA VARIACIÓN:
+- Tono: ${tono.label} — ${tono.desc}
+- Estilo: ${estilo.label} — ${estilo.desc}
+
+DEVOLVÉ SOLO el guion nuevo, sin explicaciones, sin encabezados, sin comillas. Texto plano listo para leer en cámara.
+
+GUION ORIGINAL:
+${entry.transcription}`;
     const result = await window.api.generateWithClaude({
       prompt: prompt,
       model: 'claude-sonnet-4-6',
@@ -2399,6 +2443,10 @@ async function rewriteScriptForEntry(entryId, btn) {
     const variations = Array.isArray(currentEntry.scriptVariations) ? currentEntry.scriptVariations : [];
     variations.push({
       text: newText,
+      tono: tonoKey,
+      estilo: estiloKey,
+      tonoLabel: tono.label,
+      estiloLabel: estilo.label,
       createdAt: new Date().toISOString(),
       createdBy: (window.parent && window.parent.currentUser) ? window.parent.currentUser.uid : null
     });
@@ -2470,10 +2518,16 @@ function _renderTranscriptionModalContent(entryId) {
     list.innerHTML = '<div style="font-size:11px;font-weight:700;color:var(--accent);letter-spacing:0.5px;text-transform:uppercase;margin:14px 0 8px">✨ Variaciones generadas</div>' +
       variations.map((v, i) => {
         const safeText = esc(v.text || '');
+        const tagBits = [];
+        if (v.tonoLabel) tagBits.push(esc(v.tonoLabel));
+        if (v.estiloLabel) tagBits.push(esc(v.estiloLabel));
+        const tags = tagBits.length > 0
+          ? `<span style="font-size:9px;color:var(--text-secondary);background:var(--bg-card);padding:2px 6px;border-radius:4px;margin-left:6px;font-weight:500">${tagBits.join(' · ')}</span>`
+          : '';
         return `
           <div class="transcript-variation">
             <div class="transcript-variation-header">
-              <span>Variación ${i + 1}</span>
+              <span>Variación ${i + 1}${tags}</span>
               <div style="display:flex;gap:6px">
                 <button class="btn btn-ghost btn-small" data-tp-variation="${i}" style="padding:2px 8px;font-size:10px">🎬 Teleprompter</button>
                 <button class="btn btn-ghost btn-small" data-copy-variation="${i}" style="padding:2px 8px;font-size:10px">📋 Copiar</button>
@@ -2552,10 +2606,40 @@ function _wireupTranscriptionAndTeleprompter() {
     if (entry) entry.transcription = null;
     transcribeEntry(_currentTranscriptionEntryId, { dataset: { action: 'retry' } });
   });
+  // v3.9.22: poblar selects de Tono y Estilo + descripción dinámica
+  const tonoSelect = document.getElementById('variationTono');
+  const estiloSelect = document.getElementById('variationEstilo');
+  const descEl = document.getElementById('variationDesc');
+  if (tonoSelect) {
+    tonoSelect.innerHTML = Object.entries(SCRIPT_TONOS).map(([k, v]) =>
+      `<option value="${k}">${v.label}</option>`
+    ).join('');
+    tonoSelect.value = 'educativo';
+  }
+  if (estiloSelect) {
+    estiloSelect.innerHTML = Object.entries(SCRIPT_ESTILOS).map(([k, v]) =>
+      `<option value="${k}">${v.label}</option>`
+    ).join('');
+    estiloSelect.value = 'hook_dato';
+  }
+  function updateVariationDesc() {
+    if (!descEl || !tonoSelect || !estiloSelect) return;
+    const t = SCRIPT_TONOS[tonoSelect.value];
+    const e = SCRIPT_ESTILOS[estiloSelect.value];
+    if (t && e) descEl.textContent = `→ ${t.desc} · ${e.desc}`;
+  }
+  if (tonoSelect) tonoSelect.addEventListener('change', updateVariationDesc);
+  if (estiloSelect) estiloSelect.addEventListener('change', updateVariationDesc);
+  updateVariationDesc();
+
   const generate = document.getElementById('transcriptionGenerate');
   if (generate) generate.addEventListener('click', () => {
     if (!_currentTranscriptionEntryId) return;
-    rewriteScriptForEntry(_currentTranscriptionEntryId, generate);
+    const opts = {
+      tono: tonoSelect ? tonoSelect.value : 'educativo',
+      estilo: estiloSelect ? estiloSelect.value : 'hook_dato'
+    };
+    rewriteScriptForEntry(_currentTranscriptionEntryId, generate, opts);
   });
   const tpBtn = document.getElementById('transcriptionTeleprompter');
   if (tpBtn) tpBtn.addEventListener('click', () => {
