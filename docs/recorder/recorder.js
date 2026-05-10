@@ -111,6 +111,16 @@ async function init() {
   $('tpText').textContent = session.scriptText || '(Sin guion. Improvisá!)';
   await startCamera('user');
   show('screenRecord');
+  // Avisar al desktop que el celular está conectado y listo
+  reportStatus('connected');
+}
+
+// Reporta cambios de estado al doc de sesión para que el desktop muestre feedback
+// en tiempo real. Best-effort: si falla por reglas o red, no bloquea el flujo.
+async function reportStatus(status) {
+  if (!sessionRef) return;
+  try { await sessionRef.update({ status }); }
+  catch (e) { console.warn('[reportStatus] failed', status, e.message); }
 }
 
 // ===== Recording =====
@@ -149,6 +159,7 @@ function startRecording() {
   $('timer').classList.add('active');
   if (timerHandle) clearInterval(timerHandle);
   timerHandle = setInterval(updateTimer, 250);
+  reportStatus('recording');
 }
 
 function stopRecording() {
@@ -168,20 +179,48 @@ function showPreview() {
 }
 
 // ===== Teleprompter auto-scroll =====
-let tpSpeed = 0; // px/frame (0 = manual)
+// Slider 0..50 → px/frame en una curva suave. 0 = parado (botón Play arranca en 0.3).
+// Mapping: sliderValue/50 elevado a 1.5 * 2 = max ~2px/frame ≈ scroll lento natural.
+let tpSpeed = 0;
 let tpPlaying = false;
 let tpRaf = null;
+let tpAccum = 0;
 function tpStep() {
   if (!tpPlaying) return;
   const wrap = $('tpText');
-  if (wrap) wrap.scrollTop += tpSpeed;
+  if (wrap) {
+    tpAccum += tpSpeed;
+    if (tpAccum >= 1) {
+      const pixels = Math.floor(tpAccum);
+      wrap.scrollTop += pixels;
+      tpAccum -= pixels;
+    }
+  }
   tpRaf = requestAnimationFrame(tpStep);
+}
+function setSpeedFromSlider(rawValue) {
+  // raw 0..50 → speed 0..2.5 px/frame, con curva suave para que los valores bajos sean MUY lentos
+  const v = Math.max(0, Math.min(50, parseInt(rawValue, 10) || 0));
+  if (v === 0) tpSpeed = 0;
+  else tpSpeed = Math.pow(v / 50, 1.4) * 2.5;
+  const lbl = $('speedLabel');
+  if (lbl) {
+    if (v === 0) lbl.textContent = '⏸ 0';
+    else lbl.textContent = (tpPlaying ? '▶ ' : '⏸ ') + tpSpeed.toFixed(2);
+  }
 }
 function tpPlayPause() {
   tpPlaying = !tpPlaying;
   $('btnPlayPause').textContent = tpPlaying ? '⏸' : '▶';
+  // Si el slider está en 0 cuando dan play, ponerlo en un valor mínimo audible
+  if (tpPlaying && tpSpeed <= 0) {
+    const slider = $('speedSlider');
+    if (slider) { slider.value = '6'; setSpeedFromSlider(6); }
+    else tpSpeed = 0.3;
+  }
+  // Refrescar label con el ▶/⏸
+  setSpeedFromSlider($('speedSlider') ? $('speedSlider').value : 0);
   if (tpPlaying) {
-    if (tpSpeed <= 0) tpSpeed = 1;
     tpRaf = requestAnimationFrame(tpStep);
   } else if (tpRaf) cancelAnimationFrame(tpRaf);
 }
@@ -231,6 +270,7 @@ async function uploadAndCommit() {
   show('screenUploading');
   $('progressFill').style.width = '0%';
   $('uploadPct').textContent = '0%';
+  reportStatus('uploading');
   try {
     const result = await uploadToCloudinary(recordedBlob);
     await sessionRef.update({
@@ -262,11 +302,15 @@ $('btnFontDown').addEventListener('click', () => {
   fontSize = Math.max(14, fontSize - 4);
   $('tpText').style.fontSize = fontSize + 'px';
 });
-$('btnSpeedUp').addEventListener('click', () => { tpSpeed = Math.min(6, (tpSpeed || 0) + 0.5); });
-$('btnSpeedDown').addEventListener('click', () => { tpSpeed = Math.max(0, (tpSpeed || 0) - 0.5); });
 $('btnTpToggle').addEventListener('click', () => {
   $('teleprompter').classList.toggle('hidden');
 });
+
+const speedSlider = $('speedSlider');
+if (speedSlider) {
+  speedSlider.addEventListener('input', (e) => setSpeedFromSlider(e.target.value));
+  setSpeedFromSlider(0);
+}
 
 $('btnRecord').addEventListener('click', () => {
   if (mediaRecorder && mediaRecorder.state === 'recording') stopRecording();

@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.10.1': {
+    title: 'Recorder: speed slider + video queda visible en el modal',
+    features: [
+      '🎚 <strong>Slider de velocidad fino en el celular</strong>: en lugar de los botones +/− (que saltaban mucho), ahora hay un slider vertical en el costado derecho que va de 0 a 50 con curva suave — podés ajustar el autoscroll a la velocidad EXACTA con la que leés.',
+      '📍 <strong>Indicador en pantalla</strong>: arriba del slider se ve "▶ 0.45" (o ⏸ si está pausado) para saber a qué velocidad va.',
+      '🟢 <strong>Estados en tiempo real</strong>: el desktop ahora muestra "📱 Celular conectado / 🔴 Grabando / 📤 Subiendo / ✓ Recibido" según lo que pasa en el celular.',
+      '🎬 <strong>Video queda visible en el modal</strong>: cuando termina la grabación, en lugar de cerrarse, el modal cambia y muestra el video player + link de Cloudinary + botones (📋 Copiar / 🔗 Abrir / 🔄 Grabar otro). El video YA quedó asociado al entry — no hace falta hacer nada más.'
+    ]
+  },
   '3.10.0': {
     title: 'Grabar desde el celular con teleprompter (QR pairing)',
     features: [

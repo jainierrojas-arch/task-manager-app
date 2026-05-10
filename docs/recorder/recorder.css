@@ -178,6 +178,49 @@ html, body {
   border-radius: 6px;
 }
 
+/* Vertical speed slider on the right side */
+.speedctl {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(0,0,0,0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 12px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  z-index: 6;
+}
+.speedctl-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  min-width: 44px;
+  text-align: center;
+}
+.speedctl-help {
+  font-size: 9px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+#speedSlider {
+  -webkit-appearance: slider-vertical;
+  appearance: slider-vertical;
+  writing-mode: bt-lr;
+  width: 24px;
+  height: 180px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
 .timer {
   position: absolute;
   top: max(14px, env(safe-area-inset-top));

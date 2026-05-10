@@ -2787,6 +2787,9 @@ async function openPhoneRecorderModal() {
   document.getElementById('phoneRecStatusText').textContent = 'Generando enlace seguro...';
   document.getElementById('phoneRecQrWrap').innerHTML = '';
   document.getElementById('phoneRecLink').textContent = '';
+  document.getElementById('phoneRecBody').style.display = '';
+  const resultEl = document.getElementById('phoneRecResult');
+  if (resultEl) resultEl.style.display = 'none';
   modal.classList.add('active');
   modal.style.display = 'flex';
 
@@ -2843,24 +2846,40 @@ async function openPhoneRecorderModal() {
     if (!snap.exists) return;
     const d = snap.data();
     if (d.status === 'connected') {
-      document.getElementById('phoneRecStatusText').textContent = '📱 Conectado — ahora grabá leyendo el guion...';
+      document.getElementById('phoneRecStatusText').textContent = '📱 Celular conectado — listo para grabar.';
     } else if (d.status === 'recording') {
-      document.getElementById('phoneRecStatusText').textContent = '🔴 Grabando...';
+      document.getElementById('phoneRecStatusText').textContent = '🔴 Grabando en el celular...';
     } else if (d.status === 'uploading') {
-      document.getElementById('phoneRecStatusText').textContent = '📤 Subiendo video...';
+      document.getElementById('phoneRecStatusText').textContent = '📤 Subiendo video a Cloudinary...';
     } else if (d.status === 'completed' && d.videoUrl) {
       document.getElementById('phoneRecStatusText').textContent = '✓ Video recibido! Asociando al entry...';
       try {
         await _attachRecordedVideoToEntry(d.entryId, d.videoUrl);
-        document.getElementById('phoneRecStatusText').textContent = '✓ Listo! Video agregado al entry.';
         try { showToast && showToast('🎬 Video del celular agregado al entry'); } catch (e) {}
-        setTimeout(() => closePhoneRecorderModal(), 1800);
+        _showPhoneRecResult(d.videoUrl);
       } catch (e) {
         console.error('[phoneRec] attach failed', e);
         document.getElementById('phoneRecStatusText').textContent = 'Error al asociar video: ' + e.message;
       }
     }
   });
+}
+
+function _showPhoneRecResult(videoUrl) {
+  // Cambiar la UI del modal: ocultar QR / status, mostrar player + link.
+  document.getElementById('phoneRecBody').style.display = 'none';
+  const resultEl = document.getElementById('phoneRecResult');
+  if (!resultEl) return;
+  resultEl.style.display = 'block';
+  const player = document.getElementById('phoneRecVideoPlayer');
+  if (player) {
+    player.src = videoUrl;
+    player.load();
+  }
+  const urlText = document.getElementById('phoneRecVideoUrlText');
+  if (urlText) urlText.textContent = videoUrl;
+  // Cerrar el listener — la sesión ya está completada
+  if (_phoneRecUnsub) { try { _phoneRecUnsub(); } catch (e) {} _phoneRecUnsub = null; }
 }
 
 function closePhoneRecorderModal() {
@@ -2894,6 +2913,26 @@ async function _attachRecordedVideoToEntry(entryId, videoUrl) {
     if (closeBtn) closeBtn.addEventListener('click', closePhoneRecorderModal);
     const modal = document.getElementById('phoneRecModal');
     if (modal) modal.addEventListener('click', (e) => { if (e.target === modal) closePhoneRecorderModal(); });
+
+    const copyBtn = document.getElementById('phoneRecCopyLink');
+    if (copyBtn) copyBtn.addEventListener('click', () => {
+      const url = (document.getElementById('phoneRecVideoUrlText') || {}).textContent || '';
+      if (!url) return;
+      navigator.clipboard.writeText(url);
+      copyBtn.textContent = '✓ Copiado';
+      setTimeout(() => { copyBtn.textContent = '📋 Copiar link'; }, 1500);
+    });
+    const openBtn = document.getElementById('phoneRecOpenLink');
+    if (openBtn) openBtn.addEventListener('click', () => {
+      const url = (document.getElementById('phoneRecVideoUrlText') || {}).textContent || '';
+      if (!url) return;
+      try { window.api.openExternal(url); } catch (e) { window.open(url, '_blank', 'noopener'); }
+    });
+    const anotherBtn = document.getElementById('phoneRecAnother');
+    if (anotherBtn) anotherBtn.addEventListener('click', () => {
+      // Reusar el mismo entry/script: abrir una sesión nueva.
+      openPhoneRecorderModal();
+    });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', attach);
   else attach();

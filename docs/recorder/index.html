@@ -45,9 +45,14 @@
         <button class="iconbtn" id="btnSwapCam" title="Cambiar cámara">🔄</button>
         <button class="iconbtn" id="btnFontDown" title="Texto más chico">A−</button>
         <button class="iconbtn" id="btnFontUp" title="Texto más grande">A+</button>
-        <button class="iconbtn" id="btnSpeedDown" title="Más lento">−</button>
-        <button class="iconbtn" id="btnSpeedUp" title="Más rápido">+</button>
         <button class="iconbtn" id="btnTpToggle" title="Mostrar/ocultar guion">📝</button>
+      </div>
+
+      <!-- Speed slider (vertical) -->
+      <div class="speedctl" id="speedCtl">
+        <div class="speedctl-label" id="speedLabel">⏸ 0.0</div>
+        <input type="range" id="speedSlider" min="0" max="50" step="1" value="0" orient="vertical">
+        <div class="speedctl-help">Velocidad</div>
       </div>
 
       <!-- Estado/pista de tiempo -->
@@ -59,7 +64,7 @@
         <button class="recordbtn" id="btnRecord" aria-label="Grabar">
           <div class="recinner"></div>
         </button>
-        <button class="iconbtn ghost" id="btnPlayPause">▶</button>
+        <button class="iconbtn ghost" id="btnPlayPause" title="Play/Pausa autoscroll">▶</button>
       </div>
     </section>
 
