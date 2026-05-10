@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.2': {
+    title: 'Fix navegación: webview directo en el renderer principal (sin iframe)',
+    features: [
+      '🐛 <strong>Fix crítico</strong>: el <code>&lt;webview&gt;</code> tag tenía problemas funcionando dentro de un iframe — por eso la navegación no funcionaba. Ahora el browser embebido vive directamente en el renderer principal de la app.',
+      '🌐 <strong>Arquitectura simplificada</strong>: sin iframe intermedio, sin postMessage. Acceso directo a Firestore y al usuario logueado desde el explorador, todo más rápido y robusto.',
+      '🚀 <strong>Página inicial</strong>: cambié a Google.com como home (en vez de instagram.com/explore). Desde ahí podés buscar lo que quieras — los quick links 📷 IG / 🎞 Reels / 🎵 TikTok / 📺 Shorts siguen disponibles para ir directo.',
+      '✅ <strong>Si la nav sigue fallando</strong>, ahora vas a ver toast rojo con el código de error específico.'
+    ]
+  },
   '3.11.1': {
     title: 'Explorador embebido como pestaña + fix navegación',
     features: [
@@ -1737,81 +1746,6 @@ const SIDE_PANEL_CONFIGS = {
 };
 
 let _currentSidePanel = null;
-// ===== Explorer iframe message handler (v3.11.0) =====
-// El iframe explorer.html postMessage para pedir categorías y guardar URLs al
-// Depósito. Acá las atendemos y respondemos.
-window.addEventListener('message', async (ev) => {
-  const d = ev.data;
-  if (!d || typeof d !== 'object') return;
-
-  if (d.type === 'explorer-request-categories') {
-    try {
-      const snap = await db.collection('depositCategories').orderBy('name').get();
-      const cats = snap.docs.map(doc => Object.assign({ id: doc.id }, doc.data()));
-      ev.source && ev.source.postMessage({ type: 'explorer-categories', categories: cats }, '*');
-    } catch (e) {
-      console.warn('[explorer] failed to load categories', e);
-    }
-    return;
-  }
-
-  if (d.type === 'explorer-save-to-deposit') {
-    const { reqId, url, title, categoryId, workspaceId } = d;
-    const reply = (ok, error) => ev.source && ev.source.postMessage({ type: 'explorer-save-reply', reqId, ok, error }, '*');
-    try {
-      if (!currentUser) { reply(false, 'No estás logueado'); return; }
-      // Detectar tipo de link (video/material) por la URL
-      const lower = (url || '').toLowerCase();
-      const isVideo = /instagram\.com\/(reel|p|tv)\/|tiktok\.com\/.+\/video\/|youtube\.com\/(shorts|watch)|youtu\.be\//.test(lower);
-      const linkType = isVideo ? 'video' : 'material';
-      const cleanTitle = (title || '').trim() || (() => {
-        try { return new URL(url).hostname.replace(/^www\./, ''); } catch (e) { return 'Referencia'; }
-      })();
-      const data = {
-        title: cleanTitle.slice(0, 200),
-        description: '',
-        links: [{ type: linkType, url, label: linkType === 'video' ? 'Video' : 'Material' }],
-        categoryId: categoryId || null,
-        status: 'idea',
-        createdBy: currentUser.uid,
-        createdByName: (currentUserData && currentUserData.name) || (currentUser.email || '').split('@')[0],
-        createdAt: firebase.firestore.FieldValue.serverTimestamp()
-      };
-      // workspace tag — el wrapper de db.collection ya lo agrega vía
-      // _installWsScopeWrapper, pero por consistencia explícita:
-      if (workspaceId) data.workspaceId = workspaceId;
-      // Categoría: resolver nombre/icon si nos pasaron categoryId
-      if (categoryId) {
-        try {
-          const cs = await db.collection('depositCategories').doc(categoryId).get();
-          if (cs.exists) {
-            const cd = cs.data();
-            data.categoryName = cd.name || '';
-          }
-        } catch (e) {}
-      }
-      const ref = await db.collection('depositEntries').add(data);
-      // Best-effort: fetch OG metadata para la cover (no esperar)
-      if (window.api && window.api.fetchOgData) {
-        window.api.fetchOgData(url).then(og => {
-          if (og && (og.image || og.title || og.description)) {
-            const upd = { coverFetcherV: 6 };
-            if (og.image) upd.coverImage = og.image;
-            if (og.title && !data.title) upd.title = og.title.slice(0, 200);
-            if (og.description) upd.description = og.description.slice(0, 500);
-            db.collection('depositEntries').doc(ref.id).update(upd).catch(() => {});
-          }
-        }).catch(() => {});
-      }
-      reply(true);
-    } catch (e) {
-      console.error('[explorer] save failed', e);
-      reply(false, e.message || 'Error desconocido');
-    }
-    return;
-  }
-});
-
 function openSidePanel(kind) {
   const cfg = SIDE_PANEL_CONFIGS[kind];
   if (!cfg) return;
@@ -7155,13 +7089,9 @@ document.querySelectorAll('.nav-tab').forEach(tab => {
     if (currentTab === 'ideas') renderIdeas();
     if (currentTab === 'schedule') renderSchedule();
     if (currentTab === 'explorer') {
-      // v3.11.1: lazy-load del iframe del explorador (webview es pesado, no
-      // arrancarlo hasta que el usuario realmente abra la pestaña)
-      const ifr = document.getElementById('explorerIframe');
-      if (ifr && (!ifr.src || ifr.src === 'about:blank' || ifr.dataset.loaded !== '1')) {
-        ifr.src = buildIframeSrc('explorer.html');
-        ifr.dataset.loaded = '1';
-      }
+      // v3.11.2: el webview del explorer está embebido directamente en index.html
+      // (no en iframe). Solo cargamos las categorías la primera vez.
+      if (typeof window._explorerLoadCategories === 'function') window._explorerLoadCategories();
     }
     syncSidebarActive();
   });

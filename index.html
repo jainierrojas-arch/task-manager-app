@@ -876,6 +876,90 @@
     .tab-content { display: none; }
     .tab-content.active { display: block; }
 
+    /* ===== Explorer (v3.11.2) ===== */
+    .explorer-shell {
+      width: 100%; height: 100%;
+      display: flex; flex-direction: column;
+      background: var(--bg-primary, #0f1115);
+    }
+    .explorer-toolbar {
+      display: flex; align-items: center; gap: 6px;
+      padding: 8px;
+      background: var(--bg-card, #1a1d24);
+      border-bottom: 1px solid var(--border, rgba(255,255,255,0.08));
+      flex-wrap: nowrap; overflow-x: auto;
+    }
+    .explorer-toolbar button, .explorer-toolbar input {
+      background: var(--bg-card, #20242c);
+      color: var(--text-primary, #f5f7fa);
+      border: 1px solid var(--border, rgba(255,255,255,0.08));
+      border-radius: 8px;
+      padding: 7px 10px;
+      font-size: 12px;
+      font-family: inherit;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .explorer-toolbar button:hover { background: rgba(255,255,255,0.08); }
+    .explorer-toolbar button.explorer-primary {
+      background: var(--accent, #4ecdc4); color: #0a0c10; border-color: var(--accent, #4ecdc4); font-weight: 700;
+    }
+    .explorer-toolbar input {
+      flex: 1; min-width: 180px; font-size: 12px; padding: 7px 10px;
+    }
+    .explorer-nav-group { display: flex; gap: 4px; }
+    .explorer-quick-links { display: flex; gap: 4px; }
+    .explorer-quick-links button { padding: 6px 10px; font-size: 11px; font-weight: 600; }
+
+    .explorer-browser-wrap { flex: 1; position: relative; background: #000; min-height: 0; }
+    #explorerBrowser { width: 100%; height: 100%; display: flex; }
+
+    .explorer-actions-bar {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px;
+      background: var(--bg-card, #1a1d24);
+      border-top: 1px solid var(--border, rgba(255,255,255,0.08));
+    }
+    .explorer-actions-bar select {
+      background: var(--bg-card, #20242c);
+      color: var(--text-primary, #f5f7fa);
+      border: 1px solid var(--border, rgba(255,255,255,0.08));
+      border-radius: 8px; padding: 7px 10px; font-size: 12px;
+      font-family: inherit; flex: 1; min-width: 0;
+    }
+    .explorer-save-btn {
+      background: var(--accent, #4ecdc4); color: #0a0c10;
+      border: 1px solid var(--accent, #4ecdc4);
+      border-radius: 8px; padding: 9px 14px;
+      font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap;
+    }
+    .explorer-save-btn:hover { filter: brightness(1.1); }
+    .explorer-save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .explorer-toast {
+      position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+      background: rgba(78,205,196,0.95); color: #0a0c10;
+      padding: 10px 18px; border-radius: 10px;
+      font-size: 13px; font-weight: 700; pointer-events: none;
+      opacity: 0; transition: opacity 0.2s ease, transform 0.2s ease;
+      z-index: 10; max-width: 90%;
+    }
+    .explorer-toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
+    .explorer-toast.error { background: rgba(255,107,107,0.95); color: #fff; }
+
+    .explorer-loading-bar {
+      position: absolute; top: 0; left: 0;
+      height: 2px; background: var(--accent, #4ecdc4);
+      width: 0%; transition: width 0.3s ease;
+      z-index: 5; pointer-events: none;
+    }
+    .explorer-loading-bar.active { width: 80%; }
+    .explorer-loading-bar.done { width: 100%; opacity: 0; transition: width 0.2s ease, opacity 0.4s ease 0.2s; }
+
+    /* Tab content for explorer needs to be flex column to fill the height */
+    #tabExplorer.active { display: flex !important; flex-direction: column; }
+    #tabExplorer.active .explorer-shell { flex: 1; min-height: 0; }
+
     /* Input area */
     .input-area {
       padding: 12px;
@@ -2256,12 +2340,45 @@
         </div>
       </div>
 
-      <!-- Explorer (v3.11.1): browser embebido para investigar IG/TikTok dentro de la app -->
-      <div class="tab-content" id="tabExplorer" style="padding:0;height:100%">
-        <iframe id="explorerIframe"
-                src="about:blank"
-                style="width:100%;height:100%;border:0;display:block;background:#0f1115"
-                allow="autoplay; encrypted-media"></iframe>
+      <!-- Explorer (v3.11.2): webview embebido directo en el renderer principal
+           (sin iframe intermedio — webview tag tiene quirks dentro de iframes). -->
+      <div class="tab-content" id="tabExplorer" style="padding:0;height:100%;display:none">
+        <div class="explorer-shell">
+          <div class="explorer-toolbar">
+            <div class="explorer-nav-group">
+              <button id="explorerBack" title="Atrás">⬅</button>
+              <button id="explorerForward" title="Adelante">➡</button>
+              <button id="explorerReload" title="Recargar">🔄</button>
+            </div>
+            <input type="url" id="explorerUrlBar" placeholder="https://..." spellcheck="false">
+            <button id="explorerGo" class="explorer-primary">Ir</button>
+            <div class="explorer-quick-links">
+              <button data-explorer-quick="https://www.instagram.com/explore/" title="Instagram Explore">📷 IG</button>
+              <button data-explorer-quick="https://www.instagram.com/reels/" title="Reels">🎞 Reels</button>
+              <button data-explorer-quick="https://www.tiktok.com/foryou" title="TikTok For You">🎵 TikTok</button>
+              <button data-explorer-quick="https://www.youtube.com/shorts" title="YouTube Shorts">📺 Shorts</button>
+            </div>
+          </div>
+
+          <div class="explorer-browser-wrap">
+            <div class="explorer-loading-bar" id="explorerLoadingBar"></div>
+            <webview
+              id="explorerBrowser"
+              src="https://www.google.com/"
+              allowpopups
+              partition="persist:explorer"
+              useragent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+              style="width:100%;height:100%;display:flex"></webview>
+            <div class="explorer-toast" id="explorerToast"></div>
+          </div>
+
+          <div class="explorer-actions-bar">
+            <select id="explorerCategorySelect">
+              <option value="">Sin categoría — General</option>
+            </select>
+            <button class="explorer-save-btn" id="explorerSaveToDeposit">💾 Guardar URL actual al Depósito</button>
+          </div>
+        </div>
       </div>
 
       <!-- Settings -->
@@ -2970,5 +3087,6 @@
     const db = firebase.firestore();
   </script>
   <script src="renderer.js"></script>
+  <script src="explorer-renderer.js"></script>
 </body>
 </html>
