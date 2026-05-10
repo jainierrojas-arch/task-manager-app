@@ -445,14 +445,19 @@ function renderRecordRing() {
 function startRecording() {
   const canvas = $('captureCanvas');
   if (!canvas || !audioTrack) return;
-  recordedChunks = [];
+  // v3.11.27: chunks locales por recording (closure) en vez de globales.
+  // Antes: si el usuario tapeaba Record (stop) → Record (start) rápido, el
+  // segundo startRecording reseteaba recordedChunks=[] ANTES de que el onstop
+  // del primer clip procesara la data. El primer clip quedaba con array vacío.
+  // Ahora cada recording captura SU PROPIO array vía closure.
+  const chunks = [];
+  recordedChunks = chunks; // expone globalmente por compatibilidad
   recPausedAccum = 0;
   recPausedAt = 0;
-  // v3.11.19: NO limpiar segmentos al arrancar nuevo. Cada start es un segmento
-  // que se appendea al array. Los segmentos solo se limpian con Cancel (✕) o
-  // explicitamente al iniciar desde la pantalla de preview.
   const mime = pickMime();
   recordedMime = mime || 'video/webm';
+  const localMime = recordedMime;
+  let localStart = 0;
 
   // Forzar dimensiones del canvas justo antes — iOS Safari puede evaluar
   // tamaño en este momento.
@@ -485,17 +490,19 @@ function startRecording() {
     alert('No se pudo iniciar la grabación: ' + e.message);
     return;
   }
-  mediaRecorder.ondataavailable = (ev) => { if (ev.data && ev.data.size > 0) recordedChunks.push(ev.data); };
+  mediaRecorder.ondataavailable = (ev) => { if (ev.data && ev.data.size > 0) chunks.push(ev.data); };
   mediaRecorder.onstop = async () => {
-    const blob = new Blob(recordedChunks, { type: recordedMime });
+    // v3.11.27: usar chunks LOCAL (closure) — inmune a startRecording races.
+    // Para duración, leer el GLOBAL recPausedAccum y recPausedAt en el momento
+    // del stop (antes de que startRecording los pueda resetear).
+    const blob = new Blob(chunks, { type: localMime });
     if (blob.size > 0) {
-      // Acumular tiempo del segmento para el timer global multi-clip
-      const segmentMs = (recPausedAt > 0 ? recPausedAt : Date.now()) - recStart - recPausedAccum;
-      recordedSegments.push({ blob, mime: recordedMime, durationMs: Math.max(0, segmentMs) });
-      segmentsTotalMs += Math.max(0, segmentMs);
+      const endTs = (recPausedAt > 0 ? recPausedAt : Date.now());
+      const segmentMs = Math.max(0, endTs - localStart - recPausedAccum);
+      recordedSegments.push({ blob, mime: localMime, durationMs: segmentMs });
+      segmentsTotalMs += segmentMs;
       recordedBlob = blob;
     }
-    // Si hay un swap pendiente (cambio de cámara), continuar grabando con la nueva
     if (_pendingSwapAfterStop) {
       const { facing } = _pendingSwapAfterStop;
       _pendingSwapAfterStop = null;
@@ -503,9 +510,6 @@ function startRecording() {
       startRecording();
       return;
     }
-    // v3.11.19: si el usuario explicitamente quiso terminar (Done button),
-    // ir al preview. Sino, quedarse en la pantalla de grabación esperando
-    // que el usuario grabe otro segmento o cancele.
     if (_finishingForPreview) {
       _finishingForPreview = false;
       showPreview();
@@ -515,6 +519,7 @@ function startRecording() {
   };
   mediaRecorder.start(1000);
   recStart = Date.now();
+  localStart = recStart;
   $('btnRecord').classList.add('recording');
   $('timer').classList.add('active');
   if (timerHandle) clearInterval(timerHandle);

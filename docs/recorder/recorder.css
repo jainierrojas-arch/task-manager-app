@@ -401,20 +401,19 @@ html, body {
 }
 
 /* Quick preview overlay — lista de clips con play/delete por clip.
-   position:fixed para que pueda overlay cualquier screen (no solo screen-record). */
+   position:fixed para que pueda overlay cualquier screen. Visibility via
+   inline style (sin !important para que display:none lo cierre).  */
 .quick-preview {
   position: fixed;
   inset: 0;
   background: rgba(0,0,0,0.96);
   z-index: 9999;
-  display: flex !important;
   flex-direction: column;
   padding: 12px;
   gap: 10px;
   overflow: hidden;
+  display: none;
 }
-.quick-preview[style*="display: none"],
-.quick-preview[style*="display:none"] { display: none !important; }
 .quick-preview-header {
   display: flex;
   align-items: center;
