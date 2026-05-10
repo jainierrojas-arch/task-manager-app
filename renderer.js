@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.9.10': {
+    title: 'Fix iframe API + botón Meet en sidebar',
+    features: [
+      '🐛 <strong>Fix click sobre videos en Depósito</strong>: el iframe del Depósito no tenía <code>window.api</code> (no carga preload propio). Ahora hereda automáticamente del parent o usa stubs de fallback. Click en videos abre en browser externo correctamente.',
+      '🎤 <strong>Transcribir ya funciona</strong>: el bug del <code>openExternal</code> bloqueaba el flujo de transcripción también. Con el iframe accediendo correctamente al API, el botón Transcribir descarga audio y lo manda a Whisper.',
+      '📹 <strong>Botón Meet en sidebar</strong>: nuevo ícono 📹 que abre tu sala de reuniones (<code>https://meet.google.com/wwn-hgjx-czt</code>) en el browser por defecto. Acceso directo desde la app.',
+      '🛣 <strong>Próximo</strong>: hacer el link de Meet configurable por workspace desde Settings (ahora está hardcodeado).'
+    ]
+  },
   '3.9.9': {
     title: '🐛 BUG CRÍTICO ENCONTRADO Y ARREGLADO — Depósito vuelve',
     features: [
@@ -1626,6 +1635,16 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       openSidePanel(kind);
+    });
+  });
+
+  // v3.9.10: botón Meet — abre Google Meet en browser externo (no se puede embeber)
+  document.querySelectorAll('.sidebar-item[data-meet-link]').forEach(item => {
+    item.addEventListener('click', () => {
+      const url = item.dataset.meetLink;
+      if (!url) return;
+      try { window.api.openExternal(url); }
+      catch (e) { window.open(url, '_blank'); }
     });
   });
 

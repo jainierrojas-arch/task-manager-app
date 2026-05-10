@@ -64,6 +64,29 @@ window._verifyWsIsDefault = async function(dbRef) {
     }
   } catch (e) { console.warn('[ws] verify failed:', e.message); }
 };
+// v3.9.10: cuando deposit-renderer.js corre dentro de un iframe del side panel,
+// no tiene su propio preload — window.api es undefined. Heredamos del parent
+// (mismo origen, accesible via window.parent). Si no hay parent (modo standalone)
+// se usa el window.api del preload propio. Stubs de fallback para no romper.
+if (!window.api && window.parent && window.parent !== window) {
+  try {
+    if (window.parent.api) window.api = window.parent.api;
+  } catch (e) { /* cross-origin? */ }
+}
+if (!window.api) {
+  window.api = {
+    openExternal: (url) => { try { window.open(url, '_blank', 'noopener'); } catch (e) {} },
+    onThemeChanged: () => {},
+    minimizeWindow: () => {},
+    closeWindow: () => { try { window.parent.postMessage({ type: 'close-deposit-panel' }, '*'); } catch (e) {} },
+    refreshAllWindows: () => location.reload(),
+    fetchOgData: async () => ({}),
+    openScheduleFromEntry: null,
+    onSetViewMode: () => {},
+    onNavigate: () => {}
+  };
+}
+
 // v3.9.8: helper de debug visible en el subtitle — definido al INICIO del módulo
 // para que esté disponible cuando se llame antes de subscribeAll
 function _setDebugBanner(text, color) {

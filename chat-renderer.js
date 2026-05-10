@@ -62,6 +62,20 @@ window._installWsScopeWrapper = function(db) {
   };
 };
 
+// v3.9.10: heredar window.api del parent cuando corremos en iframe
+if (!window.api && window.parent && window.parent !== window) {
+  try { if (window.parent.api) window.api = window.parent.api; } catch (e) {}
+}
+if (!window.api) {
+  window.api = {
+    openExternal: (url) => { try { window.open(url, '_blank', 'noopener'); } catch (e) {} },
+    onThemeChanged: () => {},
+    minimizeWindow: () => {},
+    closeWindow: () => { try { window.parent.postMessage({ type: 'close-chat-panel' }, '*'); } catch (e) {} },
+    refreshAllWindows: () => location.reload()
+  };
+}
+
 // ===== TEMA — sincronizado con la app principal =====
 const THEME_KEY = 'app-theme';
 function applyChatTheme(theme) {
