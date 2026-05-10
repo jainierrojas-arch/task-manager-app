@@ -776,10 +776,11 @@ function registerIpcHandlers() {
         }
         const ytdlpBin = ytdlpPaths[pathIndex++];
         try {
+          // v3.9.19: NO convertir a mp3 (eso requiere ffmpeg) — bajar el formato
+          // nativo (m4a/webm/mp4 según plataforma). Whisper los acepta todos.
+          // Preferir m4a > mp4 > webm para mejor compatibilidad con Whisper.
           proc = spawn(ytdlpBin, [
-            '-f', 'bestaudio',
-            '-x', '--audio-format', 'mp3',
-            '--audio-quality', '5',
+            '-f', 'bestaudio[ext=m4a]/bestaudio[ext=mp4]/bestaudio[ext=webm]/bestaudio',
             '-o', tempPath,
             '--no-playlist',
             '--no-warnings',
@@ -803,21 +804,26 @@ function registerIpcHandlers() {
           }
         });
         proc.on('close', (code) => {
-          const finalPath = tempBasePath + '.mp3';
-          if (code === 0 && fs.existsSync(finalPath)) {
+          // Buscar el archivo final — yt-dlp eligió la extensión según el formato
+          const candidates = fs.readdirSync(os.tmpdir()).filter(f => f.startsWith(path.basename(tempBasePath)));
+          if (code === 0 && candidates.length > 0) {
+            const fileName = candidates[0];
+            const filePath = path.join(os.tmpdir(), fileName);
             try {
-              const buf = fs.readFileSync(finalPath);
-              fs.unlinkSync(finalPath);
+              const buf = fs.readFileSync(filePath);
+              fs.unlinkSync(filePath);
               if (buf.length > 25 * 1024 * 1024) {
-                return resolve({ ok: false, error: 'Audio muy grande (>25MB) — video demasiado largo' });
+                return resolve({ ok: false, error: 'Audio muy grande (>25MB) — video demasiado largo para Whisper' });
               }
-              resolve({ ok: true, data: buf.toString('base64'), mimeType: 'audio/mpeg', size: buf.length });
+              const ext = path.extname(fileName).slice(1).toLowerCase();
+              const mimeMap = { m4a: 'audio/mp4', mp4: 'video/mp4', webm: 'video/webm', mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', opus: 'audio/opus' };
+              const mimeType = mimeMap[ext] || 'application/octet-stream';
+              resolve({ ok: true, data: buf.toString('base64'), mimeType, ext, size: buf.length });
             } catch (e) {
               resolve({ ok: false, error: 'Error leyendo audio: ' + e.message });
             }
           } else {
-            // Intentar también si el output quedó con otra extensión
-            const candidates = fs.readdirSync(os.tmpdir()).filter(f => f.startsWith(path.basename(tempBasePath)));
+            // Cleanup cualquier residuo
             for (const c of candidates) {
               try { fs.unlinkSync(path.join(os.tmpdir(), c)); } catch (_) {}
             }

@@ -2245,8 +2245,7 @@ function isProtectedPlatformUrl(url) {
   return /(instagram\.com|tiktok\.com|youtube\.com|youtu\.be|facebook\.com|fb\.com|twitter\.com|x\.com|reddit\.com|vimeo\.com|soundcloud\.com|twitch\.tv)/i.test(url);
 }
 
-// v3.9.17: usa yt-dlp via main process para descargar el audio directamente.
-// Devuelve un Blob listo para mandar a Whisper. yt-dlp soporta cientos de plataformas.
+// v3.9.19: devuelve { blob, ext } — necesitamos el ext correcto para Whisper.
 async function extractAudioBlob(platformUrl) {
   if (!window.api || !window.api.extractAudioViaYtDlp) {
     throw new Error('extractAudioViaYtDlp no disponible. Update la app.');
@@ -2258,11 +2257,14 @@ async function extractAudioBlob(platformUrl) {
     }
     throw new Error(result && result.error ? result.error : 'Extracción falló');
   }
-  // Decodear base64 a Blob
   const binary = atob(result.data);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return new Blob([bytes.buffer], { type: result.mimeType || 'audio/mpeg' });
+  return {
+    blob: new Blob([bytes.buffer], { type: result.mimeType || 'application/octet-stream' }),
+    ext: result.ext || 'mp3',
+    mimeType: result.mimeType || 'audio/mpeg'
+  };
 }
 
 // v3.9.1: helper que devuelve la URL óptima de audio para mandar a Whisper.
@@ -2330,8 +2332,10 @@ async function transcribeEntry(entryId, btn) {
     if (isProtectedPlatformUrl(videoLink.url)) {
       const platform = videoLink.url.match(/(instagram|tiktok|youtube|youtu|facebook|twitter|x\.com|vimeo)/i)[0];
       _setTranscriptionStatus('🔄 Descargando audio con yt-dlp (' + platform + ')... Tarda 10-30s.');
-      audioBlob = await extractAudioBlob(videoLink.url);
-      _setTranscriptionStatus('🎤 Enviando ' + Math.round(audioBlob.size / 1024) + 'KB a Whisper...');
+      const result = await extractAudioBlob(videoLink.url);
+      audioBlob = result.blob;
+      filename = 'audio.' + result.ext;
+      _setTranscriptionStatus('🎤 Enviando ' + Math.round(audioBlob.size / 1024) + 'KB (' + result.ext + ') a Whisper...');
     } else {
       // URL directa o Cloudinary — fetch normal
       const audioUrl = audioFetchUrl(videoLink.url);

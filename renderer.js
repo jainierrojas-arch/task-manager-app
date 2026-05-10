@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.9.19': {
+    title: 'Fix yt-dlp: usar formato nativo (sin necesitar ffmpeg)',
+    features: [
+      '🐛 <strong>Fix</strong>: yt-dlp fallaba en post-processing porque exigía ffmpeg para convertir a mp3. Solución: descargamos el audio en formato NATIVO (m4a / webm / mp4) según lo que ofrezca cada plataforma. Whisper acepta todos esos formatos directo.',
+      '⚡ <strong>Sin dependencias extra</strong>: ya no necesitás instalar ffmpeg. Solo yt-dlp (que ya tenés) y listo.',
+      '🎯 Cada video se descarga en su mejor calidad nativa de audio — más rápido + menos errores.'
+    ]
+  },
   '3.9.18': {
     title: 'Detección de yt-dlp en más rutas (~/.local/bin)',
     features: [
