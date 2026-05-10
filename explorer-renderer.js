@@ -95,24 +95,61 @@
     btn.addEventListener('click', () => navigate(btn.dataset.explorerQuick));
   });
 
-  // ===== Categorías =====
-  // Las categorías de depósito se cargan al primer abrir la pestaña Explorer.
-  // Llamamos a esto desde el handler de la pestaña en renderer.js.
+  // ===== Categorías + subcategorías (v3.11.4) =====
+  // Render jerárquico con <optgroup> — categorías padre como group label,
+  // subcategorías como options dentro. Value format: "catId|subId" o "catId"
+  // para "toda la categoría" (sin subcategoría específica).
   let categoriesLoaded = false;
+  let _allCats = [];
+  function escAttr(s) { return String(s == null ? '' : s).replace(/"/g, '&quot;'); }
+  function escHtml(s) { return String(s == null ? '' : s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+  function buildCategoryOptions(cats) {
+    // Top-level: parentId vacío/null. Subcategorías: parentId = id del padre.
+    const tops = cats.filter(c => !c.parentId).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    const subsByParent = {};
+    cats.filter(c => c.parentId).forEach(c => {
+      if (!subsByParent[c.parentId]) subsByParent[c.parentId] = [];
+      subsByParent[c.parentId].push(c);
+    });
+    Object.values(subsByParent).forEach(arr => arr.sort((a, b) => (a.name || '').localeCompare(b.name || '')));
+
+    const html = ['<option value="">Sin categoría — General</option>'];
+    tops.forEach(top => {
+      const subs = subsByParent[top.id] || [];
+      const topLabel = (top.icon || '📁') + ' ' + (top.name || '(sin nombre)');
+      if (subs.length === 0) {
+        html.push(`<option value="${escAttr(top.id)}">${escHtml(topLabel)}</option>`);
+      } else {
+        html.push(`<optgroup label="${escAttr(topLabel)}">`);
+        // Opción "toda la categoría" — sin subcategoría específica
+        html.push(`<option value="${escAttr(top.id)}">${escHtml('— toda ' + (top.name || ''))}</option>`);
+        subs.forEach(s => {
+          const sLabel = (s.icon || '↳') + ' ' + (s.name || '');
+          html.push(`<option value="${escAttr(top.id)}|${escAttr(s.id)}">${escHtml(sLabel)}</option>`);
+        });
+        html.push('</optgroup>');
+      }
+    });
+    return html.join('');
+  }
   window._explorerLoadCategories = async function() {
     if (categoriesLoaded) return;
     if (typeof db === 'undefined') return;
     try {
       const snap = await db.collection('depositCategories').orderBy('name').get();
-      const cats = snap.docs.map(d => Object.assign({ id: d.id }, d.data()));
+      _allCats = snap.docs.map(d => Object.assign({ id: d.id }, d.data()));
       const current = categorySelect.value;
-      categorySelect.innerHTML = '<option value="">Sin categoría — General</option>' +
-        cats.map(c => `<option value="${c.id}">${(c.icon || '📁') + ' ' + (c.name || '(sin nombre)')}</option>`).join('');
+      categorySelect.innerHTML = buildCategoryOptions(_allCats);
       if (current) categorySelect.value = current;
       categoriesLoaded = true;
     } catch (e) {
       console.warn('[explorer] failed to load categories', e);
     }
+  };
+  // Permitir refresh manual desde fuera (ej: workspace switch)
+  window._explorerReloadCategories = function() {
+    categoriesLoaded = false;
+    return window._explorerLoadCategories();
   };
 
   // ===== Save to Deposit =====
@@ -143,21 +180,35 @@
       const cleanTitle = (title || '').trim() || (() => {
         try { return new URL(url).hostname.replace(/^www\./, ''); } catch (e) { return 'Referencia'; }
       })();
+      // Parse "catId|subId" o "catId" o ""
+      const rawValue = categorySelect.value || '';
+      let categoryId = null, subcategoryId = null;
+      if (rawValue) {
+        const parts = rawValue.split('|');
+        categoryId = parts[0] || null;
+        subcategoryId = parts[1] || null;
+      }
       const data = {
         title: cleanTitle.slice(0, 200),
         description: '',
         links: [{ type: linkType, url, label: linkType === 'video' ? 'Video' : 'Material' }],
-        categoryId: categorySelect.value || null,
+        categoryId,
         status: 'idea',
         createdBy: currentUser.uid,
         createdByName: (typeof currentUserData !== 'undefined' && currentUserData ? currentUserData.name : null) || (currentUser.email || '').split('@')[0],
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
       };
-      if (categorySelect.value) {
-        try {
-          const cs = await db.collection('depositCategories').doc(categorySelect.value).get();
-          if (cs.exists) data.categoryName = cs.data().name || '';
-        } catch (e) {}
+      // Resolver nombres desde la lista cacheada (más rápido que ir a Firestore)
+      if (categoryId) {
+        const cat = _allCats.find(c => c.id === categoryId);
+        if (cat) data.categoryName = cat.name || '';
+      }
+      if (subcategoryId) {
+        const sub = _allCats.find(c => c.id === subcategoryId);
+        if (sub) {
+          data.subcategoryId = subcategoryId;
+          data.subcategoryName = sub.name || '';
+        }
       }
       const ref = await db.collection('depositEntries').add(data);
       // Best-effort: fetch OG metadata para la cover (no esperar)

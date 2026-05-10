@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.4': {
+    title: 'Explorer: guardar directo en cualquier categoría/subcategoría',
+    features: [
+      '🗂 <strong>Dropdown jerárquico en el Explorer</strong>: ahora ves todas las categorías Y subcategorías que tenés en el Depósito y Banco de Referencias, organizadas con el mismo orden y agrupación que ves en el Depósito.',
+      '🎯 <strong>Guardado directo a la casilla exacta</strong>: si seleccionás una subcategoría específica (ej: "Referencias → Tutoriales"), la entry se crea YA dentro de esa subcategoría — no hay que moverla manualmente después.',
+      '📁 <strong>Opción "toda la categoría"</strong>: si la categoría tiene subcategorías pero no te importa cuál, podés guardarla en el padre directamente (sin subcategoría).',
+      '🔄 <strong>Sync con workspace</strong>: cuando cambiás de workspace, las categorías del dropdown se recargan automáticamente.'
+    ]
+  },
   '3.11.3': {
     title: 'Depósito + Refs + Chat ahora son pestañas integradas',
     features: [
@@ -7388,6 +7397,10 @@ function notifyIframesOfWorkspaceChange() {
       const f = document.getElementById(id);
       if (f && f.dataset.loaded === '1') f.src = buildIframeSrc(baseSrc);
     });
+    // v3.11.4: recargar categorías del Explorer al cambiar workspace
+    if (typeof window._explorerReloadCategories === 'function') {
+      window._explorerReloadCategories();
+    }
   } catch (e) { /* ignore */ }
 }
 
