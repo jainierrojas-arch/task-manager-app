@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Task Manager — Grabar</title>
   <link rel="icon" type="image/png" href="../icon.png">
-  <link rel="stylesheet" href="recorder.css?v=31120">
+  <link rel="stylesheet" href="recorder.css?v=31121">
 </head>
 <body>
 
@@ -67,19 +67,33 @@
         <div class="speedctl-help">Velocidad</div>
       </div>
 
-      <!-- Estado/pista de tiempo + indicador de clips -->
+      <!-- Estado/pista de tiempo -->
       <div class="timer" id="timer">00:00</div>
-      <div class="clips-indicator" id="clipsIndicator" style="display:none">📹 0 clips</div>
 
       <!-- Bottom controls -->
       <div class="bottombar">
         <button class="iconbtn ghost" id="btnCancel" title="Cancelar todo">✕</button>
         <button class="iconbtn ghost" id="btnUndo" title="Deshacer último clip" style="display:none">↶</button>
-        <button class="recordbtn" id="btnRecord" aria-label="Grabar">
-          <div class="recinner"></div>
-        </button>
+        <div class="record-cluster">
+          <div class="clips-mini" id="clipsIndicator" style="display:none">0 clips</div>
+          <button class="recordbtn" id="btnRecord" aria-label="Grabar">
+            <!-- Anillo de progreso TikTok-style: un arco por cada clip grabado -->
+            <svg class="recordbtn-ring" viewBox="0 0 100 100" aria-hidden="true">
+              <circle id="recordBtnRing" cx="50" cy="50" r="46" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="butt" transform="rotate(-90 50 50)" />
+            </svg>
+            <div class="recinner"></div>
+          </button>
+        </div>
+        <button class="iconbtn ghost preview" id="btnPreviewLast" title="Ver último clip" style="display:none">👁</button>
         <button class="iconbtn ghost done" id="btnDone" title="Finalizar y previsualizar" style="display:none">✓</button>
         <button class="iconbtn ghost" id="btnPlayPause" title="Play/Pausa autoscroll">▶</button>
+      </div>
+
+      <!-- Overlay de preview rápido (último clip) sin salir de la grabación -->
+      <div class="quick-preview" id="quickPreview" style="display:none">
+        <video id="quickPreviewVideo" controls playsinline></video>
+        <button class="quick-preview-close" id="quickPreviewClose" title="Cerrar">✕ Cerrar</button>
+        <div class="quick-preview-info" id="quickPreviewInfo"></div>
       </div>
     </section>
 
@@ -134,6 +148,6 @@
     window.db = firebase.firestore();
     window.auth = firebase.auth();
   </script>
-  <script src="recorder.js?v=31120"></script>
+  <script src="recorder.js?v=31121"></script>
 </body>
 </html>

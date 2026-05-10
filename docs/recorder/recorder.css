@@ -264,14 +264,53 @@ html, body {
 .iconbtn:active { transform: scale(0.95); }
 .iconbtn.ghost { background: rgba(0,0,0,0.4); }
 
+.record-cluster {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+}
+/* Mini badge de clips encima del botón rojo (TikTok/IG style) */
+.clips-mini {
+  background: rgba(0,0,0,0.6);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  pointer-events: none;
+  text-transform: uppercase;
+}
 .recordbtn {
   width: 76px; height: 76px;
   border-radius: 50%;
   background: rgba(255,255,255,0.18);
-  border: 4px solid #fff;
+  border: 4px solid transparent; /* el "borde" ahora es el SVG ring */
   display: flex; align-items: center; justify-content: center;
   cursor: pointer;
   padding: 0;
+  position: relative;
+  /* Borde blanco completo que sirve de fondo cuando NO hay segmentos */
+  box-shadow: inset 0 0 0 4px #fff;
+}
+.recordbtn.has-segments { box-shadow: none; }
+.recordbtn-ring {
+  position: absolute;
+  inset: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  /* Visible solo cuando hay segmentos */
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.recordbtn.has-segments .recordbtn-ring { opacity: 1; }
+.recordbtn-ring circle {
+  /* Pattern por defecto: ningún segmento. JS setea stroke-dasharray dinámicamente. */
+  stroke-dasharray: 0 1000;
 }
 .recordbtn .recinner {
   width: 56px; height: 56px;
@@ -345,24 +384,6 @@ html, body {
 .timer.active { display: block; background: rgba(255,84,85,0.9); }
 .timer.paused { display: block; background: rgba(255,200,80,0.95); color: #1a1300; }
 
-/* Clips indicator: badge mostrando cuántos clips llevás grabados */
-.clips-indicator {
-  position: absolute;
-  top: max(48px, env(safe-area-inset-top) + 36px);
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(0,0,0,0.7);
-  color: var(--accent);
-  padding: 4px 12px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 700;
-  z-index: 6;
-  border: 1px solid var(--accent);
-  white-space: nowrap;
-  pointer-events: none;
-}
-
 /* Done button (verde) — destaca como acción primaria final */
 .iconbtn.done {
   background: rgba(78,205,196,0.85) !important;
@@ -371,6 +392,50 @@ html, body {
   font-weight: 900;
 }
 .iconbtn.done:active { background: var(--accent) !important; }
+
+/* Preview button (azul violeta) — distinto al Done para no confundir */
+.iconbtn.preview {
+  background: rgba(108,99,255,0.7) !important;
+  color: #fff !important;
+  border-color: rgba(108,99,255,0.9) !important;
+}
+
+/* Quick preview overlay — playback del último clip sin salir de grabación */
+.quick-preview {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.92);
+  z-index: 50;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  padding: 16px;
+  gap: 12px;
+}
+.quick-preview[style*="display: none"],
+.quick-preview[style*="display:none"] { display: none !important; }
+.quick-preview video {
+  max-width: 100%;
+  max-height: 75vh;
+  background: #000;
+  border-radius: 12px;
+}
+.quick-preview-close {
+  background: var(--accent);
+  color: #0a0c10;
+  border: 0;
+  padding: 10px 20px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.quick-preview-info {
+  color: var(--text-dim);
+  font-size: 12px;
+  text-align: center;
+}
 
 .debug-overlay {
   position: absolute;

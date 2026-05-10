@@ -312,19 +312,49 @@ let _finishingForPreview = false;
 function updateMultiSegmentUI() {
   const undoBtn = document.getElementById('btnUndo');
   const doneBtn = document.getElementById('btnDone');
+  const previewBtn = document.getElementById('btnPreviewLast');
   const clipsInd = document.getElementById('clipsIndicator');
   const isRecording = mediaRecorder && (mediaRecorder.state === 'recording' || mediaRecorder.state === 'paused');
   const hasSegments = recordedSegments.length > 0;
   if (undoBtn) undoBtn.style.display = (hasSegments && !isRecording) ? '' : 'none';
   if (doneBtn) doneBtn.style.display = (hasSegments && !isRecording) ? '' : 'none';
+  if (previewBtn) previewBtn.style.display = (hasSegments && !isRecording) ? '' : 'none';
   if (clipsInd) {
     if (hasSegments) {
       clipsInd.style.display = 'block';
-      clipsInd.textContent = '📹 ' + recordedSegments.length + ' clip' + (recordedSegments.length === 1 ? '' : 's');
+      clipsInd.textContent = recordedSegments.length + ' CLIP' + (recordedSegments.length === 1 ? '' : 'S');
     } else {
       clipsInd.style.display = 'none';
     }
   }
+  renderRecordRing();
+}
+
+// Anillo de progreso TikTok-style alrededor del botón rojo. Un arco por clip.
+function renderRecordRing() {
+  const ring = document.getElementById('recordBtnRing');
+  const recBtn = document.getElementById('btnRecord');
+  if (!ring || !recBtn) return;
+  const N = recordedSegments.length;
+  recBtn.classList.toggle('has-segments', N > 0);
+  if (N === 0) {
+    ring.setAttribute('stroke-dasharray', '0 1000');
+    return;
+  }
+  const radius = 46;
+  const circumference = 2 * Math.PI * radius; // ~289
+  // Gap angular fijo entre segmentos (en pixels del SVG viewBox)
+  const gap = N === 1 ? 0 : 4;
+  const segLen = (circumference - N * gap) / N;
+  // Pattern: [seg, gap] repite hasta completar circumference. JS necesita
+  // listar todos los pares para asegurar que no haya fracción wraparound.
+  const pattern = [];
+  for (let i = 0; i < N; i++) {
+    pattern.push(Math.max(0.5, segLen));
+    pattern.push(gap);
+  }
+  ring.setAttribute('stroke-dasharray', pattern.join(' '));
+  ring.setAttribute('stroke-dashoffset', '0');
 }
 
 function startRecording() {
@@ -667,6 +697,47 @@ $('btnDone').addEventListener('click', () => {
   } else if (recordedSegments.length > 0) {
     showPreview();
   }
+});
+
+// v3.11.21: btnPreviewLast — overlay rápido para ver el último clip sin salir
+// de la pantalla de grabación. Útil para acordarse en qué parte se quedó.
+$('btnPreviewLast').addEventListener('click', () => {
+  if (recordedSegments.length === 0) return;
+  const last = recordedSegments[recordedSegments.length - 1];
+  if (!last || !last.blob) return;
+  const overlay = $('quickPreview');
+  const video = $('quickPreviewVideo');
+  const info = $('quickPreviewInfo');
+  if (!overlay || !video) return;
+  // Limpiar src previo y crear nuevo
+  if (video.dataset.objectUrl) {
+    try { URL.revokeObjectURL(video.dataset.objectUrl); } catch (e) {}
+  }
+  const url = URL.createObjectURL(last.blob);
+  video.src = url;
+  video.dataset.objectUrl = url;
+  if (info) {
+    const sec = Math.round((last.durationMs || 0) / 1000);
+    info.textContent = 'Clip ' + recordedSegments.length + ' de ' + recordedSegments.length + ' · ' + sec + 's';
+  }
+  overlay.style.display = 'flex';
+  setTimeout(() => video.play().catch(() => {}), 50);
+});
+
+$('quickPreviewClose').addEventListener('click', () => {
+  const overlay = $('quickPreview');
+  const video = $('quickPreviewVideo');
+  if (video) {
+    try { video.pause(); } catch (e) {}
+    if (video.dataset.objectUrl) {
+      try { URL.revokeObjectURL(video.dataset.objectUrl); } catch (e) {}
+      delete video.dataset.objectUrl;
+    }
+    video.src = '';
+  }
+  if (overlay) overlay.style.display = 'none';
+  // Reanudar el draw loop por si rAF se durmió mientras veía el preview
+  ensureDrawLoopAlive();
 });
 
 $('btnPlayPause').addEventListener('click', tpPlayPause);
