@@ -33,7 +33,12 @@
 
     <!-- Pantalla 3: lista para grabar -->
     <section class="screen screen-record" id="screenRecord">
-      <video id="preview" autoplay muted playsinline></video>
+      <!-- Hidden video element — holds the current camera's stream. Drawn into canvas. -->
+      <video id="hiddenCam" autoplay muted playsinline style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none"></video>
+      <!-- Visible canvas — both preview AND recording source. captureStream() is continuous
+           even if we swap which camera fills the hidden video, so we can record across
+           front/back camera switches. -->
+      <canvas id="captureCanvas"></canvas>
 
       <!-- Teleprompter overlay (draggable + resizable) -->
       <div class="teleprompter" id="teleprompter">
@@ -44,7 +49,7 @@
 
       <!-- Top bar: cámara + tamaño de texto -->
       <div class="topbar">
-        <button class="iconbtn" id="btnSwapCam" title="Cambiar cámara">🔄</button>
+        <button class="iconbtn" id="btnSwapCam" title="Cambiar cámara (front/back) — funciona durante la grabación, sin cortar el video">🔄</button>
         <button class="iconbtn" id="btnFontDown" title="Texto más chico">A−</button>
         <button class="iconbtn" id="btnFontUp" title="Texto más grande">A+</button>
         <button class="iconbtn" id="btnTpToggle" title="Mostrar/ocultar guion">📝</button>

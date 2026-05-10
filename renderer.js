@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.10.3': {
+    title: 'Recorder: front+back en un solo video + landscape thumb-zone',
+    features: [
+      '🎥 <strong>Cambiá entre cámara frontal y trasera SIN cortar la grabación</strong>: ahora el celular graba a través de un canvas HTML5 (no del MediaStream directo). Tap al 🔄 mid-recording → la fuente del canvas cambia, la grabación sigue. Resultado: <strong>UN SOLO archivo continuo</strong> con escenas de ambas cámaras (front + back).',
+      '🎙 <strong>Audio persistente</strong>: el track de mic se captura una sola vez al abrir la app y queda activo toda la sesión, así no hay glitch al cambiar de cámara.',
+      '👍 <strong>Botones reordenados en landscape</strong>: cuando sostenés el celular horizontal (selfie con una sola mano), los controles se anclan al costado derecho del dispositivo. <strong>El botón Pausa queda en la esquina inferior derecha</strong> — donde cae naturalmente el pulgar.',
+      '🎚 <strong>Slider de velocidad horizontal en landscape</strong>: se reorienta automáticamente para no chocar con la columna de botones de la derecha.',
+      '🔧 <strong>Topbar (cámara, fuente, ocultar guion)</strong> también se reorienta a vertical-izquierdo en landscape para liberar la zona del pulgar.'
+    ]
+  },
   '3.10.2': {
     title: 'Recorder pro: pausa, teleprompter movible/redimensionable y video visible siempre',
     features: [

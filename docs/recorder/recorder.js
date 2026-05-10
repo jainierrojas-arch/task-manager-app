@@ -53,13 +53,26 @@ async function loadSession() {
   }
 }
 
-// ===== Camera =====
-let stream = null;
+// ===== Camera + canvas pipeline (v3.10.3) =====
+// El recording NO se hace directo del MediaStream de la cámara. En su lugar:
+// 1) Tenemos un <video id="hiddenCam"> que recibe el stream de la cámara activa.
+// 2) Un <canvas id="captureCanvas"> que se redibuja con requestAnimationFrame
+//    copiando el frame actual del video.
+// 3) MediaRecorder graba el stream del canvas (canvas.captureStream(30)) +
+//    un audioTrack persistente capturado UNA SOLA VEZ al iniciar.
+// Esto permite que al cambiar de cámara (front <-> back) la grabación NO se corte:
+// solo se reemplaza la fuente del hidden video, el canvas sigue recibiendo frames
+// y el audio nunca se interrumpe. Resultado: un solo archivo continuo con ambas tomas.
+let videoStream = null;     // cambia al swappear cámara
+let audioStream = null;     // persistente toda la sesión
+let audioTrack = null;
 let currentFacing = 'user';
 let mediaRecorder = null;
 let recordedChunks = [];
 let recordedBlob = null;
 let recordedMime = '';
+let drawHandle = null;
+let canvasReady = false;
 
 function pickMime() {
   const candidates = [
@@ -75,25 +88,67 @@ function pickMime() {
   return '';
 }
 
+async function ensureAudio() {
+  if (audioTrack && audioTrack.readyState === 'live') return audioTrack;
+  audioStream = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: true, noiseSuppression: true }
+  });
+  audioTrack = audioStream.getAudioTracks()[0];
+  return audioTrack;
+}
+
 async function startCamera(facing) {
   try {
-    if (stream) stream.getTracks().forEach(t => t.stop());
-    stream = await navigator.mediaDevices.getUserMedia({
+    // Liberar el video stream anterior (no tocar audio).
+    if (videoStream) videoStream.getTracks().forEach(t => t.stop());
+    videoStream = await navigator.mediaDevices.getUserMedia({
       video: {
         facingMode: facing === 'environment' ? { ideal: 'environment' } : { ideal: 'user' },
         width: { ideal: 1080 },
         height: { ideal: 1920 }
-      },
-      audio: { echoCancellation: true, noiseSuppression: true }
+      }
     });
-    const preview = $('preview');
-    preview.srcObject = stream;
-    preview.classList.toggle('mirror', facing === 'user');
+    const hidden = $('hiddenCam');
+    hidden.srcObject = videoStream;
+    try { await hidden.play(); } catch (e) { /* autoplay may already be running */ }
     currentFacing = facing;
+    const canvas = $('captureCanvas');
+    if (canvas) canvas.classList.toggle('mirror', facing === 'user');
+    setupDrawLoop();
   } catch (e) {
     console.error('[camera] failed', e);
     setError('No se pudo abrir la cámara', e.message + ' — Asegurate de dar permiso en el navegador y abrir desde HTTPS.');
   }
+}
+
+function setupDrawLoop() {
+  if (canvasReady) return; // ya corriendo
+  const canvas = $('captureCanvas');
+  const hidden = $('hiddenCam');
+  if (!canvas || !hidden) return;
+  const ctx = canvas.getContext('2d');
+  // Tamaño fijo del canvas durante TODA la sesión — si cambia mid-recording,
+  // MediaRecorder se rompe. 720x1280 (portrait HD) es buen balance peso/calidad.
+  if (!canvas.width || canvas.width === 300) {
+    canvas.width = 720;
+    canvas.height = 1280;
+  }
+  function draw() {
+    if (hidden.videoWidth > 0 && hidden.videoHeight > 0) {
+      const sw = hidden.videoWidth, sh = hidden.videoHeight;
+      const dw = canvas.width, dh = canvas.height;
+      // cover-fit (igual que object-fit:cover): rellena el canvas, recorta excesos.
+      const scale = Math.max(dw / sw, dh / sh);
+      const w = sw * scale, h = sh * scale;
+      const x = (dw - w) / 2, y = (dh - h) / 2;
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, dw, dh);
+      ctx.drawImage(hidden, x, y, w, h);
+    }
+    drawHandle = requestAnimationFrame(draw);
+  }
+  drawHandle = requestAnimationFrame(draw);
+  canvasReady = true;
 }
 
 async function init() {
@@ -107,8 +162,17 @@ async function init() {
   }
   const ok = await loadSession();
   if (!ok) return;
-  $('loadingText').textContent = 'Pidiendo cámara...';
+  $('loadingText').textContent = 'Pidiendo permiso de micrófono...';
   $('tpText').textContent = session.scriptText || '(Sin guion. Improvisá!)';
+  // El audio se captura UNA SOLA VEZ y queda persistente toda la sesión, así el
+  // recording no se interrumpe al cambiar de cámara front<->back.
+  try {
+    await ensureAudio();
+  } catch (e) {
+    setError('No se pudo abrir el micrófono', e.message);
+    return;
+  }
+  $('loadingText').textContent = 'Pidiendo cámara...';
   await startCamera('user');
   show('screenRecord');
   // Avisar al desktop que el celular está conectado y listo
@@ -143,14 +207,21 @@ let recPausedAccum = 0; // ms acumulados en pausa para que el timer siga siendo 
 let recPausedAt = 0;
 
 function startRecording() {
-  if (!stream) return;
+  const canvas = $('captureCanvas');
+  if (!canvas || !audioTrack) return;
   recordedChunks = [];
   recPausedAccum = 0;
   recPausedAt = 0;
   const mime = pickMime();
   recordedMime = mime || 'video/webm';
+  // Combinar el stream del canvas (video continuo aunque cambie la cámara) con el
+  // audio track persistente. NUNCA reasignar el audioTrack durante la sesión.
+  const canvasStream = canvas.captureStream(30);
+  const combined = new MediaStream();
+  canvasStream.getVideoTracks().forEach(t => combined.addTrack(t));
+  combined.addTrack(audioTrack);
   try {
-    mediaRecorder = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 6_000_000 } : { videoBitsPerSecond: 6_000_000 });
+    mediaRecorder = new MediaRecorder(combined, mime ? { mimeType: mime, videoBitsPerSecond: 6_000_000 } : { videoBitsPerSecond: 6_000_000 });
   } catch (e) {
     console.error('[rec] new MediaRecorder failed', e);
     alert('No se pudo iniciar la grabación: ' + e.message);

@@ -78,17 +78,17 @@ html, body {
   background: #000;
 }
 
-#preview {
+#captureCanvas {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
   background: #000;
+  display: block;
 }
-
-/* Mirror the front camera preview so it feels natural — the recorded file is not mirrored. */
-#preview.mirror { transform: scaleX(-1); }
+/* Mirror only the preview (CSS), not the canvas pixels — recorded video stays unmirrored. */
+#captureCanvas.mirror { transform: scaleX(-1); }
 
 .teleprompter {
   position: absolute;
@@ -174,6 +174,56 @@ html, body {
   justify-content: center;
   gap: 32px;
   z-index: 5;
+}
+
+/* Landscape: anclamos los controles en el costado derecho del dispositivo para que
+   queden al alcance del pulgar derecho cuando se sostiene el celular horizontal y
+   uno se está grabando selfie con una sola mano. Pause es el más importante mid-rec,
+   así que va abajo de todo (zona pulgar). Cancel arriba para evitar toques accidentales. */
+@media (orientation: landscape) {
+  .bottombar {
+    flex-direction: column;
+    bottom: max(16px, env(safe-area-inset-bottom));
+    right: max(14px, env(safe-area-inset-right));
+    left: auto;
+    width: auto;
+    gap: 14px;
+    align-items: flex-end;
+    transform: none;
+  }
+  /* Reordenar para landscape: pulgar derecho cae en bottombar bottom-right.
+     Pause (más usado mid-rec) va al fondo. Record arriba. PlayPause y Cancel arriba. */
+  #btnCancel    { order: 1; }
+  #btnPlayPause { order: 2; }
+  #btnRecord    { order: 3; }
+  #btnPauseRec  { order: 4; }
+  /* Topbar: stack vertical en el costado IZQUIERDO para no chocar con bottombar */
+  .topbar {
+    left: max(14px, env(safe-area-inset-left));
+    right: auto;
+    flex-direction: column;
+    top: max(14px, env(safe-area-inset-top));
+    width: auto;
+  }
+  /* Speed slider: abajo a la izquierda — fuera de la zona del pulgar derecho */
+  .speedctl {
+    right: auto;
+    left: max(72px, calc(env(safe-area-inset-left) + 64px));
+    top: auto;
+    bottom: max(16px, env(safe-area-inset-bottom));
+    transform: none;
+    flex-direction: row;
+    padding: 8px 12px;
+    gap: 12px;
+  }
+  .speedctl-help { display: none; }
+  #speedSlider {
+    -webkit-appearance: none;
+    appearance: none;
+    writing-mode: horizontal-tb;
+    width: 140px;
+    height: 24px;
+  }
 }
 
 .iconbtn {
