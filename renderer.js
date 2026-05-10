@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.1': {
+    title: 'Explorador embebido como pestaña + fix navegación',
+    features: [
+      '🪟 <strong>Explorar ahora es una pestaña INTEGRADA</strong>: en lugar del panel lateral que se abría como una ventana, el Explorador ocupa toda la interfaz como cualquier otra pestaña (Tareas, Calendario, etc). Sin ventanas externas — todo dentro de Task Manager.',
+      '🐛 <strong>Fix navegación</strong>: ahora <code>loadURL</code> espera al evento <code>dom-ready</code> antes de navegar. Si fallás escribiendo una URL, te avisa con un toast rojo en vez de quedarse colgado en silencio. Las URLs sin <code>https://</code> se completan automáticamente.',
+      '⚡ <strong>Lazy-load</strong>: el browser solo arranca cuando tocás "Explorar" la primera vez (ahorra recursos al abrir la app).',
+      '📋 <strong>Fallback robusto</strong>: si <code>loadURL</code> falla por algún motivo, intenta con <code>setAttribute(\'src\', ...)</code> automáticamente.'
+    ]
+  },
   '3.11.0': {
     title: 'Explorador embebido — investigá referencias sin salir de la app',
     features: [
@@ -1724,8 +1733,7 @@ const SIDE_PANEL_CONFIGS = {
   chat: { title: '💬 Chat del equipo', src: 'chat.html' },
   deposit: { title: '📦 Depósito de Ideas', src: 'deposit.html' },
   references: { title: '📚 Banco de Referencias', src: 'deposit.html?category=referencias' },
-  manychat: { title: '🤖 ManyChat', src: 'https://app.manychat.com/' },
-  explorer: { title: '🌐 Explorar Reels & TikToks', src: 'explorer.html' }
+  manychat: { title: '🤖 ManyChat', src: 'https://app.manychat.com/' }
 };
 
 let _currentSidePanel = null;
@@ -7146,6 +7154,15 @@ document.querySelectorAll('.nav-tab').forEach(tab => {
     if (currentTab === 'calendar') renderCalendar();
     if (currentTab === 'ideas') renderIdeas();
     if (currentTab === 'schedule') renderSchedule();
+    if (currentTab === 'explorer') {
+      // v3.11.1: lazy-load del iframe del explorador (webview es pesado, no
+      // arrancarlo hasta que el usuario realmente abra la pestaña)
+      const ifr = document.getElementById('explorerIframe');
+      if (ifr && (!ifr.src || ifr.src === 'about:blank' || ifr.dataset.loaded !== '1')) {
+        ifr.src = buildIframeSrc('explorer.html');
+        ifr.dataset.loaded = '1';
+      }
+    }
     syncSidebarActive();
   });
 });

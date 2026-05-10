@@ -1902,7 +1902,7 @@
             <span class="sidebar-label">Refs</span>
             <span class="sidebar-badge" id="sbBadgeRefs" style="display:none">0</span>
           </button>
-          <button class="sidebar-item" data-side-panel="explorer" title="Explorar IG/TikTok dentro de la app y guardar al Depósito directo">
+          <button class="sidebar-item" data-go-tab="explorer" title="Explorar IG/TikTok dentro de la app y guardar al Depósito directo">
             <span class="sidebar-icon">🌐</span>
             <span class="sidebar-label">Explorar</span>
           </button>
@@ -2070,6 +2070,9 @@
         <span class="pin-dot"></span>
         FIJAR Ventana
       </button>
+      <div class="nav-tab" data-tab="explorer" style="display:none">
+        &#127760; Explorar
+      </div>
       <div class="nav-tab" data-tab="settings">
         &#9881; Config
       </div>
@@ -2251,6 +2254,14 @@
             </div>
           </div>
         </div>
+      </div>
+
+      <!-- Explorer (v3.11.1): browser embebido para investigar IG/TikTok dentro de la app -->
+      <div class="tab-content" id="tabExplorer" style="padding:0;height:100%">
+        <iframe id="explorerIframe"
+                src="about:blank"
+                style="width:100%;height:100%;border:0;display:block;background:#0f1115"
+                allow="autoplay; encrypted-media"></iframe>
       </div>
 
       <!-- Settings -->

@@ -24,6 +24,38 @@ function showToast(msg, kind) {
 }
 
 // ===== Webview navigation =====
+let webviewReady = false;
+const pendingNavQueue = [];
+
+function navigate(targetUrl) {
+  if (!targetUrl) return;
+  if (!/^https?:\/\//i.test(targetUrl)) targetUrl = 'https://' + targetUrl;
+  if (!webviewReady) {
+    pendingNavQueue.push(targetUrl);
+    return;
+  }
+  // Intentar loadURL primero. Si falla, fallback a setAttribute('src').
+  try {
+    const p = browser.loadURL(targetUrl);
+    if (p && typeof p.catch === 'function') {
+      p.catch((err) => {
+        console.warn('[explorer] loadURL failed', err);
+        try { browser.setAttribute('src', targetUrl); } catch (e) { showToast('Error al navegar: ' + e.message, 'error'); }
+      });
+    }
+  } catch (e) {
+    console.warn('[explorer] loadURL threw', e);
+    try { browser.setAttribute('src', targetUrl); }
+    catch (e2) { showToast('Error al navegar: ' + e2.message, 'error'); }
+  }
+}
+
+browser.addEventListener('dom-ready', () => {
+  webviewReady = true;
+  // Procesar cola de navegaciones pendientes
+  while (pendingNavQueue.length) navigate(pendingNavQueue.shift());
+  syncUrlBar();
+});
 browser.addEventListener('did-start-loading', () => {
   loadingBar.classList.remove('done');
   loadingBar.classList.add('active');
@@ -32,6 +64,12 @@ browser.addEventListener('did-stop-loading', () => {
   loadingBar.classList.remove('active');
   loadingBar.classList.add('done');
   setTimeout(() => loadingBar.classList.remove('done'), 600);
+});
+browser.addEventListener('did-fail-load', (ev) => {
+  // -3 = ABORTED (normal cuando se inicia otra navegación). Ignorar.
+  if (ev.errorCode === -3) return;
+  console.warn('[explorer] did-fail-load', ev.errorCode, ev.errorDescription, ev.validatedURL);
+  showToast(`Error ${ev.errorCode}: ${ev.errorDescription || 'No se pudo cargar'}`, 'error');
 });
 function syncUrlBar() {
   try { urlBar.value = browser.getURL(); } catch (e) {}
@@ -50,19 +88,16 @@ document.getElementById('navReload').addEventListener('click', () => {
   try { browser.reload(); } catch (e) {}
 });
 document.getElementById('navGo').addEventListener('click', () => {
-  let u = urlBar.value.trim();
+  const u = urlBar.value.trim();
   if (!u) return;
-  if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
-  try { browser.loadURL(u); } catch (e) {}
+  navigate(u);
 });
 urlBar.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') document.getElementById('navGo').click();
 });
 
 document.querySelectorAll('[data-quick]').forEach(btn => {
-  btn.addEventListener('click', () => {
-    try { browser.loadURL(btn.dataset.quick); } catch (e) {}
-  });
+  btn.addEventListener('click', () => navigate(btn.dataset.quick));
 });
 
 // ===== Save current URL to Deposit =====
