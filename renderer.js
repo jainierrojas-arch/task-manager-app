@@ -75,6 +75,18 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.9.11': {
+    title: 'Modal de Transcripción + Teleprompter integrado',
+    features: [
+      '🎤 <strong>Modal completo al transcribir</strong>: click en "Transcribir video" ahora abre un modal grande dedicado con: guion original, botones de acción y todas las variaciones generadas — todo en un solo lugar.',
+      '✨ <strong>Generar variación desde el modal</strong>: botón "Generar variación con Claude" dentro del modal — crea una versión nueva del guion con ángulo distinto. Cada variación queda guardada y se muestra debajo.',
+      '🎬 <strong>Teleprompter integrado</strong>: cada guion (original o variación) tiene su propio botón "🎬 Teleprompter" que abre vista full-screen negra con texto grande haciendo scroll automático. Listo para grabar.',
+      '⚙️ <strong>Controles del Teleprompter</strong>: ▶ Play/Pausa, ⏮ Inicio, slider de Velocidad (10-200), slider de Tamaño de fuente (20-80px), toggle Espejado (para uso con prompter de cámara). ESC cierra.',
+      '📋 <strong>Copiar guion</strong>: cada bloque (original + variaciones) tiene botón Copiar para llevar el texto al portapapeles.',
+      '🔄 <strong>Re-transcribir</strong>: botón 🔄 dentro del modal para re-procesar desde cero si la transcripción salió mal.',
+      '🗑 <strong>Borrar variaciones individuales</strong> sin tocar las demás.'
+    ]
+  },
   '3.9.10': {
     title: 'Fix iframe API + botón Meet en sidebar',
     features: [

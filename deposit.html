@@ -627,6 +627,118 @@
       padding: 20px;
     }
     .modal-overlay.active { display: flex; }
+    /* Modal de transcripción — más grande para ver el guion completo */
+    .modal-overlay.transcription-mode .modal {
+      max-width: 900px;
+    }
+    .transcript-section {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+      margin-bottom: 12px;
+    }
+    .transcript-section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+    .transcript-text {
+      font-size: 14px;
+      line-height: 1.6;
+      color: var(--text-primary);
+      white-space: pre-wrap;
+      max-height: 280px;
+      overflow-y: auto;
+    }
+    .transcript-variation {
+      background: rgba(108,99,255,0.08);
+      border-left: 3px solid var(--accent);
+      padding: 12px 14px;
+      border-radius: 6px;
+      margin-bottom: 8px;
+      position: relative;
+    }
+    .transcript-variation-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+      font-size: 11px;
+      color: var(--accent);
+      font-weight: 700;
+    }
+    .transcript-variation-text {
+      font-size: 13px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+    }
+    /* Teleprompter — modo full screen con texto grande scrolling */
+    .teleprompter {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: #000;
+      z-index: 200;
+      overflow: hidden;
+      flex-direction: column;
+    }
+    .teleprompter.active { display: flex; }
+    .teleprompter-controls {
+      flex-shrink: 0;
+      background: rgba(0,0,0,0.85);
+      border-bottom: 1px solid #333;
+      padding: 12px 18px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: white;
+      font-family: inherit;
+      flex-wrap: wrap;
+    }
+    .teleprompter-controls button {
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.15);
+      color: white;
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      font-family: inherit;
+      transition: background 0.15s;
+    }
+    .teleprompter-controls button:hover { background: rgba(255,255,255,0.2); }
+    .teleprompter-controls button.primary { background: var(--accent); border-color: var(--accent); }
+    .teleprompter-controls input[type="range"] { width: 110px; }
+    .teleprompter-controls label {
+      font-size: 11px;
+      color: rgba(255,255,255,0.7);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .teleprompter-text-wrap {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 30vh 8vw;
+      scroll-behavior: smooth;
+    }
+    .teleprompter-text {
+      color: white;
+      font-weight: 600;
+      line-height: 1.5;
+      letter-spacing: 0.3px;
+      text-align: center;
+      white-space: pre-wrap;
+    }
+    .teleprompter-text.mirror { transform: scaleX(-1); }
     .modal {
       background: var(--bg-secondary);
       border-radius: 12px;
@@ -875,6 +987,51 @@
         <button class="btn btn-ghost" id="cancelEntry">Cancelar</button>
         <button class="btn btn-primary" id="confirmEntry">Guardar</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Modal: transcripción + variaciones + teleprompter (v3.9.11) -->
+  <div class="modal-overlay transcription-mode" id="transcriptionModal">
+    <div class="modal" style="display:flex;flex-direction:column">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div>
+          <h3 style="margin:0;font-size:18px;color:var(--text-primary)">🎤 Transcripción de video</h3>
+          <div id="transcriptionEntryName" style="font-size:12px;color:var(--text-secondary);margin-top:2px"></div>
+        </div>
+        <button class="btn btn-ghost" id="transcriptionClose" style="font-size:18px;padding:4px 12px">✕</button>
+      </div>
+      <div id="transcriptionStatus" style="font-size:12px;color:var(--text-secondary);margin-bottom:10px"></div>
+
+      <div class="transcript-section" id="transcriptionOriginalSection" style="display:none">
+        <div class="transcript-section-header">
+          <span>📝 Guion original (transcripción del audio)</span>
+          <button class="btn btn-ghost btn-small" id="transcriptionRetry" title="Re-transcribir desde cero">🔄</button>
+        </div>
+        <div class="transcript-text" id="transcriptionOriginalText"></div>
+        <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap">
+          <button class="btn btn-primary btn-small" id="transcriptionGenerate">✨ Generar variación con Claude</button>
+          <button class="btn btn-ghost btn-small" id="transcriptionTeleprompter" data-source="original">🎬 Teleprompter (original)</button>
+          <button class="btn btn-ghost btn-small" id="transcriptionCopyOriginal">📋 Copiar</button>
+        </div>
+      </div>
+
+      <div id="transcriptionVariationsList" style="margin-top:12px"></div>
+    </div>
+  </div>
+
+  <!-- Teleprompter full screen (v3.9.11) -->
+  <div class="teleprompter" id="teleprompter">
+    <div class="teleprompter-controls">
+      <button id="tpPlayPause" class="primary">▶ Play</button>
+      <button id="tpReset">⏮ Inicio</button>
+      <label>Velocidad <input type="range" id="tpSpeed" min="10" max="200" value="60"></label>
+      <label>Tamaño <input type="range" id="tpFontSize" min="20" max="80" value="40"></label>
+      <label><input type="checkbox" id="tpMirror"> Espejado</label>
+      <span style="flex:1"></span>
+      <button id="tpClose">✕ Cerrar</button>
+    </div>
+    <div class="teleprompter-text-wrap" id="tpTextWrap">
+      <div class="teleprompter-text" id="tpText" style="font-size:40px"></div>
     </div>
   </div>
 

@@ -2273,37 +2273,37 @@ async function getOpenaiKeyForIframe() {
   return null;
 }
 
+// v3.9.11: el botón Transcribir ahora abre el modal completo. Si la entry ya
+// tiene transcripción, la muestra directo. Si no, ejecuta Whisper.
 async function transcribeEntry(entryId, btn) {
   const entry = entries.find(e => e.id === entryId);
   if (!entry) return;
+  // Abrir modal con estado actual
+  openTranscriptionModal(entryId);
+  // Si ya hay transcripción, no re-transcribir (a menos que sea desde "Re-transcribir")
+  if (entry.transcription && (!btn || btn.dataset.action !== 'retry')) return;
+  // Verificar video transcribible
   const videoLink = (entry.links || []).find(l => isTranscribableLink(l));
   if (!videoLink) {
-    // Detectar plataformas conocidas que no permiten descarga directa
     const protectedPlatforms = (entry.links || []).find(l => l && l.url && /(instagram\.com|tiktok\.com|youtube\.com|youtu\.be|facebook\.com)/i.test(l.url));
-    if (protectedPlatforms) {
-      alert('Este video está hospedado en una plataforma protegida (Instagram / TikTok / YouTube). Bajalo y subilo a Cloudinary primero, después podés transcribirlo.');
-    } else {
-      alert('No encontré un video transcribible en esta entry. Necesito un video Cloudinary o una URL directa a un archivo .mp4/.mov/.mp3/etc.');
-    }
+    _setTranscriptionStatus(protectedPlatforms
+      ? '❌ Video en plataforma protegida (IG/TikTok/YouTube). Subilo a Cloudinary primero.'
+      : '❌ No hay video transcribible (necesito Cloudinary o URL directa a archivo).', 'error');
     return;
   }
   const apiKey = await getOpenaiKeyForIframe();
   if (!apiKey) {
-    alert('Configurá tu OpenAI API key en Settings de la app principal antes de transcribir.');
+    _setTranscriptionStatus('❌ Configurá tu OpenAI API key en Settings de la app principal.', 'error');
     return;
   }
-  const originalText = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = '⏳ Descargando audio...';
   try {
+    _setTranscriptionStatus('⏳ Descargando audio...');
     const audioUrl = audioFetchUrl(videoLink.url);
     const audioRes = await fetch(audioUrl);
     if (!audioRes.ok) throw new Error('No se pudo bajar el audio (HTTP ' + audioRes.status + ')');
     const audioBlob = await audioRes.blob();
-    if (audioBlob.size > 25 * 1024 * 1024) {
-      throw new Error('Audio muy grande (>25MB). Probá con un video más corto.');
-    }
-    btn.textContent = '🎤 Transcribiendo...';
+    if (audioBlob.size > 25 * 1024 * 1024) throw new Error('Audio muy grande (>25MB).');
+    _setTranscriptionStatus('🎤 Enviando a Whisper...');
     const formData = new FormData();
     formData.append('file', audioBlob, 'audio.mp3');
     formData.append('model', 'whisper-1');
@@ -2324,12 +2324,10 @@ async function transcribeEntry(entryId, btn) {
       transcription: transcript,
       transcribedAt: firebase.firestore.FieldValue.serverTimestamp()
     });
-    btn.textContent = '✓ Listo';
-    setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 1500);
+    _setTranscriptionStatus('✓ Transcripción lista', 'success');
+    setTimeout(() => _renderTranscriptionModalContent(entryId), 200);
   } catch (e) {
-    alert('Error: ' + e.message);
-    btn.textContent = originalText;
-    btn.disabled = false;
+    _setTranscriptionStatus('❌ Error: ' + e.message, 'error');
   }
 }
 
@@ -2337,12 +2335,11 @@ async function rewriteScriptForEntry(entryId, btn) {
   const entry = entries.find(e => e.id === entryId);
   if (!entry || !entry.transcription) { alert('Primero transcribí el video.'); return; }
   if (!window.parent || !window.parent.window || !window.parent.window.api || !window.parent.window.api.callClaude) {
-    alert('Claude API no disponible.');
+    _setTranscriptionStatus('❌ Claude API no disponible desde el iframe.', 'error');
     return;
   }
-  const originalText = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = '⏳ Generando...';
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Generando...'; }
+  _setTranscriptionStatus('⏳ Claude generando variación...');
   try {
     const prompt = 'Recreá el siguiente guion de video manteniendo la misma idea/tema y la misma duración aproximada, pero con un ángulo, hook y palabras DISTINTAS. Que no sea idéntico — quiero una variación creativa que vuelva a contar lo mismo de manera fresca, lista para grabar. Devolvé SOLO el guion nuevo, sin explicaciones ni encabezados.\n\nGuion original:\n\n' + entry.transcription;
     const result = await window.parent.window.api.callClaude({
@@ -2359,12 +2356,210 @@ async function rewriteScriptForEntry(entryId, btn) {
       createdBy: (window.parent && window.parent.currentUser) ? window.parent.currentUser.uid : null
     });
     await db.collection('depositEntries').doc(entryId).update({ scriptVariations: variations });
-    btn.textContent = '✓ Lista';
-    setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 1500);
+    _setTranscriptionStatus('✓ Variación generada', 'success');
+    setTimeout(() => _renderTranscriptionModalContent(entryId), 200);
+    if (btn) { btn.disabled = false; btn.textContent = '✨ Generar variación con Claude'; }
   } catch (e) {
-    alert('Error: ' + e.message);
-    btn.textContent = originalText;
-    btn.disabled = false;
+    _setTranscriptionStatus('❌ Error: ' + e.message, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = '✨ Generar variación con Claude'; }
   }
+}
+
+// ===== Modal de transcripción + teleprompter (v3.9.11) =====
+let _currentTranscriptionEntryId = null;
+
+function _setTranscriptionStatus(text, kind) {
+  const el = document.getElementById('transcriptionStatus');
+  if (!el) return;
+  el.textContent = text;
+  el.style.color = kind === 'error' ? '#ff6b6b' : kind === 'success' ? '#4ecdc4' : 'var(--text-secondary)';
+}
+
+function openTranscriptionModal(entryId) {
+  _currentTranscriptionEntryId = entryId;
+  const modal = document.getElementById('transcriptionModal');
+  if (!modal) return;
+  modal.classList.add('active');
+  _renderTranscriptionModalContent(entryId);
+}
+
+function closeTranscriptionModal() {
+  const modal = document.getElementById('transcriptionModal');
+  if (modal) modal.classList.remove('active');
+  _currentTranscriptionEntryId = null;
+}
+
+function _renderTranscriptionModalContent(entryId) {
+  const entry = entries.find(e => e.id === entryId);
+  if (!entry) return;
+  document.getElementById('transcriptionEntryName').textContent = entry.title || '(sin titulo)';
+  const original = document.getElementById('transcriptionOriginalSection');
+  const text = document.getElementById('transcriptionOriginalText');
+  if (entry.transcription) {
+    original.style.display = 'block';
+    text.textContent = entry.transcription;
+    if (!_setTranscriptionStatus._userMsg) _setTranscriptionStatus('');
+  } else {
+    original.style.display = 'none';
+    if (!_setTranscriptionStatus._userMsg) _setTranscriptionStatus('⏳ Iniciando transcripción...');
+  }
+  // Variaciones
+  const list = document.getElementById('transcriptionVariationsList');
+  const variations = Array.isArray(entry.scriptVariations) ? entry.scriptVariations : [];
+  if (variations.length === 0) {
+    list.innerHTML = '';
+  } else {
+    list.innerHTML = '<div style="font-size:11px;font-weight:700;color:var(--accent);letter-spacing:0.5px;text-transform:uppercase;margin:14px 0 8px">✨ Variaciones generadas</div>' +
+      variations.map((v, i) => {
+        const safeText = esc(v.text || '');
+        return `
+          <div class="transcript-variation">
+            <div class="transcript-variation-header">
+              <span>Variación ${i + 1}</span>
+              <div style="display:flex;gap:6px">
+                <button class="btn btn-ghost btn-small" data-tp-variation="${i}" style="padding:2px 8px;font-size:10px">🎬 Teleprompter</button>
+                <button class="btn btn-ghost btn-small" data-copy-variation="${i}" style="padding:2px 8px;font-size:10px">📋 Copiar</button>
+                <button class="btn btn-danger btn-small" data-del-variation="${i}" style="padding:2px 8px;font-size:10px">🗑</button>
+              </div>
+            </div>
+            <div class="transcript-variation-text">${safeText}</div>
+          </div>`;
+      }).join('');
+    list.querySelectorAll('[data-tp-variation]').forEach(b => b.addEventListener('click', () => {
+      openTeleprompter(variations[parseInt(b.dataset.tpVariation)].text);
+    }));
+    list.querySelectorAll('[data-copy-variation]').forEach(b => b.addEventListener('click', () => {
+      navigator.clipboard.writeText(variations[parseInt(b.dataset.copyVariation)].text);
+      b.textContent = '✓';
+      setTimeout(() => { b.textContent = '📋 Copiar'; }, 1500);
+    }));
+    list.querySelectorAll('[data-del-variation]').forEach(b => b.addEventListener('click', async () => {
+      if (!confirm('Borrar esta variación?')) return;
+      const idx = parseInt(b.dataset.delVariation);
+      const newVars = variations.slice();
+      newVars.splice(idx, 1);
+      await db.collection('depositEntries').doc(entryId).update({ scriptVariations: newVars });
+    }));
+  }
+}
+
+// Wireup del modal y teleprompter una sola vez
+document.addEventListener('DOMContentLoaded', () => {
+  const closeBtn = document.getElementById('transcriptionClose');
+  if (closeBtn) closeBtn.addEventListener('click', closeTranscriptionModal);
+  const modal = document.getElementById('transcriptionModal');
+  if (modal) modal.addEventListener('click', (e) => { if (e.target === modal) closeTranscriptionModal(); });
+  const retry = document.getElementById('transcriptionRetry');
+  if (retry) retry.addEventListener('click', async () => {
+    if (!_currentTranscriptionEntryId) return;
+    if (!confirm('Re-transcribir este video desde cero? La transcripción actual se sobrescribe.')) return;
+    await db.collection('depositEntries').doc(_currentTranscriptionEntryId).update({
+      transcription: firebase.firestore.FieldValue.delete()
+    });
+    const entry = entries.find(e => e.id === _currentTranscriptionEntryId);
+    if (entry) entry.transcription = null;
+    transcribeEntry(_currentTranscriptionEntryId, { dataset: { action: 'retry' } });
+  });
+  const generate = document.getElementById('transcriptionGenerate');
+  if (generate) generate.addEventListener('click', () => {
+    if (!_currentTranscriptionEntryId) return;
+    rewriteScriptForEntry(_currentTranscriptionEntryId, generate);
+  });
+  const tpBtn = document.getElementById('transcriptionTeleprompter');
+  if (tpBtn) tpBtn.addEventListener('click', () => {
+    const entry = entries.find(e => e.id === _currentTranscriptionEntryId);
+    if (entry && entry.transcription) openTeleprompter(entry.transcription);
+  });
+  const copyBtn = document.getElementById('transcriptionCopyOriginal');
+  if (copyBtn) copyBtn.addEventListener('click', () => {
+    const entry = entries.find(e => e.id === _currentTranscriptionEntryId);
+    if (entry && entry.transcription) {
+      navigator.clipboard.writeText(entry.transcription);
+      copyBtn.textContent = '✓ Copiado';
+      setTimeout(() => { copyBtn.textContent = '📋 Copiar'; }, 1500);
+    }
+  });
+  // ESC para cerrar
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      const tp = document.getElementById('teleprompter');
+      if (tp && tp.classList.contains('active')) { closeTeleprompter(); return; }
+      const tm = document.getElementById('transcriptionModal');
+      if (tm && tm.classList.contains('active')) closeTranscriptionModal();
+    }
+  });
+  // Teleprompter wireup
+  setupTeleprompter();
+});
+
+// ===== Teleprompter =====
+let _tpScrollHandle = null;
+let _tpPlaying = false;
+function openTeleprompter(text) {
+  const tp = document.getElementById('teleprompter');
+  const txt = document.getElementById('tpText');
+  const wrap = document.getElementById('tpTextWrap');
+  if (!tp || !txt || !wrap) return;
+  txt.textContent = text || '';
+  wrap.scrollTop = 0;
+  tp.classList.add('active');
+  _tpPlaying = false;
+  document.getElementById('tpPlayPause').textContent = '▶ Play';
+  if (_tpScrollHandle) { clearInterval(_tpScrollHandle); _tpScrollHandle = null; }
+}
+function closeTeleprompter() {
+  const tp = document.getElementById('teleprompter');
+  if (tp) tp.classList.remove('active');
+  if (_tpScrollHandle) { clearInterval(_tpScrollHandle); _tpScrollHandle = null; }
+  _tpPlaying = false;
+}
+function setupTeleprompter() {
+  const playBtn = document.getElementById('tpPlayPause');
+  const resetBtn = document.getElementById('tpReset');
+  const closeBtn = document.getElementById('tpClose');
+  const speedInput = document.getElementById('tpSpeed');
+  const fontInput = document.getElementById('tpFontSize');
+  const mirrorChk = document.getElementById('tpMirror');
+  if (!playBtn) return;
+  function getSpeed() { return parseInt(speedInput.value) || 60; }
+  function updateScroll() {
+    if (!_tpPlaying) return;
+    const wrap = document.getElementById('tpTextWrap');
+    if (!wrap) return;
+    // Velocidad: 60 = scroll de 1px cada 30ms aprox. Slider 10-200.
+    const px = Math.max(0.5, getSpeed() / 60);
+    wrap.scrollTop += px;
+    if (wrap.scrollTop + wrap.clientHeight >= wrap.scrollHeight - 5) {
+      _tpPlaying = false;
+      playBtn.textContent = '▶ Play';
+      if (_tpScrollHandle) { clearInterval(_tpScrollHandle); _tpScrollHandle = null; }
+    }
+  }
+  playBtn.addEventListener('click', () => {
+    _tpPlaying = !_tpPlaying;
+    playBtn.textContent = _tpPlaying ? '⏸ Pausa' : '▶ Play';
+    if (_tpPlaying) {
+      if (_tpScrollHandle) clearInterval(_tpScrollHandle);
+      _tpScrollHandle = setInterval(updateScroll, 30);
+    } else if (_tpScrollHandle) {
+      clearInterval(_tpScrollHandle); _tpScrollHandle = null;
+    }
+  });
+  resetBtn.addEventListener('click', () => {
+    const wrap = document.getElementById('tpTextWrap');
+    if (wrap) wrap.scrollTop = 0;
+    _tpPlaying = false;
+    playBtn.textContent = '▶ Play';
+    if (_tpScrollHandle) { clearInterval(_tpScrollHandle); _tpScrollHandle = null; }
+  });
+  closeBtn.addEventListener('click', closeTeleprompter);
+  fontInput.addEventListener('input', () => {
+    const txt = document.getElementById('tpText');
+    if (txt) txt.style.fontSize = fontInput.value + 'px';
+  });
+  mirrorChk.addEventListener('change', () => {
+    const txt = document.getElementById('tpText');
+    if (txt) txt.classList.toggle('mirror', mirrorChk.checked);
+  });
 }
 
