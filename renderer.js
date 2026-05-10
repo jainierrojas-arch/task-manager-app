@@ -75,6 +75,13 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.9.18': {
+    title: 'Detección de yt-dlp en más rutas (~/.local/bin)',
+    features: [
+      '🔧 Búsqueda de yt-dlp ampliada: además de Homebrew (/opt/homebrew/bin, /usr/local/bin), ahora detecta yt-dlp en <code>~/.local/bin</code> y <code>~/bin</code> — útil para usuarios que lo instalaron sin Homebrew (descarga directa del binario).',
+      '✅ Funciona si lo instalaste con cualquier método: brew, pip, descarga manual.'
+    ]
+  },
   '3.9.17': {
     title: 'Transcripción IG/TikTok/YouTube via yt-dlp local (más confiable)',
     features: [

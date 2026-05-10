@@ -757,8 +757,16 @@ function registerIpcHandlers() {
     const tempBasePath = path.join(os.tmpdir(), `tm-transcribe-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
     const tempPath = tempBasePath + '.%(ext)s';
     return new Promise((resolve) => {
-      // Buscar yt-dlp en PATH común para Mac (brew) y Windows
-      const ytdlpPaths = ['/opt/homebrew/bin/yt-dlp', '/usr/local/bin/yt-dlp', 'yt-dlp', 'yt-dlp.exe'];
+      // Buscar yt-dlp en PATHs comunes (brew, manual install, sistema, Windows)
+      const home = os.homedir();
+      const ytdlpPaths = [
+        path.join(home, '.local/bin/yt-dlp'),
+        '/opt/homebrew/bin/yt-dlp',
+        '/usr/local/bin/yt-dlp',
+        path.join(home, 'bin/yt-dlp'),
+        'yt-dlp',
+        'yt-dlp.exe'
+      ];
       let proc = null;
       let pathIndex = 0;
       function tryNextPath() {
