@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.9.9': {
+    title: '🐛 BUG CRÍTICO ENCONTRADO Y ARREGLADO — Depósito vuelve',
+    features: [
+      '🚨 <strong>Causa raíz</strong>: en v3.9.0 (cuando agregué la función "Recrear guion") quedó un string multi-línea con comillas simples, que es un SyntaxError silencioso en JavaScript. Esto rompía la ejecución de TODO deposit-renderer.js — por eso el panel quedaba vacío sin mostrar siquiera mis mensajes de debug. El error era invisible porque ocurría antes de que cargara el handler de errores.',
+      '✅ <strong>Fix</strong>: convertir el string a usar <code>\\n</code> escapado en lugar de saltos de línea reales. Ahora deposit-renderer.js se ejecuta completo. El Depósito y Refs van a aparecer normalmente.',
+      '🔍 <strong>Cómo lo encontré</strong>: corrí <code>node -c</code> sobre el archivo y reportó el error exacto. Lección aprendida: agregar syntax-check al pipeline de build.',
+      '🙏 Perdón por las 9 versiones de ida y vuelta antes de detectarlo. El feature de transcripción y reescritura ya están listos también — solo necesitabas que el JS no estuviera roto.'
+    ]
+  },
   '3.9.8': {
     title: 'Fix orden de funciones + captura global de errores en iframe',
     features: [

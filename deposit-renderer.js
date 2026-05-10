@@ -2321,11 +2321,7 @@ async function rewriteScriptForEntry(entryId, btn) {
   btn.disabled = true;
   btn.textContent = '⏳ Generando...';
   try {
-    const prompt = 'Recreá el siguiente guion de video manteniendo la misma idea/tema y la misma duración aproximada, pero con un ángulo, hook y palabras DISTINTAS. Que no sea idéntico — quiero una variación creativa que vuelva a contar lo mismo de manera fresca, lista para grabar. Devolvé SOLO el guion nuevo, sin explicaciones ni encabezados.
-
-Guion original:
-
-' + entry.transcription;
+    const prompt = 'Recreá el siguiente guion de video manteniendo la misma idea/tema y la misma duración aproximada, pero con un ángulo, hook y palabras DISTINTAS. Que no sea idéntico — quiero una variación creativa que vuelva a contar lo mismo de manera fresca, lista para grabar. Devolvé SOLO el guion nuevo, sin explicaciones ni encabezados.\n\nGuion original:\n\n' + entry.transcription;
     const result = await window.parent.window.api.callClaude({
       model: 'claude-sonnet-4-6',
       max_tokens: 2000,
