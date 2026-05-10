@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.9.12': {
+    title: 'Fix wireup del modal Transcripción',
+    features: [
+      '🐛 <strong>Fix</strong>: el wireup del modal de transcripción se hacía dentro de DOMContentLoaded, pero deposit-renderer.js corre AL FINAL del body — DOMContentLoaded a veces ya había disparado, entonces los handlers nunca se enganchaban. Ahora detecta el estado del DOM y enganchanncha directo si ya está listo.',
+      '🛡 <strong>Safety net</strong>: si el modal no existe en el DOM (caché viejo), aparece un alert claro en vez de fallar silencioso. También fuerzo <code>display: flex</code> inline por si el CSS está cacheado mal.',
+      '🔍 <strong>console.log</strong> al click para diagnosticar (revisable en consola).'
+    ]
+  },
   '3.9.11': {
     title: 'Modal de Transcripción + Teleprompter integrado',
     features: [

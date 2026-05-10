@@ -2276,9 +2276,14 @@ async function getOpenaiKeyForIframe() {
 // v3.9.11: el botón Transcribir ahora abre el modal completo. Si la entry ya
 // tiene transcripción, la muestra directo. Si no, ejecuta Whisper.
 async function transcribeEntry(entryId, btn) {
+  console.log('[transcribe] click received entryId=', entryId);
   const entry = entries.find(e => e.id === entryId);
-  if (!entry) return;
+  if (!entry) {
+    alert('No se encontró la entry. Recargá la app.');
+    return;
+  }
   // Abrir modal con estado actual
+  console.log('[transcribe] opening modal');
   openTranscriptionModal(entryId);
   // Si ya hay transcripción, no re-transcribir (a menos que sea desde "Re-transcribir")
   if (entry.transcription && (!btn || btn.dataset.action !== 'retry')) return;
@@ -2376,10 +2381,18 @@ function _setTranscriptionStatus(text, kind) {
 }
 
 function openTranscriptionModal(entryId) {
+  console.log('[modal] open() called for entry', entryId);
   _currentTranscriptionEntryId = entryId;
   const modal = document.getElementById('transcriptionModal');
-  if (!modal) return;
+  if (!modal) {
+    console.error('[modal] transcriptionModal element NOT FOUND in DOM');
+    alert('Error: el modal de transcripción no existe en el DOM. Avisá a soporte (v3.9.12).');
+    return;
+  }
+  console.log('[modal] adding active class');
   modal.classList.add('active');
+  // Asegurar visibilidad por si CSS está cacheado mal
+  modal.style.display = 'flex';
   _renderTranscriptionModalContent(entryId);
 }
 
@@ -2443,8 +2456,8 @@ function _renderTranscriptionModalContent(entryId) {
   }
 }
 
-// Wireup del modal y teleprompter una sola vez
-document.addEventListener('DOMContentLoaded', () => {
+// Wireup del modal y teleprompter — si DOMContentLoaded ya disparó, ejecutar directo
+function _wireupTranscriptionAndTeleprompter() {
   const closeBtn = document.getElementById('transcriptionClose');
   if (closeBtn) closeBtn.addEventListener('click', closeTranscriptionModal);
   const modal = document.getElementById('transcriptionModal');
@@ -2490,7 +2503,12 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   // Teleprompter wireup
   setupTeleprompter();
-});
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _wireupTranscriptionAndTeleprompter);
+} else {
+  _wireupTranscriptionAndTeleprompter();
+}
 
 // ===== Teleprompter =====
 let _tpScrollHandle = null;
