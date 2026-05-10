@@ -172,6 +172,8 @@ function setupDrawLoop() {
   if (!canvas || !hidden) return;
   lockCanvas();
   const ctx = canvas.getContext('2d');
+  // Track del último frame dibujado para detectar si el loop se quedó dormido
+  window._lastDrawTs = Date.now();
 
   function draw() {
     if (!mediaRecorder || mediaRecorder.state === 'inactive') lockCanvas();
@@ -183,8 +185,6 @@ function setupDrawLoop() {
       const sourceLandscape = sw > sh;
       const canvasPortrait = dw < dh;
       if (sourceLandscape && canvasPortrait) {
-        // ROTAR 90° CW. Source landscape (1920x1080) llena perfecto canvas
-        // portrait (1080x1920) después de rotar.
         ctx.save();
         ctx.translate(dw / 2, dh / 2);
         ctx.rotate(Math.PI / 2);
@@ -199,10 +199,38 @@ function setupDrawLoop() {
         ctx.drawImage(hidden, x, y, w, h);
       }
     }
+    window._lastDrawTs = Date.now();
     drawHandle = requestAnimationFrame(draw);
   }
   drawHandle = requestAnimationFrame(draw);
   canvasReady = true;
+  // Self-healing: si rAF se duerme >1s, reiniciar el loop. iOS Safari a veces
+  // pausa rAF en visibilitychange / dialogs y no lo reactiva.
+  if (!window._drawHealthCheck) {
+    window._drawHealthCheck = setInterval(() => {
+      if (!window._lastDrawTs) return;
+      const since = Date.now() - window._lastDrawTs;
+      if (since > 1500 && document.visibilityState === 'visible') {
+        // Loop pausado — reiniciar
+        if (drawHandle) cancelAnimationFrame(drawHandle);
+        window._lastDrawTs = Date.now();
+        drawHandle = requestAnimationFrame(draw);
+      }
+    }, 1000);
+  }
+}
+
+// Función pública para forzar reanudación del draw loop
+function ensureDrawLoopAlive() {
+  const canvas = $('captureCanvas');
+  if (!canvas) return;
+  // Si el último frame es de hace más de 500ms, kick-start
+  const since = window._lastDrawTs ? (Date.now() - window._lastDrawTs) : 9999;
+  if (since > 500) {
+    if (drawHandle) { try { cancelAnimationFrame(drawHandle); } catch (e) {} }
+    canvasReady = false;
+    setupDrawLoop();
+  }
 }
 
 let _debugTimer = null;
@@ -617,16 +645,17 @@ $('btnRecord').addEventListener('click', () => {
 });
 
 $('btnUndo').addEventListener('click', () => {
-  // Pop el último segmento. Si quedan 0, volver a estado inicial.
+  // v3.11.20: SIN confirm() — confirm() en iOS Safari pausa el rAF del canvas
+  // y a veces no se reanuda, congelando la cámara. Pop instantáneo.
   if (recordedSegments.length === 0) return;
-  if (!confirm('¿Eliminar el último clip grabado? Los anteriores quedan.')) return;
   const removed = recordedSegments.pop();
   if (removed && typeof removed.durationMs === 'number') {
     segmentsTotalMs = Math.max(0, segmentsTotalMs - removed.durationMs);
   }
-  // Actualizar timer + UI
   updateTimer();
   updateMultiSegmentUI();
+  // Defensive: reanudar el draw loop por si quedó pausado por algún motivo
+  ensureDrawLoopAlive();
   showDebug('↶ Clip eliminado · ' + recordedSegments.length + ' restante' + (recordedSegments.length === 1 ? '' : 's'));
 });
 
