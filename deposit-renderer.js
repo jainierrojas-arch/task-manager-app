@@ -215,13 +215,16 @@ function parseUrl(u) {
 // ===== AUTH =====
 const defaultCatsInFlight = new Set();
 
+// v3.9.7: log auth state visible
+_setDebugBanner('⏳ Esperando autenticación...', '#9d9db5');
 auth.onAuthStateChanged((user) => {
   if (!user) {
     document.getElementById('mainTitle').textContent = 'No has iniciado sesion';
-    document.getElementById('mainSubtitle').textContent = 'Inicia sesion en la app principal y vuelve a abrir el deposito.';
+    _setDebugBanner('❌ No autenticado en el iframe — auth state es null', '#ff6b6b');
     document.getElementById('entriesArea').innerHTML = '';
     return;
   }
+  _setDebugBanner('✅ Autenticado como ' + (user.email || user.uid), '#4ecdc4');
   currentUser = user;
   // Arranque no-bloqueante: datos minimos y suscripciones en paralelo
   currentUserData = { id: user.uid, name: user.email.split('@')[0], email: user.email };
@@ -300,34 +303,54 @@ async function ensureDefaultCategories() {
   }));
 }
 
+// v3.9.7: helper de debug visible en el subtitle para diagnosticar live
+function _setDebugBanner(text, color) {
+  try {
+    const el = document.getElementById('mainSubtitle');
+    if (el) {
+      el.textContent = text;
+      el.style.color = color || '';
+      el.style.fontSize = '11px';
+    }
+  } catch (e) {}
+}
+
 function subscribeAll() {
   unsubscribers.forEach(u => u());
   unsubscribers = [];
+  _setDebugBanner('🔍 Conectando a Firestore...', '#ffd93d');
 
   unsubscribers.push(db.collection('depositCategories').orderBy('name').onSnapshot(snap => {
     categories = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(_belongsToWs);
     if (!selectedCategoryId && categories.length > 0) selectedCategoryId = categories[0].id;
+    _setDebugBanner(`✅ ${categories.length} categorías + ${entries.length} entries · WS=${WS_ID || 'none'} · auth=${currentUser ? 'OK' : 'NO'}`, categories.length > 0 ? '#4ecdc4' : '#ff6b6b');
     renderCategories();
     renderEntries();
-    // Seed default categories si falta alguna (idempotente)
     ensureDefaultCategories().catch(() => {});
+  }, err => {
+    _setDebugBanner('❌ Error categorías: ' + err.message, '#ff6b6b');
+    console.error('[deposit] depositCategories error:', err);
   }));
 
   unsubscribers.push(db.collection('depositEntries').orderBy('createdAt', 'desc').onSnapshot(snap => {
     entries = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(_belongsToWs);
+    _setDebugBanner(`✅ ${categories.length} categorías + ${entries.length} entries · WS=${WS_ID || 'none'} · auth=${currentUser ? 'OK' : 'NO'}`, entries.length > 0 ? '#4ecdc4' : '#ff6b6b');
     renderCategories();
     renderEntries();
+  }, err => {
+    _setDebugBanner('❌ Error entries: ' + err.message, '#ff6b6b');
+    console.error('[deposit] depositEntries error:', err);
   }));
 
   unsubscribers.push(db.collection('projects').orderBy('name').onSnapshot(snap => {
     projects = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(_belongsToWs);
     renderProjectSelect();
-  }));
+  }, err => console.error('[deposit] projects error:', err)));
 
   unsubscribers.push(db.collection('users').onSnapshot(snap => {
     teamMembers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     renderMemberSelects();
-  }));
+  }, err => console.error('[deposit] users error:', err)));
 }
 
 // ===== CATEGORIES =====

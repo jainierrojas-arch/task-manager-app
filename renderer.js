@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.9.7': {
+    title: 'Debug visible en el panel del Depósito',
+    features: [
+      '🔍 <strong>Mensaje de debug arriba</strong> del panel del Depósito mostrando estado: autenticación, # categorías, # entries, errores. Esto me ayuda a diagnosticar de un vistazo qué está fallando sin necesidad de abrir consola.',
+      '🚨 <strong>Error handlers</strong> en cada listener de Firestore — si algo falla, vas a ver el error específico en el panel.',
+      '📸 Mandame screenshot de lo que dice el panel apenas lo abrás y lo arreglo.'
+    ]
+  },
   '3.9.6': {
     title: 'Hotfix: Depósito y Refs muestran todo (filtro workspace OFF en iframes)',
     features: [
