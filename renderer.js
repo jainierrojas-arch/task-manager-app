@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.13': {
+    title: 'Reels desde feed: detectar reel específico por imagen visible + título desde caption',
+    features: [
+      '🎯 <strong>Detección de reel cuando NO hay video</strong>: en el feed de IG /explore/, los reels se muestran como <code>&lt;img&gt;</code> hasta que hacés hover (no <code>&lt;video&gt;</code>). Ahora si no hay video visible, mi código encuentra la imagen más grande cerca del centro del viewport, y desde ahí hace walk-up del DOM hasta encontrar <code>&lt;a href="/reel/CXXX/"&gt;</code>.',
+      '🖼 <strong>Cover real desde el feed</strong>: con la URL específica detectada, Microlink scrapea el reel correcto y devuelve su portada real (no el collage genérico de IG). Mismo flujo que cuando guardás un reel desde su URL directa.',
+      '📝 <strong>Título desde caption más agresivo</strong>: cualquier título genérico (Instagram, TikTok, "(1) Instagram", "Reels", "Explore", etc) ahora se reemplaza con la primera línea del caption del reel — igual que ya funcionaba para carruseles.',
+      '🚀 <strong>Resultado</strong>: guardás un reel desde el feed sin abrirlo, y queda como un carrusel: con su portada real, su caption como descripción, y la primera línea del caption como título.'
+    ]
+  },
   '3.11.12': {
     title: 'Fix freeze al guardar — timeouts + cap de tamaño',
     features: [

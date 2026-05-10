@@ -324,20 +324,48 @@
               });
               primary = visible[0];
             }
-            if (primary) {
-              if (primary.poster) detectedPoster = primary.poster;
-              let el = primary;
+            // Si NO hay video visible (caso típico: feed /explore/ donde los reels
+            // se muestran como <img> hasta que hacés hover/click), buscar la imagen
+            // VISIBLE más cercana al centro del viewport — es la que el usuario está
+            // mirando.
+            let primaryImg = null;
+            if (!primary) {
+              const imgs = Array.from(document.querySelectorAll('img'));
+              const vpCenterY = window.innerHeight / 2;
+              const candidates = imgs.filter(i => {
+                const r = i.getBoundingClientRect();
+                return r.width > 200 && r.height > 200 && r.top < window.innerHeight && r.bottom > 0 && i.src && !i.src.startsWith('data:');
+              }).sort((a, b) => {
+                const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+                const da = Math.abs((ra.top + ra.bottom) / 2 - vpCenterY);
+                const db = Math.abs((rb.top + rb.bottom) / 2 - vpCenterY);
+                if (Math.abs(da - db) < 40) {
+                  return (rb.width * rb.height) - (ra.width * ra.height);
+                }
+                return da - db;
+              });
+              primaryImg = candidates[0];
+            }
+            const primaryEl = primary || primaryImg;
+            if (primaryEl) {
+              if (primary && primary.poster) detectedPoster = primary.poster;
+              else if (primaryImg && primaryImg.src) detectedPoster = primaryImg.src;
+              // Walk up del DOM hasta encontrar <a href="/reel|reels|p|tv/...">
+              let el = primaryEl;
               while (el && el !== document.body) {
-                if (el.tagName === 'A' && el.href && /\\/(reel|reels|p|tv)\\//.test(el.href)) {
+                if (el.tagName === 'A' && el.href && /\\/(reel|reels|p|tv)\\/[A-Za-z0-9_-]+/.test(el.href)) {
                   detectedUrl = el.href; break;
                 }
                 el = el.parentElement;
               }
+              // Fallback: buscar <a> hermanos/descendientes en containers cercanos
               if (!detectedUrl) {
-                const containers = [primary.closest('article'), primary.closest('[role="presentation"]'), primary.closest('div[class*="x"]')].filter(Boolean);
+                const containers = [primaryEl.closest('article'), primaryEl.closest('[role="presentation"]'), primaryEl.closest('div[class*="x"]')].filter(Boolean);
                 for (const c of containers) {
-                  const a = c.querySelector('a[href*="/reel/"], a[href*="/reels/"], a[href*="/p/"]');
-                  if (a && a.href) { detectedUrl = a.href; break; }
+                  const a = c.querySelector('a[href*="/reel/"], a[href*="/reels/"], a[href*="/p/"], a[href*="/tv/"]');
+                  if (a && a.href && /\\/(reel|reels|p|tv)\\/[A-Za-z0-9_-]+/.test(a.href)) {
+                    detectedUrl = a.href; break;
+                  }
                 }
               }
             }
@@ -458,9 +486,17 @@
                        cleanPageTitle(title) ||
                        (() => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch (e) { return 'Referencia'; } })();
       const description = (pageData && pageData.description) || (og && og.description) || '';
-      if (/^(instagram|tiktok|youtube|\(\d+\)\s*instagram|explora fotos.+)$/i.test(finalTitle.trim()) && description) {
-        const firstLine = description.split('\n')[0].slice(0, 120);
-        if (firstLine) finalTitle = firstLine;
+      // v3.11.13: regex de "título genérico" más permisiva — matchea cualquier
+      // variante de IG/TikTok/YouTube como prefijo, y también si el título es
+      // muy corto (<3 chars). Si la página tiene título genérico Y tenemos
+      // caption, usar la primera línea del caption como título de la entry.
+      const isGenericTitle = !finalTitle ||
+        finalTitle.trim().length < 3 ||
+        /^(\(\d+\)\s*)?(instagram|tiktok|youtube|explora|reels?|explore|shorts?|for ?you|para ti)\b/i.test(finalTitle.trim());
+      if (isGenericTitle && description) {
+        const firstLine = description.split('\n').find(l => l.trim().length > 0) || '';
+        const cleaned = firstLine.trim().slice(0, 120);
+        if (cleaned) finalTitle = cleaned;
       }
 
       // En feed genérico, preferir pageData.image (poster del video visible) sobre og.image.
