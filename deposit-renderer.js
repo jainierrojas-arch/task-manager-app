@@ -64,6 +64,19 @@ window._verifyWsIsDefault = async function(dbRef) {
     }
   } catch (e) { console.warn('[ws] verify failed:', e.message); }
 };
+// v3.9.8: helper de debug visible en el subtitle — definido al INICIO del módulo
+// para que esté disponible cuando se llame antes de subscribeAll
+function _setDebugBanner(text, color) {
+  try {
+    const el = document.getElementById('mainSubtitle');
+    if (el) {
+      el.textContent = text;
+      el.style.color = color || '';
+      el.style.fontSize = '11px';
+    }
+  } catch (e) {}
+}
+
 window._installWsScopeWrapper = function(db) {
   if (!db || !db.collection) return;
   const orig = db.collection.bind(db);
@@ -215,7 +228,14 @@ function parseUrl(u) {
 // ===== AUTH =====
 const defaultCatsInFlight = new Set();
 
-// v3.9.7: log auth state visible
+// v3.9.8: capturar errores no manejados para mostrarlos al usuario (útil para
+// diagnosticar bugs en producción donde no se puede abrir DevTools).
+window.addEventListener('error', (ev) => {
+  try { _setDebugBanner('❌ JS error: ' + (ev.message || 'unknown'), '#ff6b6b'); } catch (e) {}
+});
+window.addEventListener('unhandledrejection', (ev) => {
+  try { _setDebugBanner('❌ Promise rejection: ' + (ev.reason && ev.reason.message ? ev.reason.message : ev.reason), '#ff6b6b'); } catch (e) {}
+});
 _setDebugBanner('⏳ Esperando autenticación...', '#9d9db5');
 auth.onAuthStateChanged((user) => {
   if (!user) {
@@ -301,18 +321,6 @@ async function ensureDefaultCategories() {
       }
     } catch (e) { /* ignore */ }
   }));
-}
-
-// v3.9.7: helper de debug visible en el subtitle para diagnosticar live
-function _setDebugBanner(text, color) {
-  try {
-    const el = document.getElementById('mainSubtitle');
-    if (el) {
-      el.textContent = text;
-      el.style.color = color || '';
-      el.style.fontSize = '11px';
-    }
-  } catch (e) {}
 }
 
 function subscribeAll() {

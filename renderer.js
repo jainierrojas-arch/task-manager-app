@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.9.8': {
+    title: 'Fix orden de funciones + captura global de errores en iframe',
+    features: [
+      '🐛 <strong>Fix bug v3.9.7</strong>: la función <code>_setDebugBanner</code> estaba definida después de su primera llamada — moverla al inicio del módulo evita ReferenceError silencioso que rompía todo.',
+      '🛡 <strong>Captura global de errores</strong> en iframe: agregué <code>window.onerror</code> y <code>unhandledrejection</code> handlers que muestran cualquier error JS en el subtitle del panel. Si algo falla, lo vas a ver en pantalla en lugar de silenciar.',
+      '📸 Mandame screenshot del panel del Depósito apenas se instale.'
+    ]
+  },
   '3.9.7': {
     title: 'Debug visible en el panel del Depósito',
     features: [
