@@ -253,6 +253,13 @@
   };
 
   // ===== Page data extraction (igual que antes pero contra el active webview) =====
+  // Timeout helper para no colgar la app si el webview no responde
+  function withTimeout(promise, ms, label) {
+    return Promise.race([
+      promise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout: ' + label + ' tardó más de ' + ms + 'ms')), ms))
+    ]);
+  }
   async function extractPageData() {
     const browser = getActiveBrowser();
     if (!browser) return null;
@@ -356,10 +363,11 @@
           };
         })();
       `;
-      const data = await browser.executeJavaScript(script, false);
+      // Timeout 6s — si el webview no responde, abortamos sin colgar la app
+      const data = await withTimeout(browser.executeJavaScript(script, false), 6000, 'extractPageData');
       return data || null;
     } catch (e) {
-      console.warn('[explorer] extractPageData failed', e);
+      console.warn('[explorer] extractPageData failed', e.message);
       return null;
     }
   }
@@ -405,12 +413,16 @@
         /^https?:\/\/(www\.)?youtube\.com\/(shorts|feed)\/?(\?|#|$)/i.test(targetUrl);
 
       saveBtn.textContent = '⏳ Buscando portada...';
-      // Solo llamar Microlink si tenemos URL ESPECÍFICA. Si estamos en /explore/
-      // y no detectamos un reel concreto, Microlink devolvería la imagen
-      // genérica del feed — peor que el video.poster del DOM.
-      const og = (!isGenericFeedUrl && window.api && window.api.fetchOgData)
-        ? await window.api.fetchOgData(targetUrl).catch(() => null)
-        : null;
+      // Solo llamar Microlink si tenemos URL ESPECÍFICA. Timeout de 12s — si
+      // tarda más, abortamos sin colgar la app.
+      let og = null;
+      if (!isGenericFeedUrl && window.api && window.api.fetchOgData) {
+        try {
+          og = await withTimeout(window.api.fetchOgData(targetUrl), 12000, 'fetchOgData');
+        } catch (e) {
+          console.warn('[explorer] fetchOgData skipped:', e.message);
+        }
+      }
       saveBtn.textContent = '⏳ Guardando...';
 
       const lower = targetUrl.toLowerCase();
@@ -466,13 +478,17 @@
       }
       if (!coverImage && getActiveTab() && getActiveTab().ready) {
         try {
-          const native = await browser.capturePage();
+          // Timeout 5s — si capturePage cuelga, abortamos
+          const native = await withTimeout(browser.capturePage(), 5000, 'capturePage');
           if (native && typeof native.toDataURL === 'function') {
-            const resized = (native.resize && !native.isEmpty()) ? native.resize({ width: 720 }) : native;
+            // Resize a 480px ancho — más chico para no inflar Firestore con docs
+            // de 1MB+ que pueden ralentizar la UI cuando se renderizan.
+            const resized = (native.resize && !native.isEmpty()) ? native.resize({ width: 480 }) : native;
             if (typeof resized.toJPEG === 'function') {
               try {
-                const buf = resized.toJPEG(75);
-                if (buf && buf.length > 0) {
+                const buf = resized.toJPEG(60);
+                if (buf && buf.length > 0 && buf.length < 600 * 1024) {
+                  // Cap a 600KB para evitar docs Firestore monstruosos
                   const bytes = (buf instanceof Uint8Array) ? buf : new Uint8Array(buf);
                   let binary = '';
                   const CHUNK = 0x8000;
@@ -481,15 +497,13 @@
                   }
                   coverImage = 'data:image/jpeg;base64,' + btoa(binary);
                   coverSource = 'screenshot-jpeg';
+                } else if (buf && buf.length >= 600 * 1024) {
+                  console.warn('[explorer] screenshot too large, skipping', buf.length);
                 }
               } catch (e) { console.warn('[explorer] toJPEG failed', e); }
             }
-            if (!coverImage) {
-              coverImage = resized.toDataURL();
-              coverSource = 'screenshot-png';
-            }
           }
-        } catch (e) { console.warn('[explorer] capturePage failed', e); }
+        } catch (e) { console.warn('[explorer] capturePage failed', e.message); }
       }
 
       const rawValue = categorySelect.value || '';
@@ -511,8 +525,14 @@
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
       };
       if (coverImage) {
-        data.coverImage = coverImage;
-        data.coverFetcherV = 6;
+        // Safety: si coverImage es base64 enorme (>700KB), descartarlo para no
+        // crear docs Firestore que cuelguen la UI al renderizarse.
+        if (coverImage.length > 700 * 1024) {
+          console.warn('[explorer] coverImage too large, dropping', coverImage.length);
+        } else {
+          data.coverImage = coverImage;
+          data.coverFetcherV = 6;
+        }
       }
       if (categoryId) {
         const cat = _allCats.find(c => c.id === categoryId);

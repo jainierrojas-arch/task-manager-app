@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.12': {
+    title: 'Fix freeze al guardar — timeouts + cap de tamaño',
+    features: [
+      '🛡 <strong>Timeouts en todas las operaciones del webview</strong>: <code>extractPageData</code> 6s, <code>fetchOgData</code> 12s, <code>capturePage</code> 5s. Si alguna tarda más, se aborta sin colgar la app.',
+      '📦 <strong>Cap de tamaño en cover image</strong>: si el screenshot del webview supera 600KB en JPEG, se descarta. Antes podía crear docs Firestore de 1MB+ que ralentizaban la UI al renderizar.',
+      '🖼 <strong>Screenshot fallback más chico</strong>: ahora 480px de ancho con calidad 60 (antes 720/75) para que el archivo base64 sea liviano y no infle los docs.',
+      '🐛 <strong>Si pasa de 700KB el coverImage, se descarta antes de mandar a Firestore</strong> — evita que docs gigantes bloqueen la UI al renderizar la card en Refs/Depósito.'
+    ]
+  },
   '3.11.11': {
     title: 'Fix dropdowns workspace/usuario + fix portada en feed genérico',
     features: [
