@@ -295,9 +295,25 @@ function startRecording() {
   recPausedAt = 0;
   const mime = pickMime();
   recordedMime = mime || 'video/webm';
+
+  // Forzar dimensiones del canvas justo antes de captureStream — algunas
+  // versiones de iOS Safari evalúan el tamaño del canvas en este momento
+  // exacto, no antes ni después.
+  if (canvas.width !== TARGET_W || canvas.height !== TARGET_H) {
+    canvas.width = TARGET_W;
+    canvas.height = TARGET_H;
+  }
+  console.log(`[rec] pre-capture canvas: ${canvas.width}x${canvas.height}`);
+
   // Combinar el stream del canvas (video continuo aunque cambie la cámara) con el
   // audio track persistente. NUNCA reasignar el audioTrack durante la sesión.
   const canvasStream = canvas.captureStream(30);
+  const cTrack = canvasStream.getVideoTracks()[0];
+  if (cTrack && cTrack.getSettings) {
+    const cs = cTrack.getSettings();
+    console.log('[rec] canvas track getSettings():', cs);
+    showDebug(`🎬 Track: ${cs.width || '?'}×${cs.height || '?'} | Canvas: ${canvas.width}×${canvas.height}`);
+  }
   const combined = new MediaStream();
   canvasStream.getVideoTracks().forEach(t => combined.addTrack(t));
   combined.addTrack(audioTrack);
@@ -366,6 +382,14 @@ function showPreview() {
   v.src = url;
   v.load();
   show('screenPreview');
+  // Diagnóstico: medir dimensiones reales del archivo grabado
+  v.addEventListener('loadedmetadata', () => {
+    const w = v.videoWidth, h = v.videoHeight;
+    const ratio = (w / h).toFixed(3);
+    const isPortrait916 = w === 1080 && h === 1920;
+    console.log(`[rec] file dimensions: ${w}x${h} ratio=${ratio}`);
+    showDebug(`📁 Archivo: ${w}×${h} ${isPortrait916 ? '✓ 9:16' : '⚠ NO 9:16'}`);
+  }, { once: true });
 }
 
 // ===== Teleprompter auto-scroll =====
