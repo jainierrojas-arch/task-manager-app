@@ -1015,14 +1015,35 @@ $('btnSaveLocalAfter').addEventListener('click', () => saveLocally($('btnSaveLoc
 // vídeo" en la hoja de compartir del sistema. En Android Chrome y desktop,
 // el <a download> funciona y baja directo a la carpeta de descargas.
 async function saveLocally(btn) {
-  if (!recordedBlob) {
+  // v3.11.26: si hay multi-clip, guardar TODOS los clips por separado
+  const segments = recordedSegments.length > 0 ? recordedSegments : (recordedBlob ? [{ blob: recordedBlob, mime: recordedMime }] : []);
+  if (segments.length === 0) {
     alert('No hay video para guardar');
     return;
   }
-  const ext = recordedMime.includes('mp4') ? 'mp4' : 'webm';
+  // Si hay multi-clip, llamar saveLocally por cada uno
+  if (segments.length > 1) {
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Guardando 1/' + segments.length + '...'; }
+    for (let i = 0; i < segments.length; i++) {
+      if (btn) btn.textContent = '⏳ Guardando ' + (i + 1) + '/' + segments.length + '...';
+      await saveSingleBlob(segments[i].blob, segments[i].mime, i + 1, segments.length);
+      // Pequeña pausa entre downloads para que el browser no se confunda
+      await new Promise(r => setTimeout(r, 400));
+    }
+    if (btn) { btn.disabled = false; btn.textContent = '✓ ' + segments.length + ' clips guardados'; setTimeout(() => { btn.textContent = '💾 Guardar'; }, 2200); }
+    return;
+  }
+  // Single clip — flujo original
+  const seg = segments[0];
+  await saveSingleBlob(seg.blob, seg.mime, 1, 1, btn);
+}
+
+async function saveSingleBlob(blob, mime, idx, total, btn) {
+  const ext = (mime || '').includes('mp4') ? 'mp4' : 'webm';
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  const filename = `taskmgr-${stamp}.${ext}`;
-  const file = new File([recordedBlob], filename, { type: recordedMime });
+  const suffix = total > 1 ? `-clip${idx}of${total}` : '';
+  const filename = `taskmgr-${stamp}${suffix}.${ext}`;
+  const file = new File([blob], filename, { type: mime || 'video/webm' });
 
   // 1) Web Share API con file (iOS 15+ y Android Chrome): saca el share sheet
   //    nativo donde el usuario elige "Guardar vídeo" → va a Fotos / Galería.
@@ -1041,7 +1062,7 @@ async function saveLocally(btn) {
 
   // 2) Fallback: <a download> — funciona en Android Chrome, desktop, etc.
   try {
-    const url = URL.createObjectURL(recordedBlob);
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = filename;
@@ -1050,10 +1071,10 @@ async function saveLocally(btn) {
     a.click();
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 2000);
-    if (btn) { btn.textContent = '✓ Descargado'; setTimeout(() => { btn.textContent = '💾 Guardar'; }, 1800); }
+    if (btn && total === 1) { btn.textContent = '✓ Descargado'; setTimeout(() => { btn.textContent = '💾 Guardar'; }, 1800); }
   } catch (e) {
     console.error('[saveLocally] download failed', e);
-    alert('No se pudo guardar el archivo: ' + e.message);
+    if (total === 1) alert('No se pudo guardar el archivo: ' + e.message);
   }
 }
 $('btnAnother').addEventListener('click', () => {

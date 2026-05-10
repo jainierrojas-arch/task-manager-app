@@ -16,7 +16,7 @@
   <link rel="manifest" href="manifest.json">
   <title>Task Manager — Grabar</title>
   <link rel="icon" type="image/png" href="../icon.png">
-  <link rel="stylesheet" href="recorder.css?v=31125">
+  <link rel="stylesheet" href="recorder.css?v=31126">
 </head>
 <body>
 
@@ -110,19 +110,6 @@
         <button class="iconbtn ghost" id="btnPlayPause" title="Play/Pausa autoscroll">▶</button>
       </div>
 
-      <!-- Overlay de preview rápido — lista TODOS los clips con play/delete por clip -->
-      <div class="quick-preview" id="quickPreview" style="display:none">
-        <div class="quick-preview-header">
-          <span id="quickPreviewTitle">Mis clips</span>
-          <button class="quick-preview-close" id="quickPreviewClose" title="Cerrar">✕</button>
-        </div>
-        <video id="quickPreviewVideo" controls playsinline></video>
-        <div class="quick-preview-info" id="quickPreviewInfo"></div>
-        <div class="quick-preview-actions">
-          <button class="qp-action" id="quickPreviewPlayAll" title="Reproducir todos los clips seguidos">▶ Ver todo seguido</button>
-        </div>
-        <div class="quick-preview-clips" id="quickPreviewClips"></div>
-      </div>
     </section>
 
     <!-- Pantalla 4: previsualización + subir -->
@@ -160,6 +147,21 @@
       </div>
     </section>
 
+    <!-- Overlay de clips — OUT del screen-record para que pueda overlaying cualquier screen.
+         Posicionado position:fixed con z-index alto. -->
+    <div class="quick-preview" id="quickPreview" style="display:none">
+      <div class="quick-preview-header">
+        <span id="quickPreviewTitle">Mis clips</span>
+        <button class="quick-preview-close" id="quickPreviewClose" title="Cerrar">✕</button>
+      </div>
+      <video id="quickPreviewVideo" controls playsinline></video>
+      <div class="quick-preview-info" id="quickPreviewInfo"></div>
+      <div class="quick-preview-actions">
+        <button class="qp-action" id="quickPreviewPlayAll" title="Reproducir todos los clips seguidos">▶ Ver todo seguido</button>
+      </div>
+      <div class="quick-preview-clips" id="quickPreviewClips"></div>
+    </div>
+
   </div>
 
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -178,6 +180,6 @@
     window.auth = firebase.auth();
   </script>
   <script src="jsqr.min.js?v=31124"></script>
-  <script src="recorder.js?v=31125"></script>
+  <script src="recorder.js?v=31126"></script>
 </body>
 </html>

@@ -400,12 +400,13 @@ html, body {
   border-color: rgba(108,99,255,0.9) !important;
 }
 
-/* Quick preview overlay — lista de clips con play/delete por clip */
+/* Quick preview overlay — lista de clips con play/delete por clip.
+   position:fixed para que pueda overlay cualquier screen (no solo screen-record). */
 .quick-preview {
-  position: absolute;
+  position: fixed;
   inset: 0;
   background: rgba(0,0,0,0.96);
-  z-index: 50;
+  z-index: 9999;
   display: flex !important;
   flex-direction: column;
   padding: 12px;
