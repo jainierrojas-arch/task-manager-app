@@ -154,15 +154,19 @@ html, body {
   touch-action: pan-y;
 }
 
-/* Topbar: columna vertical pegada al costado izquierdo para liberar la parte
-   superior de la pantalla. En landscape, sigue siendo vertical-izquierda. */
+/* Topbar: columna vertical pegada al costado izquierdo, bajada hacia el medio/
+   abajo de la pantalla. Esto deja libre la parte SUPERIOR de la pantalla, donde
+   el usuario suele poner el teleprompter pegado a la cámara frontal para que la
+   mirada quede cerca del lente al leer. column-reverse → SwapCam (el más usado)
+   queda en la parte de abajo de la columna, al alcance natural del pulgar. */
 .topbar {
   position: absolute;
-  top: max(14px, env(safe-area-inset-top));
+  top: auto;
+  bottom: 32%;
   left: max(10px, env(safe-area-inset-left));
   right: auto;
   display: flex;
-  flex-direction: column;
+  flex-direction: column-reverse;
   gap: 8px;
   z-index: 5;
   width: auto;
