@@ -1182,7 +1182,10 @@ function registerIpcHandlers() {
             nodeIntegration: false,
             contextIsolation: true,
             sandbox: true,
-            partition: 'persist:og-fetcher'
+            // v3.11.14: usar el mismo partition que el Explorer para tener
+            // las cookies del usuario (logueado en IG). Sin esto, IG mostraba
+            // login wall al fetcher y devolvía og:description vacía.
+            partition: 'persist:explorer'
           }
         });
         const timeout = setTimeout(() => finish(null), 7000);
@@ -1213,11 +1216,20 @@ function registerIpcHandlers() {
                   const embedded = document.querySelector('img[src*="scontent"][src*="cdninstagram"], video[poster]');
                   if (embedded) img = embedded.getAttribute('src') || embedded.getAttribute('poster');
                 }
-                return {
-                  image: img,
-                  title: get('meta[property="og:title"]') || get('meta[name="twitter:title"]') || document.title,
-                  description: get('meta[property="og:description"]') || get('meta[name="twitter:description"]')
-                };
+                let title = get('meta[property="og:title"]') || get('meta[name="twitter:title"]') || document.title;
+                let description = get('meta[property="og:description"]') || get('meta[name="twitter:description"]');
+                // v3.11.14: si og:description está vacío (ej. IG reel logueado pero
+                // los meta tags no se actualizaron client-side), buscar el caption
+                // en el DOM directo. IG suele ponerlo en h1 dentro de article.
+                if (!description) {
+                  try {
+                    const h1 = document.querySelector('article h1') || document.querySelector('h1');
+                    if (h1 && h1.textContent && h1.textContent.trim().length > 0) {
+                      description = h1.textContent.trim().slice(0, 2000);
+                    }
+                  } catch (_) {}
+                }
+                return { image: img, title, description };
               })()
             `, true);
             clearTimeout(timeout);

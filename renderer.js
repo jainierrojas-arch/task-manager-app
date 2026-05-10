@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.14': {
+    title: 'Caption de reels — fetcher comparte sesión IG con el Explorer',
+    features: [
+      '🔐 <strong>OG fetcher ahora usa tu sesión de IG</strong>: el BrowserWindow oculto que extrae meta tags ya no usa una sesión vacía (que veía login wall en IG). Ahora comparte <code>persist:explorer</code> con el Explorer, así que IG lo reconoce como logueado y devuelve el caption real del reel.',
+      '📝 <strong>Fallback de caption en el DOM</strong>: si <code>og:description</code> sigue vacío después del fetch, ahora también buscamos el caption en el <code>&lt;h1&gt;</code> del article (donde IG renderiza el caption client-side).',
+      '🚀 <strong>Resultado para reels desde feed</strong>: el caption se captura como descripción Y como título de la entry — igual que ya funcionaba para carruseles.',
+      '⚠ <strong>Importante</strong>: para que esto funcione, tenés que estar logueado en IG en el Explorer (cookies se comparten via partition).'
+    ]
+  },
   '3.11.13': {
     title: 'Reels desde feed: detectar reel específico por imagen visible + título desde caption',
     features: [
