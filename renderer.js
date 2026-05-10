@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.9.3': {
+    title: 'Fix crítico: Depósito y Refs vacíos en Mi Agencia',
+    features: [
+      '🐛 <strong>Bug</strong>: en Mi Agencia (default) el panel del Depósito y Referencias mostraba vacío aunque tu data histórica seguía ahí. Causa: el iframe no detectaba correctamente que estaba en el workspace default y filtraba toda la data legacy sin <code>workspaceId</code>.',
+      '✅ <strong>Fix</strong>: ahora el iframe recibe el ID del workspace default explícitamente (no solo un flag), con fallback a "el más viejo si no hay marcado". Triple seguro contra el bug.',
+      '🔄 <strong>Recarga forzada del iframe</strong> cuando la URL cambia, así nunca queda con params viejos.',
+      '👁 Después de instalar: cerrá Task Manager (Cmd+Q) y abrila de nuevo. El Depósito y Refs en Mi Agencia van a mostrar todo tu contenido histórico.'
+    ]
+  },
   '3.9.2': {
     title: 'Fix #2: botón Transcribir aparece en TODAS las entries con links',
     features: [
@@ -801,15 +810,32 @@ const WORKSPACE_SCOPED_COLLECTIONS = new Set([
   'scheduledPosts', 'chatMessages', 'captionTemplates', 'ideas'
 ]);
 
+// Determina el workspace ID que actúa como "default" — el que muestra docs legacy
+// sin workspaceId. Multiple fallbacks por robustez.
+function resolveDefaultWorkspaceId() {
+  if (!workspaces || workspaces.length === 0) return null;
+  // 1) Workspace explícitamente marcado isDefault=true
+  const explicit = workspaces.find(w => w.isDefault === true);
+  if (explicit) return explicit.id;
+  // 2) Si solo hay 1 workspace, ese es default por defecto
+  if (workspaces.length === 1) return workspaces[0].id;
+  // 3) El workspace más viejo (asumimos que fue el primero creado)
+  const sorted = workspaces.slice().sort((a, b) => {
+    const at = a.createdAt && a.createdAt.toDate ? a.createdAt.toDate().getTime() : 0;
+    const bt = b.createdAt && b.createdAt.toDate ? b.createdAt.toDate().getTime() : 0;
+    return at - bt;
+  });
+  return sorted[0] ? sorted[0].id : null;
+}
+
 // Devuelve true si el doc pertenece al workspace activo.
-// Lógica: si estás en el workspace "default" (Mi Agencia, isDefault=true), también ves
-// docs SIN workspaceId (data legacy pre-v3.8.1). En cualquier otro workspace,
-// solo ves docs con workspaceId === current.
+// Lógica: si estás en el workspace default, también ves docs SIN workspaceId
+// (data legacy pre-v3.8.1). En otros workspaces, solo ves docs tagged.
 function belongsToCurrentWs(doc) {
   if (!currentWorkspaceId) return true;
-  const def = workspaces.find(w => w.isDefault);
-  if (def && currentWorkspaceId === def.id) {
-    return !doc.workspaceId || doc.workspaceId === def.id;
+  const defId = resolveDefaultWorkspaceId();
+  if (defId && currentWorkspaceId === defId) {
+    return !doc.workspaceId || doc.workspaceId === currentWorkspaceId;
   }
   return doc.workspaceId === currentWorkspaceId;
 }
@@ -1454,9 +1480,13 @@ function openSidePanel(kind) {
     return;
   }
   titleEl.textContent = cfg.title;
-  // Solo recargar iframe si cambió de fuente — evita perder estado al togglear
-  if (iframe.dataset.currentKind !== kind) {
-    iframe.src = buildIframeSrc(cfg.src);
+  // Recargar iframe si cambió de kind o si la URL difiere (ej. cambió workspace)
+  const newSrc = buildIframeSrc(cfg.src);
+  const currentSrc = iframe.src || '';
+  // Comparar normalizando: si solo hay diferencia trivial no recargamos
+  const needsReload = iframe.dataset.currentKind !== kind || !currentSrc.endsWith(newSrc.split('://').pop().split('/').pop());
+  if (needsReload) {
+    iframe.src = newSrc;
     iframe.dataset.currentKind = kind;
   }
   // Quitar split mode (modo PRO) — single panel desde aquí
@@ -6932,16 +6962,16 @@ function switchWorkspace(workspaceId) {
   console.log('[workspaces] switched to', workspaceId);
 }
 
-// Construye la URL del iframe inyectando workspace + isDefault
-// para que el iframe filtre correctamente por workspace activo
+// Construye URL del iframe inyectando workspace + defaultWs (id del workspace default).
+// El iframe usa esto para saber cuál es su workspace y cuál es el default.
 function buildIframeSrc(baseSrc) {
   if (!baseSrc || baseSrc.startsWith('http')) return baseSrc;
   if (!currentWorkspaceId) return baseSrc;
-  const def = workspaces.find(w => w.isDefault);
-  const isDefault = def && currentWorkspaceId === def.id;
+  const defId = resolveDefaultWorkspaceId();
   const sep = baseSrc.includes('?') ? '&' : '?';
   let src = `${baseSrc}${sep}workspace=${encodeURIComponent(currentWorkspaceId)}`;
-  if (isDefault) src += '&isDefault=1';
+  if (defId) src += `&defaultWs=${encodeURIComponent(defId)}`;
+  if (defId && currentWorkspaceId === defId) src += '&isDefault=1'; // backward compat
   return src;
 }
 

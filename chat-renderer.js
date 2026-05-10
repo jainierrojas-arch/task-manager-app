@@ -1,18 +1,11 @@
-// ===== Multi-workspace bridge (v3.8.1) =====
-// El iframe recibe workspaceId via ?workspace=XXX y ?isDefault=1 si el
-// workspace activo es el default (Mi Agencia) — solo entonces ve docs legacy.
-const WS_ID = (() => {
-  try {
-    const params = new URLSearchParams(window.location.search);
-    return params.get('workspace') || null;
-  } catch (e) { return null; }
+// ===== Multi-workspace bridge (v3.9.3) =====
+const _wsParams = (() => {
+  try { return new URLSearchParams(window.location.search); }
+  catch (e) { return new URLSearchParams(); }
 })();
-const WS_IS_DEFAULT = (() => {
-  try {
-    const params = new URLSearchParams(window.location.search);
-    return params.get('isDefault') === '1';
-  } catch (e) { return false; }
-})();
+const WS_ID = _wsParams.get('workspace') || null;
+const DEFAULT_WS_ID = _wsParams.get('defaultWs') || null;
+const WS_IS_DEFAULT = _wsParams.get('isDefault') === '1' || (DEFAULT_WS_ID && WS_ID === DEFAULT_WS_ID);
 const WS_SCOPED_COLLECTIONS = new Set(['tasks', 'projects', 'depositEntries', 'depositCategories', 'scheduledPosts', 'chatMessages', 'captionTemplates', 'ideas']);
 function _belongsToWs(d) {
   if (!WS_ID) return true;
