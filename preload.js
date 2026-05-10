@@ -31,6 +31,8 @@ contextBridge.exposeInMainWorld('api', {
   getClaudeApiKeyStatus: () => ipcRenderer.invoke('get-claude-api-key-status'),
   setClaudeApiKey: (key) => ipcRenderer.invoke('set-claude-api-key', key),
   callClaude: (payload) => ipcRenderer.invoke('call-claude', payload),
+  // v3.9.20: generación de texto libre (no force tool use)
+  generateWithClaude: (payload) => ipcRenderer.invoke('generate-with-claude', payload),
 
   // Reminders
   getReminderInterval: () => ipcRenderer.invoke('get-reminder-interval'),

@@ -930,6 +930,23 @@ function registerIpcHandlers() {
     return true;
   });
 
+  // v3.9.20: handler de generación de texto libre con Claude (para reescribir
+  // guiones, captions, etc). Diferente de call-claude que fuerza tool_use.
+  ipcMain.handle('generate-with-claude', async (_, { prompt, model, maxTokens }) => {
+    if (!anthropic) return { ok: false, error: 'no-api-key' };
+    try {
+      const response = await anthropic.messages.create({
+        model: model || 'claude-sonnet-4-6',
+        max_tokens: maxTokens || 2000,
+        messages: [{ role: 'user', content: prompt }]
+      });
+      const textBlock = response.content.find(b => b.type === 'text');
+      return { ok: true, text: (textBlock && textBlock.text) ? textBlock.text : '' };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  });
+
   ipcMain.handle('call-claude', async (_, { systemPrompt, userMessage, tools }) => {
     if (!anthropic) return { error: 'no-api-key' };
     try {

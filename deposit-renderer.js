@@ -2386,24 +2386,28 @@ async function transcribeEntry(entryId, btn) {
 async function rewriteScriptForEntry(entryId, btn) {
   const entry = entries.find(e => e.id === entryId);
   if (!entry || !entry.transcription) { alert('Primero transcribí el video.'); return; }
-  if (!window.parent || !window.parent.window || !window.parent.window.api || !window.parent.window.api.callClaude) {
-    _setTranscriptionStatus('❌ Claude API no disponible desde el iframe.', 'error');
+  if (!window.api || !window.api.generateWithClaude) {
+    _setTranscriptionStatus('❌ generateWithClaude no disponible. Update la app.', 'error');
     return;
   }
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Generando...'; }
   _setTranscriptionStatus('⏳ Claude generando variación...');
   try {
     const prompt = 'Recreá el siguiente guion de video manteniendo la misma idea/tema y la misma duración aproximada, pero con un ángulo, hook y palabras DISTINTAS. Que no sea idéntico — quiero una variación creativa que vuelva a contar lo mismo de manera fresca, lista para grabar. Devolvé SOLO el guion nuevo, sin explicaciones ni encabezados.\n\nGuion original:\n\n' + entry.transcription;
-    const result = await window.parent.window.api.callClaude({
+    const result = await window.api.generateWithClaude({
+      prompt: prompt,
       model: 'claude-sonnet-4-6',
-      max_tokens: 2000,
-      messages: [{ role: 'user', content: prompt }]
+      maxTokens: 2000
     });
-    const newText = (result && result.content && result.content[0] && result.content[0].text) || '';
-    if (!newText.trim()) throw new Error('Claude devolvió respuesta vacía');
-    const variations = Array.isArray(entry.scriptVariations) ? entry.scriptVariations : [];
+    if (!result || !result.ok) {
+      throw new Error(result && result.error ? result.error : 'No se pudo conectar con Claude');
+    }
+    const newText = (result.text || '').trim();
+    if (!newText) throw new Error('Claude devolvió respuesta vacía');
+    const currentEntry = entries.find(e => e.id === entryId);
+    const variations = Array.isArray(currentEntry.scriptVariations) ? currentEntry.scriptVariations : [];
     variations.push({
-      text: newText.trim(),
+      text: newText,
       createdAt: new Date().toISOString(),
       createdBy: (window.parent && window.parent.currentUser) ? window.parent.currentUser.uid : null
     });

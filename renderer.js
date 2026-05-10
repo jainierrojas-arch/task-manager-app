@@ -75,6 +75,13 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.9.20': {
+    title: 'Fix Recrear guion con Claude — handler de texto libre',
+    features: [
+      '🐛 <strong>Fix</strong>: el botón "Recrear guion con Claude" devolvía vacío porque usaba el handler <code>call-claude</code> que está hecho para el agente IA (force tool use). Agregué un handler nuevo <code>generate-with-claude</code> para texto libre.',
+      '✅ Ahora click en ✨ Generar variación con Claude → Sonnet escribe la variación → aparece debajo del original con botones (Teleprompter / Copiar / Borrar).'
+    ]
+  },
   '3.9.19': {
     title: 'Fix yt-dlp: usar formato nativo (sin necesitar ffmpeg)',
     features: [
