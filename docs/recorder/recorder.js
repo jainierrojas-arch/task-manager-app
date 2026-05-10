@@ -263,14 +263,41 @@ function fmtTime(ms) {
   return mm + ':' + ss;
 }
 function updateTimer() {
-  if (!recStart) return;
-  // Si está pausado, congelar el timer en el momento de la pausa.
-  const now = recPausedAt > 0 ? recPausedAt : Date.now();
-  $('timer').textContent = fmtTime(now - recStart - recPausedAccum);
+  // v3.11.19: timer muestra TOTAL acumulado (segmentos previos + segmento actual si está grabando)
+  const isRecording = mediaRecorder && (mediaRecorder.state === 'recording' || mediaRecorder.state === 'paused');
+  let currentMs = 0;
+  if (isRecording && recStart) {
+    const now = recPausedAt > 0 ? recPausedAt : Date.now();
+    currentMs = Math.max(0, now - recStart - recPausedAccum);
+  }
+  const total = segmentsTotalMs + currentMs;
+  $('timer').textContent = fmtTime(total);
 }
 
 let recPausedAccum = 0; // ms acumulados en pausa para que el timer siga siendo realista
 let recPausedAt = 0;
+// v3.11.19: total grabado a través de TODOS los segmentos (para timer global)
+let segmentsTotalMs = 0;
+// Flag para distinguir cuando el stop fue manual (continuar) vs final (preview)
+let _finishingForPreview = false;
+
+function updateMultiSegmentUI() {
+  const undoBtn = document.getElementById('btnUndo');
+  const doneBtn = document.getElementById('btnDone');
+  const clipsInd = document.getElementById('clipsIndicator');
+  const isRecording = mediaRecorder && (mediaRecorder.state === 'recording' || mediaRecorder.state === 'paused');
+  const hasSegments = recordedSegments.length > 0;
+  if (undoBtn) undoBtn.style.display = (hasSegments && !isRecording) ? '' : 'none';
+  if (doneBtn) doneBtn.style.display = (hasSegments && !isRecording) ? '' : 'none';
+  if (clipsInd) {
+    if (hasSegments) {
+      clipsInd.style.display = 'block';
+      clipsInd.textContent = '📹 ' + recordedSegments.length + ' clip' + (recordedSegments.length === 1 ? '' : 's');
+    } else {
+      clipsInd.style.display = 'none';
+    }
+  }
+}
 
 function startRecording() {
   const canvas = $('captureCanvas');
@@ -278,7 +305,9 @@ function startRecording() {
   recordedChunks = [];
   recPausedAccum = 0;
   recPausedAt = 0;
-  if (!_pendingSwapAfterStop) recordedSegments = [];
+  // v3.11.19: NO limpiar segmentos al arrancar nuevo. Cada start es un segmento
+  // que se appendea al array. Los segmentos solo se limpian con Cancel (✕) o
+  // explicitamente al iniciar desde la pantalla de preview.
   const mime = pickMime();
   recordedMime = mime || 'video/webm';
 
@@ -312,10 +341,13 @@ function startRecording() {
   mediaRecorder.onstop = async () => {
     const blob = new Blob(recordedChunks, { type: recordedMime });
     if (blob.size > 0) {
-      recordedSegments.push({ blob, mime: recordedMime });
+      // Acumular tiempo del segmento para el timer global multi-clip
+      const segmentMs = (recPausedAt > 0 ? recPausedAt : Date.now()) - recStart - recPausedAccum;
+      recordedSegments.push({ blob, mime: recordedMime, durationMs: Math.max(0, segmentMs) });
+      segmentsTotalMs += Math.max(0, segmentMs);
       recordedBlob = blob;
     }
-    // Si hay un swap pendiente, cambiar cámara y reiniciar la grabación.
+    // Si hay un swap pendiente (cambio de cámara), continuar grabando con la nueva
     if (_pendingSwapAfterStop) {
       const { facing } = _pendingSwapAfterStop;
       _pendingSwapAfterStop = null;
@@ -323,17 +355,23 @@ function startRecording() {
       startRecording();
       return;
     }
-    // Final stop — mostrar preview del último segmento.
-    showPreview();
+    // v3.11.19: si el usuario explicitamente quiso terminar (Done button),
+    // ir al preview. Sino, quedarse en la pantalla de grabación esperando
+    // que el usuario grabe otro segmento o cancele.
+    if (_finishingForPreview) {
+      _finishingForPreview = false;
+      showPreview();
+    } else {
+      updateMultiSegmentUI();
+    }
   };
   mediaRecorder.start(1000);
   recStart = Date.now();
   $('btnRecord').classList.add('recording');
   $('timer').classList.add('active');
-  $('btnPauseRec').style.display = '';
-  $('btnPauseRec').textContent = '⏸';
   if (timerHandle) clearInterval(timerHandle);
   timerHandle = setInterval(updateTimer, 250);
+  updateMultiSegmentUI();
   reportStatus('recording');
 }
 
@@ -369,8 +407,8 @@ function stopRecording() {
   $('btnRecord').classList.remove('recording');
   $('timer').classList.remove('active');
   $('timer').classList.remove('paused');
-  $('btnPauseRec').style.display = 'none';
   if (timerHandle) clearInterval(timerHandle);
+  // updateMultiSegmentUI corre desde onstop (que ya guardó el segmento)
 }
 
 function showPreview() {
@@ -569,23 +607,66 @@ applyLandscapeDefaults();
 window.matchMedia('(orientation: landscape)').addEventListener('change', applyLandscapeDefaults);
 
 $('btnRecord').addEventListener('click', () => {
-  if (mediaRecorder && (mediaRecorder.state === 'recording' || mediaRecorder.state === 'paused')) stopRecording();
-  else startRecording();
-});
-$('btnPauseRec').addEventListener('click', pauseOrResumeRecording);
-$('btnPlayPause').addEventListener('click', tpPlayPause);
-$('btnCancel').addEventListener('click', () => {
-  if (mediaRecorder && mediaRecorder.state === 'recording') {
-    if (!confirm('Cancelar la grabación?')) return;
+  // v3.11.19: tap = start segment / stop segment (NO pasa a preview).
+  // El usuario debe apretar Done (✓) para terminar y previsualizar.
+  if (mediaRecorder && (mediaRecorder.state === 'recording' || mediaRecorder.state === 'paused')) {
     stopRecording();
-    recordedBlob = null;
+  } else {
+    startRecording();
   }
-  // volver a inicio
+});
+
+$('btnUndo').addEventListener('click', () => {
+  // Pop el último segmento. Si quedan 0, volver a estado inicial.
+  if (recordedSegments.length === 0) return;
+  if (!confirm('¿Eliminar el último clip grabado? Los anteriores quedan.')) return;
+  const removed = recordedSegments.pop();
+  if (removed && typeof removed.durationMs === 'number') {
+    segmentsTotalMs = Math.max(0, segmentsTotalMs - removed.durationMs);
+  }
+  // Actualizar timer + UI
+  updateTimer();
+  updateMultiSegmentUI();
+  showDebug('↶ Clip eliminado · ' + recordedSegments.length + ' restante' + (recordedSegments.length === 1 ? '' : 's'));
+});
+
+$('btnDone').addEventListener('click', () => {
+  // Si está grabando, marcar para preview en el onstop. Sino, ir directo.
+  if (mediaRecorder && (mediaRecorder.state === 'recording' || mediaRecorder.state === 'paused')) {
+    _finishingForPreview = true;
+    stopRecording();
+  } else if (recordedSegments.length > 0) {
+    showPreview();
+  }
+});
+
+$('btnPlayPause').addEventListener('click', tpPlayPause);
+
+$('btnCancel').addEventListener('click', () => {
+  const isRecording = mediaRecorder && (mediaRecorder.state === 'recording' || mediaRecorder.state === 'paused');
+  const hasClips = recordedSegments.length > 0;
+  if (isRecording || hasClips) {
+    if (!confirm('Cancelar TODA la grabación? Se eliminarán todos los clips.')) return;
+    if (isRecording) {
+      _finishingForPreview = false;
+      try { mediaRecorder.stop(); } catch (e) {}
+    }
+    recordedSegments = [];
+    segmentsTotalMs = 0;
+    recordedBlob = null;
+    if ($('timer')) $('timer').textContent = '00:00';
+    updateMultiSegmentUI();
+  }
   show('screenRecord');
 });
 
 $('btnRetake').addEventListener('click', () => {
+  // v3.11.19: retake = empezar de cero. Eliminar TODOS los clips.
   recordedBlob = null;
+  recordedSegments = [];
+  segmentsTotalMs = 0;
+  if ($('timer')) $('timer').textContent = '00:00';
+  updateMultiSegmentUI();
   show('screenRecord');
 });
 $('btnUpload').addEventListener('click', uploadAndCommit);

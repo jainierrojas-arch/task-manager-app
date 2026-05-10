@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Task Manager — Grabar</title>
   <link rel="icon" type="image/png" href="../icon.png">
-  <link rel="stylesheet" href="recorder.css?v=31011">
+  <link rel="stylesheet" href="recorder.css?v=31119">
 </head>
 <body>
 
@@ -67,16 +67,18 @@
         <div class="speedctl-help">Velocidad</div>
       </div>
 
-      <!-- Estado/pista de tiempo -->
+      <!-- Estado/pista de tiempo + indicador de clips -->
       <div class="timer" id="timer">00:00</div>
+      <div class="clips-indicator" id="clipsIndicator" style="display:none">📹 0 clips</div>
 
       <!-- Bottom controls -->
       <div class="bottombar">
-        <button class="iconbtn ghost" id="btnCancel">✕</button>
+        <button class="iconbtn ghost" id="btnCancel" title="Cancelar todo">✕</button>
+        <button class="iconbtn ghost" id="btnUndo" title="Deshacer último clip" style="display:none">↶</button>
         <button class="recordbtn" id="btnRecord" aria-label="Grabar">
           <div class="recinner"></div>
         </button>
-        <button class="iconbtn ghost" id="btnPauseRec" title="Pausar/reanudar grabación" style="display:none">⏸</button>
+        <button class="iconbtn ghost done" id="btnDone" title="Finalizar y previsualizar" style="display:none">✓</button>
         <button class="iconbtn ghost" id="btnPlayPause" title="Play/Pausa autoscroll">▶</button>
       </div>
     </section>
@@ -132,6 +134,6 @@
     window.db = firebase.firestore();
     window.auth = firebase.auth();
   </script>
-  <script src="recorder.js?v=31011"></script>
+  <script src="recorder.js?v=31119"></script>
 </body>
 </html>

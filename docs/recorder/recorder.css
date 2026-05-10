@@ -345,6 +345,33 @@ html, body {
 .timer.active { display: block; background: rgba(255,84,85,0.9); }
 .timer.paused { display: block; background: rgba(255,200,80,0.95); color: #1a1300; }
 
+/* Clips indicator: badge mostrando cuántos clips llevás grabados */
+.clips-indicator {
+  position: absolute;
+  top: max(48px, env(safe-area-inset-top) + 36px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.7);
+  color: var(--accent);
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  z-index: 6;
+  border: 1px solid var(--accent);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* Done button (verde) — destaca como acción primaria final */
+.iconbtn.done {
+  background: rgba(78,205,196,0.85) !important;
+  color: #0a0c10 !important;
+  border-color: var(--accent) !important;
+  font-weight: 900;
+}
+.iconbtn.done:active { background: var(--accent) !important; }
+
 .debug-overlay {
   position: absolute;
   top: max(48px, env(safe-area-inset-top) + 36px);
