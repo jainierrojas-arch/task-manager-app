@@ -166,16 +166,44 @@
                        document.querySelector('meta[name="' + prop + '"]');
             return el ? (el.content || '') : '';
           }
-          const ogImage = meta('og:image');
-          const ogDescription = meta('og:description');
-          const ogTitle = meta('og:title');
+          const ogImage = meta('og:image') || meta('twitter:image') || meta('og:image:secure_url');
+          const ogDescription = meta('og:description') || meta('description') || meta('twitter:description');
+          const ogTitle = meta('og:title') || meta('twitter:title');
+          // Look for the largest visible image in the article — IG renders the
+          // post photo as <img> inside <article>.
+          let domImage = '';
+          try {
+            const article = document.querySelector('article') || document.body;
+            const imgs = Array.from(article.querySelectorAll('img'));
+            // Excluir avatares chicos. Quedarnos con la imagen más grande visible.
+            const candidates = imgs.filter(i => {
+              const r = i.getBoundingClientRect();
+              return r.width > 200 && r.height > 200 && i.src && !i.src.startsWith('data:');
+            }).sort((a, b) => {
+              const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+              return (rb.width * rb.height) - (ra.width * ra.height);
+            });
+            if (candidates.length > 0) domImage = candidates[0].src;
+          } catch (e) {}
           let videoPoster = '';
           try {
             const v = document.querySelector('video');
             if (v && v.poster) videoPoster = v.poster;
             else if (v && v.getAttribute('poster')) videoPoster = v.getAttribute('poster');
           } catch (e) {}
-          // Try to find caption-like text inside the article
+          // Carousel detection: Instagram IG posts con varias slides tienen
+          // botones "Next" o paginación con dots. Buscar señales heurísticas.
+          let isCarousel = false;
+          try {
+            const ariaLabels = Array.from(document.querySelectorAll('[aria-label]')).map(el => (el.getAttribute('aria-label') || '').toLowerCase());
+            isCarousel = ariaLabels.some(l => l.includes('siguiente') || l.includes('next') || l.includes('go to slide') || l.includes('ir a la diapositiva'));
+            // También: si hay más de 1 ul role="tablist" o dots de paginación
+            if (!isCarousel) {
+              const dots = document.querySelectorAll('[role="tablist"] > *, ul[role="presentation"] > li');
+              if (dots && dots.length > 1) isCarousel = true;
+            }
+          } catch (e) {}
+          // Caption: h1 dentro del article (IG) o og:description
           let caption = '';
           try {
             const h1 = document.querySelector('article h1') || document.querySelector('h1');
@@ -184,10 +212,11 @@
           if (!caption) caption = ogDescription || '';
           return {
             url: location.href,
-            image: ogImage || videoPoster || '',
+            image: ogImage || videoPoster || domImage || '',
             title: (ogTitle || document.title || '').trim(),
             description: caption.trim().slice(0, 2000),
-            ogDescription: (ogDescription || '').trim()
+            ogDescription: (ogDescription || '').trim(),
+            isCarousel
           };
         })();
       `;
@@ -221,30 +250,58 @@
     saveBtn.textContent = '⏳ Extrayendo datos...';
 
     try {
-      // 1) Extraer datos directamente de la página del webview (caption, poster, etc)
-      const pageData = await extractPageData();
+      // 1) Correr en PARALELO: fetchOgData (Microlink server-side, mejor cover)
+      //    Y extractPageData (DOM del webview, mejor caption porque user logueado).
+      //    Mergeamos los resultados después.
+      const [ogResult, pageResult] = await Promise.allSettled([
+        (window.api && window.api.fetchOgData) ? window.api.fetchOgData(url) : Promise.resolve(null),
+        extractPageData()
+      ]);
+      const og = ogResult.status === 'fulfilled' ? ogResult.value : null;
+      const pageData = pageResult.status === 'fulfilled' ? pageResult.value : null;
       saveBtn.textContent = '⏳ Guardando...';
 
       const lower = url.toLowerCase();
-      const isVideo = /instagram\.com\/(reel|p|tv)\/|tiktok\.com\/.+\/video\/|youtube\.com\/(shorts|watch)|youtu\.be\//.test(lower);
-      const linkType = isVideo ? 'video' : 'material';
+      const isReel = /instagram\.com\/(reel|reels)\//.test(lower);
+      const isTikTokVideo = /tiktok\.com\/.+\/video\//.test(lower) || /tiktok\.com\/v\//.test(lower);
+      const isYouTubeShort = /youtube\.com\/shorts/.test(lower);
+      const isYouTubeWatch = /youtube\.com\/watch|youtu\.be\//.test(lower);
+      const isIGPost = /instagram\.com\/p\//.test(lower);
+      const isVideo = isReel || isTikTokVideo || isYouTubeShort || isYouTubeWatch || isIGPost;
+      // /p/ posts en IG pueden ser carrusel (1+ slides). Detectamos heurísticamente
+      // por el DOM — si vemos paginación de carrusel, lo marcamos.
+      let linkType = isVideo ? 'video' : 'material';
+      if (isIGPost && pageData && pageData.isCarousel) linkType = 'carrusel';
 
-      // 2) Build title — preferir ogTitle de la página > browser.getTitle() > hostname
-      // Limpiar el sufijo de plataforma común (ej: "Foo - Instagram")
       function cleanPageTitle(t) {
         if (!t) return '';
         return t.replace(/\s*[•|·\-—]\s*(Instagram|TikTok|YouTube|Facebook|X|Twitter)\s*$/i, '').trim();
       }
-      let finalTitle = cleanPageTitle(pageData && pageData.title) ||
+      // Title: og (server-side) primero, después pageData, después browser.getTitle()
+      let finalTitle = cleanPageTitle(og && og.title) ||
+                       cleanPageTitle(pageData && pageData.title) ||
                        cleanPageTitle(title) ||
                        (() => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch (e) { return 'Referencia'; } })();
-      // Si el título igual es genérico ("Instagram"), usar la primera línea de la caption
-      if (/^(instagram|tiktok|youtube)$/i.test(finalTitle.trim()) && pageData && pageData.description) {
-        const firstLine = pageData.description.split('\n')[0].slice(0, 120);
+      const description = (pageData && pageData.description) || (og && og.description) || '';
+      if (/^(instagram|tiktok|youtube|\(\d+\)\s*instagram)$/i.test(finalTitle.trim()) && description) {
+        const firstLine = description.split('\n')[0].slice(0, 120);
         if (firstLine) finalTitle = firstLine;
       }
 
-      // 3) Parse "catId|subId" o "catId" o ""
+      // Cover image: og.image (server-side via Microlink) PRIMERO, después pageData.image
+      // (DOM del webview), después capturePage screenshot del webview como último recurso.
+      let coverImage = (og && og.image) || (pageData && pageData.image) || '';
+      if (!coverImage && webviewReady) {
+        try {
+          const native = await browser.capturePage();
+          if (native && typeof native.toDataURL === 'function') {
+            // Convertir a JPEG comprimido para no inflar Firestore
+            const jpeg = native.resize ? native.resize({ width: 720, quality: 'good' }) : native;
+            coverImage = (jpeg.toDataURL ? jpeg.toDataURL() : native.toDataURL()).replace('image/png', 'image/jpeg');
+          }
+        } catch (e) { console.warn('[explorer] capturePage failed', e); }
+      }
+
       const rawValue = categorySelect.value || '';
       let categoryId = null, subcategoryId = null;
       if (rawValue) {
@@ -255,19 +312,16 @@
 
       const data = {
         title: finalTitle.slice(0, 200),
-        description: (pageData && pageData.description) ? pageData.description.slice(0, 2000) : '',
-        links: [{ type: linkType, url, label: linkType === 'video' ? 'Video' : 'Material' }],
+        description: description.slice(0, 2000),
+        links: [{ type: linkType, url, label: linkType === 'video' ? 'Video' : (linkType === 'carrusel' ? 'Carrusel' : 'Material') }],
         categoryId,
         status: 'idea',
         createdBy: currentUser.uid,
         createdByName: (typeof currentUserData !== 'undefined' && currentUserData ? currentUserData.name : null) || (currentUser.email || '').split('@')[0],
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
       };
-      // Cover image desde la página o desde og:image — la marcamos con
-      // coverFetcherV alto para que el deposit-renderer no la sobreescriba
-      // intentando un re-fetch.
-      if (pageData && pageData.image) {
-        data.coverImage = pageData.image;
+      if (coverImage) {
+        data.coverImage = coverImage;
         data.coverFetcherV = 6;
       }
       if (categoryId) {
@@ -281,25 +335,13 @@
           data.subcategoryName = sub.name || '';
         }
       }
-      const ref = await db.collection('depositEntries').add(data);
+      await db.collection('depositEntries').add(data);
 
-      // 4) Fallback: si no pudimos extraer la cover de la página, intentar
-      // fetchOgData en background como respaldo.
-      if (!data.coverImage && window.api && window.api.fetchOgData) {
-        window.api.fetchOgData(url).then(og => {
-          if (og && og.image) {
-            db.collection('depositEntries').doc(ref.id).update({
-              coverImage: og.image,
-              coverFetcherV: 6
-            }).catch(() => {});
-          }
-        }).catch(() => {});
-      }
       const summary = [];
-      if (data.coverImage) summary.push('portada');
-      if (data.description) summary.push('caption');
+      if (coverImage) summary.push('portada');
+      if (description) summary.push('caption');
       const detail = summary.length ? ` (con ${summary.join(' + ')})` : '';
-      showToast('✓ Guardado en el Depósito' + detail);
+      showToast('✓ Guardado como ' + linkType + detail);
     } catch (e) {
       console.error('[explorer] save failed', e);
       showToast('Error: ' + (e.message || 'desconocido'), 'error');

@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.6': {
+    title: 'Explorer fix portada + auto-detect carrusel + screenshot fallback',
+    features: [
+      '🖼 <strong>Fix portada del reel</strong>: ahora corremos en PARALELO Microlink (server-side, ya probado para IG) Y la extracción del DOM del webview. La cover sale del primero que devuelva una imagen — Microlink primero porque es más confiable para reels específicos en IG.',
+      '🎬 <strong>Auto-detect carrusel vs video</strong>: si el post es un <code>/p/</code> de IG con múltiples slides (detectado por flechas "Siguiente"/"Next" y dots de paginación), se guarda como tipo <strong>carrusel</strong>. Si es <code>/reel/</code> o <code>/tv/</code>, se guarda como <strong>video</strong>. TikTok/YouTube Shorts también como video.',
+      '📸 <strong>Screenshot fallback como último recurso</strong>: si Microlink falla Y el DOM no tiene og:image ni video poster, capturamos directamente la pantalla del webview (lo que estás viendo) y eso queda como portada. JPEG comprimido para no inflar Firestore.',
+      '🔍 <strong>Extracción más completa</strong>: probamos meta tags og:image, twitter:image, og:image:secure_url. Si nada, buscamos el <code>&lt;img&gt;</code> más grande dentro del article (heurística para carruseles donde la primera slide es una imagen).',
+      '✅ <strong>Toast confirma qué se capturó</strong>: ahora dice "Guardado como reel (con portada + caption)" o "Guardado como carrusel (con portada)" según lo que pudo extraer.'
+    ]
+  },
   '3.11.5': {
     title: 'Explorer captura portada + caption del reel automáticamente',
     features: [
