@@ -191,16 +191,28 @@
             if (v && v.poster) videoPoster = v.poster;
             else if (v && v.getAttribute('poster')) videoPoster = v.getAttribute('poster');
           } catch (e) {}
-          // Carousel detection: Instagram IG posts con varias slides tienen
-          // botones "Next" o paginación con dots. Buscar señales heurísticas.
+          // Detectar si hay un <video> en el article — si lo hay, ES VIDEO,
+          // independiente de la URL. Esto evita el falso positivo donde un
+          // reel /p/ se detecta como carrusel por el flecha "Next" del feed.
+          let hasVideo = false;
+          try {
+            hasVideo = !!(document.querySelector('article video') || document.querySelector('video'));
+          } catch (e) {}
+          // Carousel detection: SOLO si NO hay video Y hay señales claras de
+          // múltiples slides. Buscamos aria-labels específicas de "go to slide N".
           let isCarousel = false;
           try {
-            const ariaLabels = Array.from(document.querySelectorAll('[aria-label]')).map(el => (el.getAttribute('aria-label') || '').toLowerCase());
-            isCarousel = ariaLabels.some(l => l.includes('siguiente') || l.includes('next') || l.includes('go to slide') || l.includes('ir a la diapositiva'));
-            // También: si hay más de 1 ul role="tablist" o dots de paginación
-            if (!isCarousel) {
-              const dots = document.querySelectorAll('[role="tablist"] > *, ul[role="presentation"] > li');
-              if (dots && dots.length > 1) isCarousel = true;
+            if (!hasVideo) {
+              const labels = Array.from(document.querySelectorAll('[aria-label]')).map(el => (el.getAttribute('aria-label') || '').toLowerCase());
+              isCarousel = labels.some(l => /^(go to|ir a la? )?slide\s+\d+/i.test(l) || /^diapositiva\s+\d+/i.test(l));
+              if (!isCarousel) {
+                // Dots de paginación dentro de article
+                const article = document.querySelector('article');
+                if (article) {
+                  const dots = article.querySelectorAll('[role="tablist"] [role="tab"], ul[role="presentation"] > li');
+                  if (dots && dots.length > 1) isCarousel = true;
+                }
+              }
             }
           } catch (e) {}
           // Caption: h1 dentro del article (IG) o og:description
@@ -216,6 +228,7 @@
             title: (ogTitle || document.title || '').trim(),
             description: caption.trim().slice(0, 2000),
             ogDescription: (ogDescription || '').trim(),
+            hasVideo,
             isCarousel
           };
         })();
@@ -267,11 +280,29 @@
       const isYouTubeShort = /youtube\.com\/shorts/.test(lower);
       const isYouTubeWatch = /youtube\.com\/watch|youtu\.be\//.test(lower);
       const isIGPost = /instagram\.com\/p\//.test(lower);
-      const isVideo = isReel || isTikTokVideo || isYouTubeShort || isYouTubeWatch || isIGPost;
-      // /p/ posts en IG pueden ser carrusel (1+ slides). Detectamos heurísticamente
-      // por el DOM — si vemos paginación de carrusel, lo marcamos.
-      let linkType = isVideo ? 'video' : 'material';
-      if (isIGPost && pageData && pageData.isCarousel) linkType = 'carrusel';
+
+      // ===== Detección de tipo (Auto) =====
+      // Prioridad: 1) override manual del usuario, 2) URL específica de reel/short,
+      // 3) presencia de <video> en el DOM, 4) signals de carrusel, 5) URL /p/ default.
+      const typeSelect = document.getElementById('explorerTypeSelect');
+      const manualType = typeSelect ? typeSelect.value : 'auto';
+      let linkType;
+      if (manualType !== 'auto') {
+        linkType = manualType;
+      } else if (isReel || isTikTokVideo || isYouTubeShort || isYouTubeWatch) {
+        linkType = 'video';
+      } else if (pageData && pageData.hasVideo) {
+        linkType = 'video';
+      } else if (pageData && pageData.isCarousel) {
+        linkType = 'carrusel';
+      } else if (isIGPost) {
+        // /p/ por defecto: si llegamos acá y NO hay video ni carrusel detectable,
+        // lo marcamos como carrusel (típico cuando es post con 1 imagen es 'video'
+        // técnicamente pero IG pone /p/ para todo). Dejamos 'video' como mejor default.
+        linkType = 'video';
+      } else {
+        linkType = 'material';
+      }
 
       function cleanPageTitle(t) {
         if (!t) return '';
@@ -291,13 +322,39 @@
       // Cover image: og.image (server-side via Microlink) PRIMERO, después pageData.image
       // (DOM del webview), después capturePage screenshot del webview como último recurso.
       let coverImage = (og && og.image) || (pageData && pageData.image) || '';
+      let coverSource = '';
+      if (coverImage) {
+        if (og && og.image && og.image === coverImage) coverSource = 'microlink';
+        else coverSource = 'webview-dom';
+      }
       if (!coverImage && webviewReady) {
         try {
           const native = await browser.capturePage();
           if (native && typeof native.toDataURL === 'function') {
-            // Convertir a JPEG comprimido para no inflar Firestore
-            const jpeg = native.resize ? native.resize({ width: 720, quality: 'good' }) : native;
-            coverImage = (jpeg.toDataURL ? jpeg.toDataURL() : native.toDataURL()).replace('image/png', 'image/jpeg');
+            const resized = (native.resize && !native.isEmpty()) ? native.resize({ width: 720 }) : native;
+            // toJPEG devuelve Buffer (Uint8Array); convertir a base64 en el navegador
+            // sin depender de Buffer global (que puede no estar con contextIsolation).
+            if (typeof resized.toJPEG === 'function') {
+              try {
+                const buf = resized.toJPEG(75);
+                if (buf && buf.length > 0) {
+                  const bytes = (buf instanceof Uint8Array) ? buf : new Uint8Array(buf);
+                  let binary = '';
+                  // chunks para evitar stack overflow en imágenes grandes
+                  const CHUNK = 0x8000;
+                  for (let i = 0; i < bytes.length; i += CHUNK) {
+                    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+                  }
+                  coverImage = 'data:image/jpeg;base64,' + btoa(binary);
+                  coverSource = 'screenshot-jpeg';
+                }
+              } catch (e) { console.warn('[explorer] toJPEG failed', e); }
+            }
+            // Fallback PNG vía toDataURL si JPEG no funcionó
+            if (!coverImage) {
+              coverImage = resized.toDataURL();
+              coverSource = 'screenshot-png';
+            }
           }
         } catch (e) { console.warn('[explorer] capturePage failed', e); }
       }
@@ -338,10 +395,13 @@
       await db.collection('depositEntries').add(data);
 
       const summary = [];
-      if (coverImage) summary.push('portada');
+      if (coverImage) summary.push('portada=' + (coverSource || 'sí'));
       if (description) summary.push('caption');
-      const detail = summary.length ? ` (con ${summary.join(' + ')})` : '';
-      showToast('✓ Guardado como ' + linkType + detail);
+      const detail = summary.length ? ` (${summary.join(', ')})` : '';
+      showToast('✓ ' + linkType + detail);
+      // Reset al "Auto" para el próximo guardado
+      const ts = document.getElementById('explorerTypeSelect');
+      if (ts) ts.value = 'auto';
     } catch (e) {
       console.error('[explorer] save failed', e);
       showToast('Error: ' + (e.message || 'desconocido'), 'error');

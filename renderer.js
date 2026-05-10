@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.7': {
+    title: 'Explorer: selector manual de tipo + fix screenshot fallback + mejor detección',
+    features: [
+      '🎚 <strong>Selector manual de tipo</strong>: nuevo dropdown abajo "Tipo: Auto/Video/Carrusel/Material" — si la auto-detección falla, podés forzar el tipo correcto antes de guardar.',
+      '🐛 <strong>Fix detección de carrusel falso positivo</strong>: ahora si hay un <code>&lt;video&gt;</code> en el DOM, SIEMPRE se marca como video (no más reels detectados como carruseles por el botón "Next" del feed).',
+      '📸 <strong>Fix screenshot fallback</strong>: el data URL del screenshot estaba mal armado (decía "image/jpeg" pero los bytes eran PNG). Ahora usa <code>nativeImage.toJPEG(75)</code> y arma el base64 correctamente, así si Microlink Y la extracción del DOM fallan, al menos queda el screenshot del webview como portada.',
+      '📊 <strong>Toast con info de debug</strong>: ahora muestra de dónde salió la portada — <code>microlink</code> (server-side), <code>webview-dom</code> (DOM), <code>screenshot-jpeg</code> (captura). Si dice "✓ video (caption)" sin "portada=...", quiere decir que NINGUNA fuente devolvió imagen — avisame ahí.',
+      '🔍 <strong>Auto-reset</strong>: el selector vuelve a "Auto" después de cada guardado.'
+    ]
+  },
   '3.11.6': {
     title: 'Explorer fix portada + auto-detect carrusel + screenshot fallback',
     features: [
