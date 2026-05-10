@@ -78,22 +78,21 @@ html, body {
   background: #000;
 }
 
-#captureCanvas {
+#preview {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-  /* contain = WYSIWYG: el usuario ve EXACTAMENTE el frame 9:16 que se va a
-     guardar, con letterbox negro arriba/abajo (o izquierda/derecha) si la
-     pantalla tiene aspect distinto. Antes era cover (rellenaba la pantalla
-     pero recortaba) lo que confundía: el usuario veía algo distinto al
-     archivo final. */
+  /* contain = WYSIWYG: ves exactamente el frame que se va a guardar.
+     Si tu pantalla no tiene la misma proporción que el video, hay letterbox
+     negro. Mejor que mentir con cover (que rellenaría pero recortaría). */
   object-fit: contain;
   background: #000;
   display: block;
 }
-/* Mirror only the preview (CSS), not the canvas pixels — recorded video stays unmirrored. */
-#captureCanvas.mirror { transform: scaleX(-1); }
+/* Mirror solo en preview (CSS), no afecta los pixeles grabados — el archivo
+   queda sin espejar (igual que la cámara nativa del celular). */
+#preview.mirror { transform: scaleX(-1); }
 
 .teleprompter {
   position: absolute;

@@ -53,16 +53,15 @@ async function loadSession() {
   }
 }
 
-// ===== Camera + canvas pipeline (v3.10.3) =====
-// El recording NO se hace directo del MediaStream de la cámara. En su lugar:
-// 1) Tenemos un <video id="hiddenCam"> que recibe el stream de la cámara activa.
-// 2) Un <canvas id="captureCanvas"> que se redibuja con requestAnimationFrame
-//    copiando el frame actual del video.
-// 3) MediaRecorder graba el stream del canvas (canvas.captureStream(30)) +
-//    un audioTrack persistente capturado UNA SOLA VEZ al iniciar.
-// Esto permite que al cambiar de cámara (front <-> back) la grabación NO se corte:
-// solo se reemplaza la fuente del hidden video, el canvas sigue recibiendo frames
-// y el audio nunca se interrumpe. Resultado: un solo archivo continuo con ambas tomas.
+// ===== Camera (direct stream recording, v3.10.8) =====
+// SIN canvas. Grabamos el videoStream directo de la cámara. iOS Safari encode
+// el archivo con dimensiones y rotation metadata correctas — si tenés el
+// celular vertical, el archivo se reproduce 9:16. Si está horizontal, 16:9.
+// WYSIWYG real.
+//
+// Trade-off: cambiar de cámara mid-recording NO produce un archivo único —
+// se cierra el clip actual y se inicia uno nuevo. Cada clip se sube por
+// separado al desktop (recordedSegments).
 let videoStream = null;     // cambia al swappear cámara
 let audioStream = null;     // persistente toda la sesión
 let audioTrack = null;
@@ -71,8 +70,8 @@ let mediaRecorder = null;
 let recordedChunks = [];
 let recordedBlob = null;
 let recordedMime = '';
-let drawHandle = null;
-let canvasReady = false;
+let recordedSegments = []; // [{ blob, mime }] — uno por cada clip antes de un swap
+let _pendingSwapAfterStop = null;
 
 function pickMime() {
   const candidates = [
@@ -98,34 +97,45 @@ async function ensureAudio() {
 }
 
 async function startCamera(facing) {
+  // Si está grabando, parar la grabación primero, marcar swap pending. El
+  // onstop del recorder hará el cambio de cámara y reiniciará la grabación.
+  if (mediaRecorder && (mediaRecorder.state === 'recording' || mediaRecorder.state === 'paused')) {
+    _pendingSwapAfterStop = { facing };
+    try { mediaRecorder.stop(); } catch (e) { console.warn(e); }
+    return;
+  }
+  await _doStartCamera(facing);
+}
+
+async function _doStartCamera(facing) {
   try {
-    // Liberar el video stream anterior (no tocar audio).
     if (videoStream) videoStream.getTracks().forEach(t => t.stop());
     const facingConstraint = facing === 'environment' ? { ideal: 'environment' } : { ideal: 'user' };
-    // Estrategia: pedimos 9:16 lo más fuerte posible. Si el celular no puede dar
-    // exactamente esa resolución, igual el canvas 1080x1920 fuerza el output 9:16.
+    // Pedimos 1080x1920 9:16 portrait. iOS Safari va a darnos lo más cercano
+    // que pueda — para iPhones con front cam HD eso es exactamente 1080x1920
+    // o 720x1280 (ambos 9:16). Si el device responde con landscape pixel
+    // buffer, el <video> aplica la rotation metadata automáticamente para
+    // mostrar (y grabar) en orientación correcta.
     try {
       videoStream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: facingConstraint,
           width: { ideal: 1080 },
           height: { ideal: 1920 },
-          aspectRatio: { ideal: 0.5625 } // 9/16
+          aspectRatio: { ideal: 0.5625 }
         }
       });
     } catch (e1) {
-      console.warn('[camera] strict 9:16 failed, fallback', e1.message);
+      console.warn('[camera] 9:16 ideal failed, fallback', e1.message);
       videoStream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: facingConstraint }
       });
     }
 
-    const hidden = $('hiddenCam');
-    hidden.srcObject = videoStream;
-    try { await hidden.play(); } catch (e) { /* autoplay may already be running */ }
+    const preview = $('preview');
+    preview.srcObject = videoStream;
+    try { await preview.play(); } catch (e) { /* may be playing already */ }
 
-    // applyConstraints: algunos browsers (Safari iOS) ignoran width/height en
-    // getUserMedia pero respetan applyConstraints sobre el track. Best effort.
     const track = videoStream.getVideoTracks()[0];
     if (track && track.applyConstraints) {
       try {
@@ -134,19 +144,15 @@ async function startCamera(facing) {
           height: { ideal: 1920 },
           aspectRatio: { ideal: 0.5625 }
         });
-      } catch (e) { console.warn('[camera] applyConstraints failed', e.message); }
+      } catch (e) { /* best effort */ }
     }
 
     currentFacing = facing;
-    const canvas = $('captureCanvas');
-    if (canvas) canvas.classList.toggle('mirror', facing === 'user');
-    setupDrawLoop();
+    preview.classList.toggle('mirror', facing === 'user');
 
-    // Debug overlay: confirma al usuario que el output es 9:16 y muestra
-    // qué le da realmente la cámara (para diagnosticar quejas futuras).
     if (track) {
       const s = track.getSettings();
-      showDebug(`📹 Cam: ${s.width || '?'}×${s.height || '?'} → 📦 Output: 1080×1920 (9:16)`);
+      showDebug(`📹 Cam: ${s.width || '?'}×${s.height || '?'} (grabación directa)`);
     }
   } catch (e) {
     console.error('[camera] failed', e);
@@ -164,73 +170,7 @@ function showDebug(text) {
   _debugTimer = setTimeout(() => { el.style.display = 'none'; }, 5000);
 }
 
-// Canvas size constante para todo el ciclo de vida — se setea en HTML attribute
-// y aquí lo verificamos defensivamente. NO se cambia nunca, asegura output 9:16.
-const TARGET_W = 1080;
-const TARGET_H = 1920;
-
-function lockCanvas() {
-  const canvas = $('captureCanvas');
-  if (!canvas) return;
-  if (canvas.width !== TARGET_W) canvas.width = TARGET_W;
-  if (canvas.height !== TARGET_H) canvas.height = TARGET_H;
-}
-// Lockear ya — antes de que cualquier código toque el canvas.
-lockCanvas();
-
-function setupDrawLoop() {
-  if (canvasReady) return; // ya corriendo
-  const canvas = $('captureCanvas');
-  const hidden = $('hiddenCam');
-  if (!canvas || !hidden) return;
-  lockCanvas();
-  const ctx = canvas.getContext('2d');
-
-  function draw() {
-    // Defensive: si algo resizeó el canvas (no debería pasar pero por las dudas),
-    // lo restauramos. Importante: NO hacer esto durante recording — captureStream
-    // se rompe si la dim cambia mid-record.
-    if (!mediaRecorder || mediaRecorder.state === 'inactive') lockCanvas();
-
-    const sw = hidden.videoWidth, sh = hidden.videoHeight;
-    if (sw > 0 && sh > 0) {
-      const dw = canvas.width, dh = canvas.height;
-
-      // Detectar si el source es landscape — eso pasa cuando iOS devuelve el
-      // stream rotado (ej: hold portrait pero pixel buffer 1280x720 horizontal).
-      // En ese caso, ROTAR 90° CW al dibujar para que la imagen aparezca portrait
-      // en el canvas portrait. Sin esta rotación, la cara saldría de costado.
-      const sourceLandscape = sw > sh;
-      const canvasPortrait = dw < dh;
-
-      ctx.fillStyle = '#000';
-      ctx.fillRect(0, 0, dw, dh);
-
-      if (sourceLandscape && canvasPortrait) {
-        // Rotar el source 90° CW. Después de rotar, el "ancho" original se
-        // convierte en altura visual y viceversa, así que pasamos sh y sw
-        // intercambiados a la lógica de cover-fit.
-        ctx.save();
-        ctx.translate(dw / 2, dh / 2);
-        ctx.rotate(Math.PI / 2);
-        // Cover-fit con dimensiones efectivas intercambiadas:
-        const scale = Math.max(dh / sw, dw / sh);
-        const w = sw * scale, h = sh * scale;
-        ctx.drawImage(hidden, -w / 2, -h / 2, w, h);
-        ctx.restore();
-      } else {
-        // Source y canvas en la misma orientación — cover-fit normal.
-        const scale = Math.max(dw / sw, dh / sh);
-        const w = sw * scale, h = sh * scale;
-        const x = (dw - w) / 2, y = (dh - h) / 2;
-        ctx.drawImage(hidden, x, y, w, h);
-      }
-    }
-    drawHandle = requestAnimationFrame(draw);
-  }
-  drawHandle = requestAnimationFrame(draw);
-  canvasReady = true;
-}
+// Canvas pipeline removed in v3.10.8 — see startCamera comments.
 
 async function init() {
   show('screenLoading');
@@ -288,34 +228,24 @@ let recPausedAccum = 0; // ms acumulados en pausa para que el timer siga siendo 
 let recPausedAt = 0;
 
 function startRecording() {
-  const canvas = $('captureCanvas');
-  if (!canvas || !audioTrack) return;
+  if (!videoStream || !audioTrack) return;
   recordedChunks = [];
   recPausedAccum = 0;
   recPausedAt = 0;
+  // Si NO hay swap pendiente, este es un nuevo recording: limpiar segmentos previos.
+  if (!_pendingSwapAfterStop) recordedSegments = [];
   const mime = pickMime();
   recordedMime = mime || 'video/webm';
 
-  // Forzar dimensiones del canvas justo antes de captureStream — algunas
-  // versiones de iOS Safari evalúan el tamaño del canvas en este momento
-  // exacto, no antes ni después.
-  if (canvas.width !== TARGET_W || canvas.height !== TARGET_H) {
-    canvas.width = TARGET_W;
-    canvas.height = TARGET_H;
-  }
-  console.log(`[rec] pre-capture canvas: ${canvas.width}x${canvas.height}`);
-
-  // Combinar el stream del canvas (video continuo aunque cambie la cámara) con el
-  // audio track persistente. NUNCA reasignar el audioTrack durante la sesión.
-  const canvasStream = canvas.captureStream(30);
-  const cTrack = canvasStream.getVideoTracks()[0];
-  if (cTrack && cTrack.getSettings) {
-    const cs = cTrack.getSettings();
-    console.log('[rec] canvas track getSettings():', cs);
-    showDebug(`🎬 Track: ${cs.width || '?'}×${cs.height || '?'} | Canvas: ${canvas.width}×${canvas.height}`);
+  // Combinar la pista de video DEL STREAM DIRECTO de la cámara con el audio
+  // track persistente. iOS encode con dimensiones nativas + rotation metadata.
+  const vTrack = videoStream.getVideoTracks()[0];
+  if (vTrack && vTrack.getSettings) {
+    const s = vTrack.getSettings();
+    showDebug(`🎬 Grabando ${s.width || '?'}×${s.height || '?'}`);
   }
   const combined = new MediaStream();
-  canvasStream.getVideoTracks().forEach(t => combined.addTrack(t));
+  videoStream.getVideoTracks().forEach(t => combined.addTrack(t));
   combined.addTrack(audioTrack);
   try {
     mediaRecorder = new MediaRecorder(combined, mime ? { mimeType: mime, videoBitsPerSecond: 6_000_000 } : { videoBitsPerSecond: 6_000_000 });
@@ -325,8 +255,21 @@ function startRecording() {
     return;
   }
   mediaRecorder.ondataavailable = (ev) => { if (ev.data && ev.data.size > 0) recordedChunks.push(ev.data); };
-  mediaRecorder.onstop = () => {
-    recordedBlob = new Blob(recordedChunks, { type: recordedMime });
+  mediaRecorder.onstop = async () => {
+    const blob = new Blob(recordedChunks, { type: recordedMime });
+    if (blob.size > 0) {
+      recordedSegments.push({ blob, mime: recordedMime });
+      recordedBlob = blob;
+    }
+    // Si hay un swap pendiente, cambiar cámara y reiniciar la grabación.
+    if (_pendingSwapAfterStop) {
+      const { facing } = _pendingSwapAfterStop;
+      _pendingSwapAfterStop = null;
+      await _doStartCamera(facing);
+      startRecording();
+      return;
+    }
+    // Final stop — mostrar preview del último segmento.
     showPreview();
   };
   mediaRecorder.start(1000);
@@ -440,15 +383,67 @@ function tpPlayPause() {
 }
 
 // ===== Cloudinary upload =====
-async function uploadToCloudinary(blob) {
+async function uploadAndCommit() {
+  // Si hay múltiples segmentos (porque hubo camera swap mid-recording), subir
+  // todos. El desktop muestra el último en el modal pero todos quedan en el
+  // entry's recordedVideos array.
+  const segments = recordedSegments.length > 0 ? recordedSegments : (recordedBlob ? [{ blob: recordedBlob, mime: recordedMime }] : []);
+  if (segments.length === 0) return;
+  show('screenUploading');
+  $('progressFill').style.width = '0%';
+  $('uploadPct').textContent = '0%';
+  reportStatus('uploading');
+  try {
+    let lastResult = null;
+    const additionalUrls = [];
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i];
+      // Para múltiples segments mostramos progreso por segmento + texto de cuál vamos.
+      if (segments.length > 1) {
+        $('uploadPct').textContent = `Clip ${i + 1}/${segments.length} · 0%`;
+      }
+      const r = await uploadToCloudinaryBlob(seg.blob, seg.mime, (pct) => {
+        if (segments.length > 1) {
+          $('uploadPct').textContent = `Clip ${i + 1}/${segments.length} · ${pct}%`;
+          // Progreso global aproximado: (i + pct/100) / segments.length * 100
+          const globalPct = Math.round(((i + pct / 100) / segments.length) * 100);
+          $('progressFill').style.width = globalPct + '%';
+        } else {
+          $('progressFill').style.width = pct + '%';
+          $('uploadPct').textContent = pct + '%';
+        }
+      });
+      if (i < segments.length - 1) additionalUrls.push(r.secure_url);
+      lastResult = r;
+    }
+    const updateData = {
+      status: 'completed',
+      videoUrl: lastResult.secure_url,
+      videoBytes: lastResult.bytes || null,
+      videoFormat: lastResult.format || null,
+      videoDuration: lastResult.duration || null,
+      videoWidth: lastResult.width || null,
+      videoHeight: lastResult.height || null,
+      completedAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
+    if (additionalUrls.length > 0) updateData.additionalVideoUrls = additionalUrls;
+    await sessionRef.update(updateData);
+    show('screenDone');
+  } catch (e) {
+    console.error('[upload] failed', e);
+    setError('Error al subir', e.message);
+  }
+}
+
+async function uploadToCloudinaryBlob(blob, mime, onProgress) {
   const cloudName = session.cloudName;
   const uploadPreset = session.uploadPreset;
   if (!cloudName || !uploadPreset) {
     throw new Error('Cloudinary no configurado en el desktop. Andá a Configuración y agregá cloud name + upload preset.');
   }
   const url = `https://api.cloudinary.com/v1_1/${encodeURIComponent(cloudName)}/video/upload`;
-  const ext = recordedMime.includes('mp4') ? 'mp4' : 'webm';
-  const file = new File([blob], `recording-${Date.now()}.${ext}`, { type: recordedMime });
+  const ext = (mime || '').includes('mp4') ? 'mp4' : 'webm';
+  const file = new File([blob], `recording-${Date.now()}.${ext}`, { type: mime || 'video/webm' });
   const fd = new FormData();
   fd.append('file', file);
   fd.append('upload_preset', uploadPreset);
@@ -456,52 +451,20 @@ async function uploadToCloudinary(blob) {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', url, true);
     xhr.upload.addEventListener('progress', (e) => {
-      if (e.lengthComputable) {
-        const pct = Math.round((e.loaded / e.total) * 100);
-        $('progressFill').style.width = pct + '%';
-        $('uploadPct').textContent = pct + '%';
+      if (e.lengthComputable && typeof onProgress === 'function') {
+        onProgress(Math.round((e.loaded / e.total) * 100));
       }
     });
     xhr.onload = () => {
       try {
         const data = JSON.parse(xhr.responseText || '{}');
-        if (xhr.status >= 200 && xhr.status < 300 && data.secure_url) {
-          resolve(data);
-        } else {
-          reject(new Error(data.error && data.error.message ? data.error.message : `HTTP ${xhr.status}`));
-        }
-      } catch (e) {
-        reject(new Error('Respuesta inválida de Cloudinary'));
-      }
+        if (xhr.status >= 200 && xhr.status < 300 && data.secure_url) resolve(data);
+        else reject(new Error(data.error && data.error.message ? data.error.message : `HTTP ${xhr.status}`));
+      } catch (e) { reject(new Error('Respuesta inválida de Cloudinary')); }
     };
     xhr.onerror = () => reject(new Error('Error de red al subir'));
     xhr.send(fd);
   });
-}
-
-async function uploadAndCommit() {
-  if (!recordedBlob) return;
-  show('screenUploading');
-  $('progressFill').style.width = '0%';
-  $('uploadPct').textContent = '0%';
-  reportStatus('uploading');
-  try {
-    const result = await uploadToCloudinary(recordedBlob);
-    await sessionRef.update({
-      status: 'completed',
-      videoUrl: result.secure_url,
-      videoBytes: result.bytes || null,
-      videoFormat: result.format || null,
-      videoDuration: result.duration || null,
-      videoWidth: result.width || null,
-      videoHeight: result.height || null,
-      completedAt: firebase.firestore.FieldValue.serverTimestamp()
-    });
-    show('screenDone');
-  } catch (e) {
-    console.error('[upload] failed', e);
-    setError('Error al subir', e.message);
-  }
 }
 
 // ===== Wireup =====
