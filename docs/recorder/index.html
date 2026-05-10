@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0f1115">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Task Manager — Grabar</title>
+  <link rel="icon" type="image/png" href="../icon.png">
+  <link rel="stylesheet" href="recorder.css">
+</head>
+<body>
+
+  <div class="app" id="app">
+
+    <!-- Pantalla 1: cargando sesión -->
+    <section class="screen screen-loading active" id="screenLoading">
+      <div class="logo-wrap">
+        <img src="../icon.png" alt="Task Manager" class="logo">
+        <div class="logo-text">Task Manager</div>
+      </div>
+      <div class="spinner"></div>
+      <div class="loading-text" id="loadingText">Conectando sesión...</div>
+    </section>
+
+    <!-- Pantalla 2: error / sesión inválida -->
+    <section class="screen screen-error" id="screenError">
+      <div class="error-icon">⚠️</div>
+      <div class="error-title" id="errorTitle">Sesión no válida</div>
+      <div class="error-msg" id="errorMsg">Pedí al desktop que genere un QR nuevo.</div>
+    </section>
+
+    <!-- Pantalla 3: lista para grabar -->
+    <section class="screen screen-record" id="screenRecord">
+      <video id="preview" autoplay muted playsinline></video>
+
+      <!-- Teleprompter overlay -->
+      <div class="teleprompter" id="teleprompter">
+        <div class="tp-text" id="tpText"></div>
+      </div>
+
+      <!-- Top bar: cámara + tamaño de texto -->
+      <div class="topbar">
+        <button class="iconbtn" id="btnSwapCam" title="Cambiar cámara">🔄</button>
+        <button class="iconbtn" id="btnFontDown" title="Texto más chico">A−</button>
+        <button class="iconbtn" id="btnFontUp" title="Texto más grande">A+</button>
+        <button class="iconbtn" id="btnSpeedDown" title="Más lento">−</button>
+        <button class="iconbtn" id="btnSpeedUp" title="Más rápido">+</button>
+        <button class="iconbtn" id="btnTpToggle" title="Mostrar/ocultar guion">📝</button>
+      </div>
+
+      <!-- Estado/pista de tiempo -->
+      <div class="timer" id="timer">00:00</div>
+
+      <!-- Bottom controls -->
+      <div class="bottombar">
+        <button class="iconbtn ghost" id="btnCancel">✕</button>
+        <button class="recordbtn" id="btnRecord" aria-label="Grabar">
+          <div class="recinner"></div>
+        </button>
+        <button class="iconbtn ghost" id="btnPlayPause">▶</button>
+      </div>
+    </section>
+
+    <!-- Pantalla 4: previsualización + subir -->
+    <section class="screen screen-preview" id="screenPreview">
+      <video id="recordedPreview" controls playsinline></video>
+      <div class="preview-controls">
+        <button class="btn btn-ghost" id="btnRetake">🔄 Repetir</button>
+        <button class="btn btn-primary" id="btnUpload">📤 Enviar al desktop</button>
+      </div>
+    </section>
+
+    <!-- Pantalla 5: subiendo -->
+    <section class="screen screen-uploading" id="screenUploading">
+      <div class="logo-wrap">
+        <img src="../icon.png" alt="Task Manager" class="logo">
+      </div>
+      <div class="upload-title">Subiendo video...</div>
+      <div class="progressbar"><div class="progressbar-fill" id="progressFill"></div></div>
+      <div class="upload-pct" id="uploadPct">0%</div>
+      <div class="upload-hint">No cierres esta pantalla hasta que termine.</div>
+    </section>
+
+    <!-- Pantalla 6: listo -->
+    <section class="screen screen-done" id="screenDone">
+      <div class="done-check">✓</div>
+      <div class="done-title">¡Video enviado!</div>
+      <div class="done-msg">Ya aparece en el desktop, listo para asignar al editor.</div>
+      <button class="btn btn-primary" id="btnAnother">Grabar otro</button>
+    </section>
+
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script>
+    firebase.initializeApp({
+      apiKey: "AIzaSyDiLAvhCsJOtHYOtH8x7P8aN3NB6fhvaf0",
+      authDomain: "app-de-tareas-e4209.firebaseapp.com",
+      projectId: "app-de-tareas-e4209",
+      storageBucket: "app-de-tareas-e4209.firebasestorage.app",
+      messagingSenderId: "1189986545334",
+      appId: "1:1189986545334:web:0b5d29b7affa2fecc0d017"
+    });
+    window.db = firebase.firestore();
+    window.auth = firebase.auth();
+  </script>
+  <script src="recorder.js"></script>
+</body>
+</html>

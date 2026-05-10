@@ -75,6 +75,18 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.10.0': {
+    title: 'Grabar desde el celular con teleprompter (QR pairing)',
+    features: [
+      '📱 <strong>Conectá tu celular al teleprompter del desktop</strong>: en el modal de transcripción → click "🎬 Teleprompter" → aparece un nuevo botón verde "📱 Grabar desde celular".',
+      '🔲 <strong>QR + sesión efímera</strong>: el desktop genera un QR; lo escaneás con el celular y abre una web app (jainierrojas-arch.github.io/task-manager-app/recorder/) con el guion ENCIMA del preview de cámara.',
+      '🎥 <strong>Grabás leyendo el script</strong>: cámara frontal o trasera, controles de tamaño de fuente y autoscroll, timer en pantalla. Botón gigante para empezar/parar.',
+      '☁ <strong>Auto-upload a Cloudinary</strong>: al terminar, el celular sube el video directamente con tu config de Cloudinary (la sesión lleva creds pasadas vía Firestore).',
+      '✨ <strong>Aparece solo en el desktop</strong>: el video se attacha automáticamente al entry del que abriste el teleprompter. Listo para asignar al editor.',
+      '⚠️ <strong>Importante</strong>: actualizá las Firestore Rules con la versión nueva del repo (firestore.rules) — agrega la colección recordingSessions con permisos públicos limitados al doc de sesión.',
+      '🔧 <strong>Requiere Cloudinary configurado</strong>: si no lo tenés, andá a Configuración y pegá tu cloud name + upload preset unsigned.'
+    ]
+  },
   '3.9.22': {
     title: 'Variación con Tono + Estilo + Eliminar workspace fix',
     features: [

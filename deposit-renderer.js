@@ -2538,7 +2538,7 @@ function _renderTranscriptionModalContent(entryId) {
           </div>`;
       }).join('');
     list.querySelectorAll('[data-tp-variation]').forEach(b => b.addEventListener('click', () => {
-      openTeleprompter(variations[parseInt(b.dataset.tpVariation)].text);
+      openTeleprompter(variations[parseInt(b.dataset.tpVariation)].text, entryId);
     }));
     list.querySelectorAll('[data-copy-variation]').forEach(b => b.addEventListener('click', () => {
       navigator.clipboard.writeText(variations[parseInt(b.dataset.copyVariation)].text);
@@ -2644,7 +2644,7 @@ function _wireupTranscriptionAndTeleprompter() {
   const tpBtn = document.getElementById('transcriptionTeleprompter');
   if (tpBtn) tpBtn.addEventListener('click', () => {
     const entry = entries.find(e => e.id === _currentTranscriptionEntryId);
-    if (entry && entry.transcription) openTeleprompter(entry.transcription);
+    if (entry && entry.transcription) openTeleprompter(entry.transcription, _currentTranscriptionEntryId);
   });
   const copyBtn = document.getElementById('transcriptionCopyOriginal');
   if (copyBtn) copyBtn.addEventListener('click', () => {
@@ -2676,7 +2676,11 @@ if (document.readyState === 'loading') {
 // ===== Teleprompter =====
 let _tpScrollHandle = null;
 let _tpPlaying = false;
-function openTeleprompter(text) {
+// v3.10.0: trackeo del entry y texto activos en el teleprompter para que el
+// flujo "📱 Grabar desde celular" sepa a qué entry asociar el video.
+let _tpEntryId = null;
+let _tpScript = '';
+function openTeleprompter(text, entryId) {
   const tp = document.getElementById('teleprompter');
   const txt = document.getElementById('tpText');
   const wrap = document.getElementById('tpTextWrap');
@@ -2685,6 +2689,8 @@ function openTeleprompter(text) {
   wrap.scrollTop = 0;
   tp.classList.add('active');
   _tpPlaying = false;
+  _tpScript = text || '';
+  _tpEntryId = entryId || _currentTranscriptionEntryId || null;
   document.getElementById('tpPlayPause').textContent = '▶ Play';
   if (_tpScrollHandle) { clearInterval(_tpScrollHandle); _tpScrollHandle = null; }
 }
@@ -2742,5 +2748,154 @@ function setupTeleprompter() {
     const txt = document.getElementById('tpText');
     if (txt) txt.classList.toggle('mirror', mirrorChk.checked);
   });
+  // v3.10.0: botón "📱 Grabar desde celular" — abre el modal con QR
+  const recordPhoneBtn = document.getElementById('tpRecordPhone');
+  if (recordPhoneBtn) recordPhoneBtn.addEventListener('click', () => openPhoneRecorderModal());
 }
+
+// ===== Phone recorder via QR (v3.10.0) =====
+// Crea un doc en /recordingSessions con el guion + cloudinary creds, muestra QR
+// con la URL del PWA recorder, y escucha cuando el doc cambie a status=completed
+// para attachar el video al entry.
+const RECORDER_PUBLIC_URL = 'https://jainierrojas-arch.github.io/task-manager-app/recorder/';
+
+let _phoneRecSessionId = null;
+let _phoneRecUnsub = null;
+
+function _phoneRecRandomId() {
+  return 'rs_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10);
+}
+
+async function openPhoneRecorderModal() {
+  const modal = document.getElementById('phoneRecModal');
+  if (!modal) return;
+  if (!_tpEntryId) {
+    alert('Abrí el teleprompter desde una transcripción o variación primero.');
+    return;
+  }
+  if (!_tpScript || !_tpScript.trim()) {
+    alert('No hay guion cargado en el teleprompter.');
+    return;
+  }
+  if (typeof qrcode !== 'function') {
+    alert('La librería QR no se cargó. Recargá la app.');
+    return;
+  }
+
+  // Reset UI
+  document.getElementById('phoneRecCloudinaryWarn').style.display = 'none';
+  document.getElementById('phoneRecStatusText').textContent = 'Generando enlace seguro...';
+  document.getElementById('phoneRecQrWrap').innerHTML = '';
+  document.getElementById('phoneRecLink').textContent = '';
+  modal.classList.add('active');
+  modal.style.display = 'flex';
+
+  // Cloudinary config (heredado del parent vía window.api)
+  let cfg = null;
+  try {
+    cfg = window.api && window.api.getCloudinaryConfig ? await window.api.getCloudinaryConfig() : null;
+  } catch (e) { cfg = null; }
+  if (!cfg || !cfg.cloudName || !cfg.uploadPreset) {
+    document.getElementById('phoneRecCloudinaryWarn').style.display = 'block';
+    document.getElementById('phoneRecStatusText').textContent = 'Configurá Cloudinary y volvé a intentar.';
+    return;
+  }
+
+  // Crear doc de sesión
+  _phoneRecSessionId = _phoneRecRandomId();
+  const sessionData = {
+    entryId: _tpEntryId,
+    workspaceId: WS_ID || null,
+    scriptText: _tpScript,
+    status: 'pending',
+    cloudName: cfg.cloudName,
+    uploadPreset: cfg.uploadPreset,
+    createdBy: (currentUser && currentUser.uid) || null,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  };
+  try {
+    await db.collection('recordingSessions').doc(_phoneRecSessionId).set(sessionData);
+  } catch (e) {
+    console.error('[phoneRec] failed to create session', e);
+    document.getElementById('phoneRecStatusText').textContent = 'Error: ' + e.message + '. Verificá que las reglas de Firestore estén actualizadas.';
+    return;
+  }
+
+  // Generar QR
+  const url = RECORDER_PUBLIC_URL + '?session=' + encodeURIComponent(_phoneRecSessionId);
+  try {
+    const qr = qrcode(0, 'M');
+    qr.addData(url);
+    qr.make();
+    document.getElementById('phoneRecQrWrap').innerHTML = qr.createSvgTag({ cellSize: 6, margin: 2, scalable: true });
+    const svg = document.querySelector('#phoneRecQrWrap svg');
+    if (svg) { svg.style.width = '220px'; svg.style.height = '220px'; svg.style.maxWidth = '100%'; }
+  } catch (e) {
+    console.error('[phoneRec] QR gen failed', e);
+    document.getElementById('phoneRecQrWrap').innerHTML = '<div style="color:#333;font-size:13px;text-align:center">No se pudo generar el QR.<br>Abrí esta URL en el celular:</div>';
+  }
+  document.getElementById('phoneRecLink').textContent = url;
+  document.getElementById('phoneRecStatusText').textContent = 'Esperando que abras el QR en el celular...';
+
+  // Listener
+  if (_phoneRecUnsub) { try { _phoneRecUnsub(); } catch (e) {} _phoneRecUnsub = null; }
+  _phoneRecUnsub = db.collection('recordingSessions').doc(_phoneRecSessionId).onSnapshot(async (snap) => {
+    if (!snap.exists) return;
+    const d = snap.data();
+    if (d.status === 'connected') {
+      document.getElementById('phoneRecStatusText').textContent = '📱 Conectado — ahora grabá leyendo el guion...';
+    } else if (d.status === 'recording') {
+      document.getElementById('phoneRecStatusText').textContent = '🔴 Grabando...';
+    } else if (d.status === 'uploading') {
+      document.getElementById('phoneRecStatusText').textContent = '📤 Subiendo video...';
+    } else if (d.status === 'completed' && d.videoUrl) {
+      document.getElementById('phoneRecStatusText').textContent = '✓ Video recibido! Asociando al entry...';
+      try {
+        await _attachRecordedVideoToEntry(d.entryId, d.videoUrl);
+        document.getElementById('phoneRecStatusText').textContent = '✓ Listo! Video agregado al entry.';
+        try { showToast && showToast('🎬 Video del celular agregado al entry'); } catch (e) {}
+        setTimeout(() => closePhoneRecorderModal(), 1800);
+      } catch (e) {
+        console.error('[phoneRec] attach failed', e);
+        document.getElementById('phoneRecStatusText').textContent = 'Error al asociar video: ' + e.message;
+      }
+    }
+  });
+}
+
+function closePhoneRecorderModal() {
+  const modal = document.getElementById('phoneRecModal');
+  if (modal) {
+    modal.classList.remove('active');
+    modal.style.display = '';
+  }
+  if (_phoneRecUnsub) { try { _phoneRecUnsub(); } catch (e) {} _phoneRecUnsub = null; }
+  _phoneRecSessionId = null;
+}
+
+async function _attachRecordedVideoToEntry(entryId, videoUrl) {
+  if (!entryId || !videoUrl) return;
+  const ref = db.collection('depositEntries').doc(entryId);
+  const snap = await ref.get();
+  if (!snap.exists) throw new Error('El entry ya no existe');
+  const data = snap.data() || {};
+  const mediaUrls = Array.isArray(data.mediaUrls) ? data.mediaUrls.slice() : [];
+  if (!mediaUrls.includes(videoUrl)) mediaUrls.push(videoUrl);
+  const update = { mediaUrls };
+  // Si no había cover, usar el video como cover (Cloudinary genera thumb)
+  if (!data.coverImage) update.coverImage = videoUrl;
+  await ref.update(update);
+}
+
+// Wireup del modal phone recorder
+(function wireupPhoneRec() {
+  function attach() {
+    const closeBtn = document.getElementById('phoneRecClose');
+    if (closeBtn) closeBtn.addEventListener('click', closePhoneRecorderModal);
+    const modal = document.getElementById('phoneRecModal');
+    if (modal) modal.addEventListener('click', (e) => { if (e.target === modal) closePhoneRecorderModal(); });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', attach);
+  else attach();
+})();
 

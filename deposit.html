@@ -1043,6 +1043,7 @@
       <label>Velocidad <input type="range" id="tpSpeed" min="10" max="200" value="60"></label>
       <label>Tamaño <input type="range" id="tpFontSize" min="20" max="80" value="40"></label>
       <label><input type="checkbox" id="tpMirror"> Espejado</label>
+      <button id="tpRecordPhone" title="Grabar desde el celular (con teleprompter en pantalla)" style="background:rgba(78,205,196,0.18);border-color:rgba(78,205,196,0.45);color:#4ecdc4">📱 Grabar desde celular</button>
       <span style="flex:1"></span>
       <button id="tpClose">✕ Cerrar</button>
     </div>
@@ -1050,6 +1051,41 @@
       <div class="teleprompter-text" id="tpText" style="font-size:40px"></div>
     </div>
   </div>
+
+  <!-- Modal: QR para grabar desde el celular (v3.10.0) -->
+  <div class="modal-overlay" id="phoneRecModal">
+    <div class="modal" style="max-width:460px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <h3 style="margin:0;font-size:18px;color:var(--text-primary)">📱 Grabar desde tu celular</h3>
+        <button class="btn btn-ghost" id="phoneRecClose" style="font-size:18px;padding:4px 12px">✕</button>
+      </div>
+
+      <div id="phoneRecBody">
+        <div style="font-size:13px;color:var(--text-secondary);line-height:1.5;margin-bottom:14px">
+          1. Escaneá el QR con el celular.<br>
+          2. Aceptá los permisos de cámara y micrófono.<br>
+          3. Grabá leyendo el guion en pantalla.<br>
+          4. Al terminar, el video aparece acá automáticamente.
+        </div>
+
+        <div id="phoneRecQrWrap" style="display:flex;align-items:center;justify-content:center;background:#fff;padding:18px;border-radius:14px;margin-bottom:12px;min-height:240px"></div>
+
+        <div id="phoneRecLink" style="font-size:11px;color:var(--text-dim);text-align:center;word-break:break-all;margin-bottom:12px"></div>
+
+        <div id="phoneRecStatus" style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:rgba(78,205,196,0.08);border:1px solid rgba(78,205,196,0.25);border-radius:8px;font-size:12px;color:#4ecdc4">
+          <span class="phone-rec-pulse" style="width:8px;height:8px;border-radius:50%;background:#4ecdc4;animation:phoneRecPulse 1.4s ease-in-out infinite"></span>
+          <span id="phoneRecStatusText">Esperando que abras el QR en el celular...</span>
+        </div>
+
+        <div id="phoneRecCloudinaryWarn" style="display:none;margin-top:10px;padding:10px;background:rgba(255,107,107,0.08);border:1px solid rgba(255,107,107,0.3);border-radius:8px;font-size:12px;color:#ff6b6b">
+          ⚠️ Cloudinary no está configurado. Andá a Configuración y agregá tu cloud name + upload preset antes de grabar.
+        </div>
+      </div>
+    </div>
+  </div>
+  <style>
+    @keyframes phoneRecPulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.7); } }
+  </style>
 
   <!-- Modal: mover entry a otra categoria/subcategoria -->
   <div class="modal-overlay" id="moveModal">
@@ -1130,6 +1166,7 @@
   <script src="vendor/firebase-app-compat.js"></script>
   <script src="vendor/firebase-auth-compat.js"></script>
   <script src="vendor/firebase-firestore-compat.js"></script>
+  <script src="vendor/qrcode.min.js"></script>
   <script>
     firebase.initializeApp({
       apiKey: "AIzaSyDiLAvhCsJOtHYOtH8x7P8aN3NB6fhvaf0",

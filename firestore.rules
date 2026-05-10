@@ -71,6 +71,26 @@ service cloud.firestore {
       );
     }
 
+    // ===== recordingSessions (v3.10.0) =====
+    // Sesiones efímeras (~1h) para que el celular grabe video y lo suba al entry.
+    // El celular abre /recorder/?session=XXX SIN auth Firebase, así que necesitamos
+    // permitir lectura pública por ID (NO list — solo gets).
+    // Update también es público porque el celular escribe el videoUrl al final, pero
+    // restringimos los campos que puede tocar para que no manipule entryId/cloudName/etc.
+    // Create/delete: solo usuarios autenticados (desktop).
+    match /recordingSessions/{sessionId} {
+      allow get: if true;
+      allow list: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn()
+        || (
+          // Mobile recorder anonymous update — solo puede tocar campos de progreso/resultado
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'videoUrl', 'videoBytes', 'videoFormat', 'videoDuration', 'videoWidth', 'videoHeight', 'completedAt'])
+        );
+      allow delete: if isSignedIn();
+    }
+
     // ===== Resto de colecciones del producto =====
     // Cualquier autenticado puede leer/escribir. Mismo comportamiento que tenia
     // antes — la unica diferencia es que ahora estan listadas explicitamente
