@@ -101,11 +101,14 @@ async function startCamera(facing) {
   try {
     // Liberar el video stream anterior (no tocar audio).
     if (videoStream) videoStream.getTracks().forEach(t => t.stop());
+    // SIN width/height fijos — dejamos que el celular elija su FOV nativo.
+    // Forzar 1080x1920 portrait causaba zoom exagerado y rotación incorrecta
+    // cuando el dispositivo estaba en landscape (la cámara devolvía landscape
+    // pero el canvas portrait recortaba los lados → "zoom"). Ahora el canvas
+    // se adapta al tamaño real del stream (ver setupDrawLoop).
     videoStream = await navigator.mediaDevices.getUserMedia({
       video: {
-        facingMode: facing === 'environment' ? { ideal: 'environment' } : { ideal: 'user' },
-        width: { ideal: 1080 },
-        height: { ideal: 1920 }
+        facingMode: facing === 'environment' ? { ideal: 'environment' } : { ideal: 'user' }
       }
     });
     const hidden = $('hiddenCam');
@@ -127,23 +130,36 @@ function setupDrawLoop() {
   const hidden = $('hiddenCam');
   if (!canvas || !hidden) return;
   const ctx = canvas.getContext('2d');
-  // Tamaño fijo del canvas durante TODA la sesión — si cambia mid-recording,
-  // MediaRecorder se rompe. 720x1280 (portrait HD) es buen balance peso/calidad.
-  if (!canvas.width || canvas.width === 300) {
-    canvas.width = 720;
-    canvas.height = 1280;
+
+  function syncCanvasSize() {
+    // Si ya está grabando, NO cambiar el tamaño — MediaRecorder se rompe si la
+    // resolución del input cambia mid-recording. Lo bloqueamos con la dim del
+    // primer frame que vio cuando arrancó la grabación.
+    if (mediaRecorder && (mediaRecorder.state === 'recording' || mediaRecorder.state === 'paused')) return;
+    const sw = hidden.videoWidth, sh = hidden.videoHeight;
+    if (sw > 0 && sh > 0 && (canvas.width !== sw || canvas.height !== sh)) {
+      canvas.width = sw;
+      canvas.height = sh;
+    }
   }
+
   function draw() {
-    if (hidden.videoWidth > 0 && hidden.videoHeight > 0) {
-      const sw = hidden.videoWidth, sh = hidden.videoHeight;
+    syncCanvasSize();
+    const sw = hidden.videoWidth, sh = hidden.videoHeight;
+    if (sw > 0 && sh > 0) {
       const dw = canvas.width, dh = canvas.height;
-      // cover-fit (igual que object-fit:cover): rellena el canvas, recorta excesos.
-      const scale = Math.max(dw / sw, dh / sh);
-      const w = sw * scale, h = sh * scale;
-      const x = (dw - w) / 2, y = (dh - h) / 2;
-      ctx.fillStyle = '#000';
-      ctx.fillRect(0, 0, dw, dh);
-      ctx.drawImage(hidden, x, y, w, h);
+      // Si canvas == source: dibujo directo, FOV nativo, sin zoom.
+      if (dw === sw && dh === sh) {
+        ctx.drawImage(hidden, 0, 0);
+      } else {
+        // Caso edge (cámara cambió de aspect mid-recording): cover-fit.
+        const scale = Math.max(dw / sw, dh / sh);
+        const w = sw * scale, h = sh * scale;
+        const x = (dw - w) / 2, y = (dh - h) / 2;
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, dw, dh);
+        ctx.drawImage(hidden, x, y, w, h);
+      }
     }
     drawHandle = requestAnimationFrame(draw);
   }
@@ -414,12 +430,24 @@ $('btnFontDown').addEventListener('click', () => {
 $('btnTpToggle').addEventListener('click', () => {
   $('teleprompter').classList.toggle('hidden');
 });
+$('btnSpeedToggle').addEventListener('click', () => {
+  $('speedCtl').classList.toggle('hidden');
+});
 
 const speedSlider = $('speedSlider');
 if (speedSlider) {
   speedSlider.addEventListener('input', (e) => setSpeedFromSlider(e.target.value));
   setSpeedFromSlider(0);
 }
+
+// En landscape arrancar con el slider oculto — el usuario lo abre con ⚡ si lo necesita.
+function applyLandscapeDefaults() {
+  const isLandscape = window.matchMedia('(orientation: landscape)').matches;
+  const speed = $('speedCtl');
+  if (speed && isLandscape) speed.classList.add('hidden');
+}
+applyLandscapeDefaults();
+window.matchMedia('(orientation: landscape)').addEventListener('change', applyLandscapeDefaults);
 
 $('btnRecord').addEventListener('click', () => {
   if (mediaRecorder && (mediaRecorder.state === 'recording' || mediaRecorder.state === 'paused')) stopRecording();

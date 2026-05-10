@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.10.4': {
+    title: 'Recorder: fix zoom exagerado + slider colapsable + landscape OK',
+    features: [
+      '🔍 <strong>Fix del zoom exagerado</strong>: la cámara ya no fuerza 1080×1920 portrait — ahora usa el FOV nativo del celular. El canvas se adapta al tamaño real del stream, así que ves la misma toma que ves en la cámara original del teléfono. Sin recortes, sin zoom forzado.',
+      '📐 <strong>Fix orientación landscape/portrait</strong>: si girás el celular antes de grabar, el video sale en la orientación correcta (no más vertical-cuando-horizontal y al revés).',
+      '⚡ <strong>Slider de velocidad colapsable</strong>: nuevo botón "⚡" en la barra superior para ocultar/mostrar el slider. En landscape arranca oculto por default — abrilo solo cuando lo necesitás. (Igual que el botón "📝" del guion).',
+      '🔒 <strong>Resolución locked durante grabación</strong>: si la cámara cambia de aspect mid-recording, el canvas mantiene la resolución original con cover-fit en vez de redimensionarse (lo que rompería el MediaRecorder).'
+    ]
+  },
   '3.10.3': {
     title: 'Recorder: front+back en un solo video + landscape thumb-zone',
     features: [
