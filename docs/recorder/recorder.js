@@ -4,7 +4,7 @@
 // de sesión. El desktop tiene un listener que ataca el video al entry.
 
 const $ = (id) => document.getElementById(id);
-const screens = ['screenLoading', 'screenError', 'screenRecord', 'screenPreview', 'screenUploading', 'screenDone'];
+const screens = ['screenLoading', 'screenError', 'screenScanner', 'screenRecord', 'screenPreview', 'screenUploading', 'screenDone'];
 function show(name) {
   screens.forEach(s => $(s).classList.toggle('active', s === name));
 }
@@ -18,8 +18,93 @@ function setError(title, msg) {
 const params = new URLSearchParams(location.search);
 const SESSION_ID = params.get('session') || params.get('s') || '';
 
+// ===== QR Scanner (v3.11.24) =====
+// Si la PWA se abre sin session (ej. desde home screen), permitir escanear
+// el QR del desktop directamente desde la cámara — bypasses Safari completamente.
+let _scanAnim = null;
+let _scanStream = null;
+
+async function startQrScanner() {
+  if (typeof jsQR !== 'function') { alert('jsQR no cargó'); return; }
+  show('screenScanner');
+  const video = document.getElementById('scannerVideo');
+  const canvas = document.getElementById('scannerCanvas');
+  if (!video || !canvas) return;
+  try {
+    _scanStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' } }
+    });
+    video.srcObject = _scanStream;
+    await video.play().catch(() => {});
+  } catch (e) {
+    setError('No se pudo abrir la cámara', e.message + ' — Pedile a alguien que prenda el desktop y escaneá desde Safari.');
+    return;
+  }
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  function tick() {
+    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      try {
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'dontInvert' });
+        if (code && code.data) {
+          handleScannedCode(code.data);
+          return;
+        }
+      } catch (e) { console.warn(e); }
+    }
+    _scanAnim = requestAnimationFrame(tick);
+  }
+  _scanAnim = requestAnimationFrame(tick);
+}
+
+function stopQrScanner() {
+  if (_scanAnim) { try { cancelAnimationFrame(_scanAnim); } catch (e) {} _scanAnim = null; }
+  if (_scanStream) {
+    try { _scanStream.getTracks().forEach(t => t.stop()); } catch (e) {}
+    _scanStream = null;
+  }
+  const video = document.getElementById('scannerVideo');
+  if (video) { try { video.pause(); } catch (e) {} video.srcObject = null; }
+}
+
+function handleScannedCode(text) {
+  stopQrScanner();
+  // Extraer session ID del URL escaneado
+  // Formato esperado: https://...recorder/?session=XXX
+  let sid = null;
+  try {
+    const u = new URL(text);
+    sid = u.searchParams.get('session') || u.searchParams.get('s');
+  } catch (e) {
+    // No es URL — quizá es solo el session ID puro
+    if (/^rs_[a-z0-9_]+$/i.test(text)) sid = text;
+  }
+  if (!sid) {
+    setError('QR no reconocido', 'El código escaneado no parece un QR válido de Task Manager. Generá uno nuevo en el desktop.');
+    document.getElementById('btnScanQR').style.display = '';
+    return;
+  }
+  // Navegar a la URL con session — recarga la página entera, la PWA mantiene el contexto
+  const newUrl = location.pathname + '?session=' + encodeURIComponent(sid);
+  location.replace(newUrl);
+}
+
 if (!SESSION_ID) {
-  setError('Sesión no provista', 'Abrí el QR desde el desktop para empezar.');
+  setError('Sesión no provista', 'Tocá el botón abajo y apuntá la cámara al QR de tu Task Manager.');
+  const btn = document.getElementById('btnScanQR');
+  if (btn) {
+    btn.style.display = '';
+    btn.addEventListener('click', startQrScanner);
+  }
+  const cancelBtn = document.getElementById('btnScannerCancel');
+  if (cancelBtn) cancelBtn.addEventListener('click', () => {
+    stopQrScanner();
+    setError('Sesión no provista', 'Tocá el botón abajo y apuntá la cámara al QR de tu Task Manager.');
+    if (btn) btn.style.display = '';
+  });
   throw new Error('no session id');
 }
 
