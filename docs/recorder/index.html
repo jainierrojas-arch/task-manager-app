@@ -16,7 +16,7 @@
   <link rel="manifest" href="manifest.json">
   <title>Task Manager — Grabar</title>
   <link rel="icon" type="image/png" href="../icon.png">
-  <link rel="stylesheet" href="recorder.css?v=31127">
+  <link rel="stylesheet" href="recorder.css?v=31128">
 </head>
 <body>
 
@@ -151,8 +151,9 @@
          Posicionado position:fixed con z-index alto. -->
     <div class="quick-preview" id="quickPreview" style="display:none">
       <div class="quick-preview-header">
+        <button class="quick-preview-back" id="quickPreviewClose" title="Volver">← Volver</button>
         <span id="quickPreviewTitle">Mis clips</span>
-        <button class="quick-preview-close" id="quickPreviewClose" title="Cerrar">✕</button>
+        <span style="width:80px"></span>
       </div>
       <video id="quickPreviewVideo" controls playsinline></video>
       <div class="quick-preview-info" id="quickPreviewInfo"></div>
@@ -180,6 +181,6 @@
     window.auth = firebase.auth();
   </script>
   <script src="jsqr.min.js?v=31124"></script>
-  <script src="recorder.js?v=31127"></script>
+  <script src="recorder.js?v=31128"></script>
 </body>
 </html>

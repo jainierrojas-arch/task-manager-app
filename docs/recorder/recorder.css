@@ -423,17 +423,19 @@ html, body {
 .quick-preview-header > span {
   color: #fff; font-size: 14px; font-weight: 700;
 }
-.quick-preview-close {
-  background: rgba(255,255,255,0.12);
-  color: #fff;
+.quick-preview-back {
+  background: var(--accent);
+  color: #0a0c10;
   border: 0;
-  width: 32px; height: 32px;
-  border-radius: 50%;
-  font-size: 14px; font-weight: 700;
+  padding: 9px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 800;
   cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
+  white-space: nowrap;
+  min-width: 80px;
 }
-.quick-preview-close:hover { background: rgba(255,255,255,0.2); }
+.quick-preview-back:active { filter: brightness(0.9); }
 .quick-preview video {
   width: 100%;
   max-height: 45vh;
