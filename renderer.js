@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.18': {
+    title: 'Aislamiento real de workspaces + fix renombrar',
+    features: [
+      '🔒 <strong>Workspaces ahora completamente aislados</strong>: cada workspace nuevo arranca en BLANCO. Antes el filtro <code>_belongsToWs</code> estaba desactivado y mostraba toda la data en cualquier workspace. Ahora: workspace por defecto ve su data + data legacy (sin workspaceId, dejada antes de la era multi-workspace). Workspace NO-default ve SOLO su propia data.',
+      '✏ <strong>Fix renombrar workspaces</strong>: el botón ✎ usaba <code>prompt()</code> nativo que en Electron a veces no aparece. Ahora abre un modal inline con input + botón Guardar/Cancelar.',
+      '🆕 <strong>Workspaces nuevos arrancan vacíos</strong>: cuando creás "Cliente Nuevo" desde el dropdown, no ves nada de tu agencia. Cuando creás depósitos/categorías/tareas en ese workspace, quedan tagueadas con su <code>workspaceId</code>. Cambiá entre workspaces y cada uno tiene SU mundo.',
+      '⚠ <strong>Importante</strong>: la data que ya creaste en "Mi Agencia" (entries existentes) sigue ahí. Si una entry no tiene <code>workspaceId</code>, la ve solo el workspace por defecto (típicamente Mi Agencia). Las entries que ya tienen <code>workspaceId</code> las ve solo ese workspace.'
+    ]
+  },
   '3.11.17': {
     title: 'Fix: distinguir reel real vs página de audio (carátula del álbum)',
     features: [
@@ -7429,8 +7438,11 @@ function renderWorkspaceSwitcher() {
 window.renameWorkspace = async function(workspaceId) {
   const w = workspaces.find(x => x.id === workspaceId);
   if (!w) return;
-  const newName = prompt('Nuevo nombre del workspace:', w.name || '');
-  if (newName === null) return; // cancelled
+  // v3.11.18: prompt() en Electron con webPreferences ciertos puede no funcionar.
+  // Reemplazamos con un modal inline simple y robusto.
+  closeWorkspaceDropdown();
+  const newName = await _showInlineInput('Renombrar workspace', 'Nuevo nombre:', w.name || '');
+  if (newName === null) return;
   const trimmed = (newName || '').trim();
   if (!trimmed || trimmed === w.name) return;
   try {
@@ -7441,6 +7453,36 @@ window.renameWorkspace = async function(workspaceId) {
     });
   } catch (e) { alert('No se pudo renombrar: ' + e.message); }
 };
+
+// Modal inline reusable para inputs simples (reemplaza prompt() nativo)
+function _showInlineInput(title, label, defaultValue) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:99999;display:flex;align-items:center;justify-content:center';
+    overlay.innerHTML = `
+      <div style="background:var(--bg-card,#1a1d24);border:1px solid var(--border,rgba(255,255,255,0.08));border-radius:12px;padding:20px;min-width:320px;max-width:90vw;box-shadow:0 12px 40px rgba(0,0,0,0.5)">
+        <div style="font-size:14px;font-weight:700;margin-bottom:6px;color:var(--text-primary,#f5f7fa)">${title}</div>
+        <div style="font-size:11px;color:var(--text-secondary,#9aa3b2);margin-bottom:10px">${label}</div>
+        <input type="text" id="_inlineInput" style="width:100%;padding:8px 10px;background:var(--bg-card,#20242c);border:1px solid var(--border,rgba(255,255,255,0.12));border-radius:8px;color:var(--text-primary,#f5f7fa);font-family:inherit;font-size:13px" />
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+          <button id="_inlineCancel" style="padding:7px 12px;background:transparent;color:var(--text-primary,#f5f7fa);border:1px solid var(--border,rgba(255,255,255,0.12));border-radius:6px;cursor:pointer;font-size:12px;font-family:inherit">Cancelar</button>
+          <button id="_inlineOk" style="padding:7px 12px;background:var(--accent,#4ecdc4);color:#0a0c10;border:0;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px;font-family:inherit">Guardar</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const input = overlay.querySelector('#_inlineInput');
+    input.value = defaultValue || '';
+    setTimeout(() => { input.focus(); input.select(); }, 50);
+    const close = (val) => { try { document.body.removeChild(overlay); } catch (e) {} resolve(val); };
+    overlay.querySelector('#_inlineCancel').addEventListener('click', () => close(null));
+    overlay.querySelector('#_inlineOk').addEventListener('click', () => close(input.value));
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') close(input.value);
+      else if (e.key === 'Escape') close(null);
+    });
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(null); });
+  });
+}
 
 window.deleteWorkspace = async function(workspaceId) {
   const w = workspaces.find(x => x.id === workspaceId);

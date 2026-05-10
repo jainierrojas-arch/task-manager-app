@@ -14,8 +14,12 @@ if (_wsParams.get('isDefault') === '1' || (DEFAULT_WS_ID && WS_ID === DEFAULT_WS
 }
 const WS_SCOPED_COLLECTIONS = new Set(['tasks', 'projects', 'depositEntries', 'depositCategories', 'scheduledPosts', 'chatMessages', 'captionTemplates', 'ideas']);
 function _belongsToWs(d) {
-  // v3.9.6: filtro desactivado temporalmente — muestra todo
-  return true;
+  // v3.11.18: aislamiento real entre workspaces.
+  if (!WS_ID) return true;
+  if (_ws_status === 'default' || _ws_status === 'unknown') {
+    return !d.workspaceId || d.workspaceId === WS_ID;
+  }
+  return d.workspaceId === WS_ID;
 }
 
 window._verifyWsIsDefault = async function(dbRef) {

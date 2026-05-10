@@ -22,12 +22,16 @@ if (_wsParams.get('isDefault') === '1' || (DEFAULT_WS_ID && WS_ID === DEFAULT_WS
 console.log('[ws] iframe init: WS_ID=' + WS_ID + ' DEFAULT_WS_ID=' + DEFAULT_WS_ID + ' status=' + _ws_status);
 const WS_SCOPED_COLLECTIONS = new Set(['tasks', 'projects', 'depositEntries', 'depositCategories', 'scheduledPosts', 'chatMessages', 'captionTemplates', 'ideas']);
 function _belongsToWs(d) {
-  // v3.9.6: filtro DESACTIVADO temporalmente — el iframe muestra TODO.
-  // Esto fue un cambio de emergencia porque el filtro estaba ocultando data
-  // legítima. La filtrada workspace-correcta volverá en una versión futura
-  // con un mecanismo más robusto (probablemente data passing via postMessage
-  // desde el padre).
-  return true;
+  // v3.11.18: aislamiento real entre workspaces.
+  // - Sin WS_ID: mostrar todo (modo standalone, no debería pasar normalmente).
+  // - Workspace DEFAULT (o unknown al inicio): muestra entries con su workspaceId
+  //   más entries SIN workspaceId (legacy data, antes de la era multi-workspace).
+  // - Workspace NON-DEFAULT: muestra SOLO entries con su workspaceId exacto.
+  if (!WS_ID) return true;
+  if (_ws_status === 'default' || _ws_status === 'unknown') {
+    return !d.workspaceId || d.workspaceId === WS_ID;
+  }
+  return d.workspaceId === WS_ID;
 }
 
 // v3.9.5: verificación async — sólo confirma si somos default o no.
