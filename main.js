@@ -745,6 +745,56 @@ function registerIpcHandlers() {
     return { ok: true };
   });
   // POST al webhook de Make con el payload del post a programar
+  // v3.9.16: Cobalt.tools API proxy — corre en main process para evitar CORS
+  // del renderer (origen file://). Devuelve URL directa del media para descargar.
+  ipcMain.handle('extract-media-url', async (_, platformUrl) => {
+    if (!platformUrl) return { ok: false, error: 'URL vacía' };
+    const https = require('https');
+    const endpoints = ['https://api.cobalt.tools/api/json', 'https://co.wuk.sh/api/json'];
+    let lastError = null;
+    for (const endpoint of endpoints) {
+      try {
+        const parsed = new URL(endpoint);
+        const body = JSON.stringify({ url: platformUrl, isAudioOnly: true, aFormat: 'mp3' });
+        const result = await new Promise((resolve) => {
+          const req = https.request({
+            host: parsed.hostname,
+            port: parsed.port || 443,
+            path: parsed.pathname,
+            method: 'POST',
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json',
+              'Content-Length': Buffer.byteLength(body),
+              'User-Agent': 'TaskManager/1.0'
+            }
+          }, (res) => {
+            let data = '';
+            res.on('data', c => { data += c; });
+            res.on('end', () => {
+              try { resolve({ ok: res.statusCode === 200, status: res.statusCode, body: data, json: JSON.parse(data) }); }
+              catch (e) { resolve({ ok: false, error: 'Invalid JSON: ' + data.slice(0, 200) }); }
+            });
+          });
+          req.on('error', (e) => resolve({ ok: false, error: e.message }));
+          req.setTimeout(20000, () => { try { req.destroy(); } catch (_) {} resolve({ ok: false, error: 'Timeout (20s)' }); });
+          req.write(body);
+          req.end();
+        });
+        if (!result.ok) { lastError = result.error || ('HTTP ' + result.status); continue; }
+        const j = result.json;
+        if ((j.status === 'stream' || j.status === 'redirect' || j.status === 'tunnel') && j.url) return { ok: true, url: j.url };
+        if (j.url) return { ok: true, url: j.url };
+        if (j.status === 'error') { lastError = j.text || 'Cobalt error'; continue; }
+        if (j.status === 'rate-limit') { lastError = 'Rate limit en ' + endpoint; continue; }
+        lastError = 'Respuesta inesperada: ' + (j.status || 'unknown');
+      } catch (e) {
+        lastError = e.message;
+      }
+    }
+    return { ok: false, error: lastError || 'Cobalt no respondió' };
+  });
+
   ipcMain.handle('send-to-make-webhook', async (_, payload) => {
     const url = store.get('makeWebhookUrl');
     if (!url) return { ok: false, error: 'Webhook URL no configurada' };

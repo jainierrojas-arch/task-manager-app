@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.9.16': {
+    title: 'Fix CORS de Cobalt + botón X del modal',
+    features: [
+      '🐛 <strong>Fix "Failed to fetch"</strong>: el fetch a Cobalt fallaba por CORS desde el renderer (origen file://). Lo movido al main process via IPC — ahora la llamada HTTP corre sin restricciones de browser. La transcripción de IG/TikTok/YouTube debería funcionar.',
+      '❌ <strong>Fix botón X del modal</strong>: el botón cerrar no funcionaba porque <code>display:flex</code> inline (que puse para forzar visibilidad) bloqueaba el remove-class. Ahora también resetea el inline style al cerrar.',
+      '⚡ Más rápido y robusto — el main process tiene mejor handling de timeouts (20s) y no depende de la red del browser.'
+    ]
+  },
   '3.9.15': {
     title: 'Transcripción ahora funciona con Instagram / TikTok / YouTube directo',
     features: [

@@ -2245,42 +2245,17 @@ function isProtectedPlatformUrl(url) {
   return /(instagram\.com|tiktok\.com|youtube\.com|youtu\.be|facebook\.com|fb\.com|twitter\.com|x\.com|reddit\.com|vimeo\.com|soundcloud\.com|twitch\.tv)/i.test(url);
 }
 
-// v3.9.15: usa Cobalt.tools API para extraer el URL directo del media desde
-// URLs de IG/TikTok/YouTube/etc. Devuelve URL directa que podemos descargar.
+// v3.9.16: usa el handler IPC del main process para extraer el URL directo.
+// El main process hace la llamada HTTP sin restricciones de CORS.
 async function extractDirectMediaUrl(platformUrl) {
-  const cobaltEndpoints = [
-    'https://api.cobalt.tools/api/json',
-    'https://co.wuk.sh/api/json'
-  ];
-  let lastError = null;
-  for (const endpoint of cobaltEndpoints) {
-    try {
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          url: platformUrl,
-          isAudioOnly: true,
-          aFormat: 'mp3'
-        })
-      });
-      if (!res.ok) { lastError = 'HTTP ' + res.status + ' en ' + endpoint; continue; }
-      const data = await res.json();
-      if (data.status === 'stream' || data.status === 'redirect' || data.status === 'tunnel') {
-        if (data.url) return data.url;
-      }
-      if (data.url) return data.url;
-      if (data.status === 'error') { lastError = data.text || 'error sin mensaje'; continue; }
-      if (data.status === 'rate-limit') { lastError = 'Rate limit'; continue; }
-      lastError = 'Respuesta inesperada: ' + (data.status || 'unknown');
-    } catch (e) {
-      lastError = e.message;
-    }
+  if (!window.api || !window.api.extractMediaUrl) {
+    throw new Error('extractMediaUrl no disponible. Update la app.');
   }
-  throw new Error('No se pudo extraer el URL del video. ' + (lastError || 'Cobalt no respondió.'));
+  const result = await window.api.extractMediaUrl(platformUrl);
+  if (!result || !result.ok) {
+    throw new Error(result && result.error ? result.error : 'Cobalt extracción falló');
+  }
+  return result.url;
 }
 
 // v3.9.1: helper que devuelve la URL óptima de audio para mandar a Whisper.
@@ -2459,7 +2434,10 @@ function openTranscriptionModal(entryId) {
 
 function closeTranscriptionModal() {
   const modal = document.getElementById('transcriptionModal');
-  if (modal) modal.classList.remove('active');
+  if (modal) {
+    modal.classList.remove('active');
+    modal.style.display = ''; // resetear inline display que puse al abrir
+  }
   _currentTranscriptionEntryId = null;
 }
 
