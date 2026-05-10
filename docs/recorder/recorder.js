@@ -101,14 +101,15 @@ async function startCamera(facing) {
   try {
     // Liberar el video stream anterior (no tocar audio).
     if (videoStream) videoStream.getTracks().forEach(t => t.stop());
-    // SIN width/height fijos — dejamos que el celular elija su FOV nativo.
-    // Forzar 1080x1920 portrait causaba zoom exagerado y rotación incorrecta
-    // cuando el dispositivo estaba en landscape (la cámara devolvía landscape
-    // pero el canvas portrait recortaba los lados → "zoom"). Ahora el canvas
-    // se adapta al tamaño real del stream (ver setupDrawLoop).
+    // Pedimos 9:16 portrait explícitamente. Si el browser lo respeta, el stream
+    // ya viene 9:16 y no hace falta recortar. Si no, el draw loop center-cropea
+    // al canvas 9:16 fijo (1080x1920) — output siempre 9:16 vertical.
     videoStream = await navigator.mediaDevices.getUserMedia({
       video: {
-        facingMode: facing === 'environment' ? { ideal: 'environment' } : { ideal: 'user' }
+        facingMode: facing === 'environment' ? { ideal: 'environment' } : { ideal: 'user' },
+        width: { ideal: 1080 },
+        height: { ideal: 1920 },
+        aspectRatio: { ideal: 9/16 }
       }
     });
     const hidden = $('hiddenCam');
@@ -131,35 +132,26 @@ function setupDrawLoop() {
   if (!canvas || !hidden) return;
   const ctx = canvas.getContext('2d');
 
-  function syncCanvasSize() {
-    // Si ya está grabando, NO cambiar el tamaño — MediaRecorder se rompe si la
-    // resolución del input cambia mid-recording. Lo bloqueamos con la dim del
-    // primer frame que vio cuando arrancó la grabación.
-    if (mediaRecorder && (mediaRecorder.state === 'recording' || mediaRecorder.state === 'paused')) return;
-    const sw = hidden.videoWidth, sh = hidden.videoHeight;
-    if (sw > 0 && sh > 0 && (canvas.width !== sw || canvas.height !== sh)) {
-      canvas.width = sw;
-      canvas.height = sh;
-    }
+  // Canvas FIJO en 9:16 portrait (1080x1920). El output siempre tiene este aspect
+  // ratio sin importar la orientación del celular. Si el celular devuelve un
+  // stream con otra proporción (ej: 4:3 default 1080x1440 o 16:9 landscape),
+  // el draw loop lo center-cropea para llenar el canvas — exactamente como
+  // hace Instagram Reels / TikTok.
+  if (canvas.width !== 1080 || canvas.height !== 1920) {
+    canvas.width = 1080;
+    canvas.height = 1920;
   }
 
   function draw() {
-    syncCanvasSize();
     const sw = hidden.videoWidth, sh = hidden.videoHeight;
     if (sw > 0 && sh > 0) {
       const dw = canvas.width, dh = canvas.height;
-      // Si canvas == source: dibujo directo, FOV nativo, sin zoom.
-      if (dw === sw && dh === sh) {
-        ctx.drawImage(hidden, 0, 0);
-      } else {
-        // Caso edge (cámara cambió de aspect mid-recording): cover-fit.
-        const scale = Math.max(dw / sw, dh / sh);
-        const w = sw * scale, h = sh * scale;
-        const x = (dw - w) / 2, y = (dh - h) / 2;
-        ctx.fillStyle = '#000';
-        ctx.fillRect(0, 0, dw, dh);
-        ctx.drawImage(hidden, x, y, w, h);
-      }
+      const scale = Math.max(dw / sw, dh / sh);
+      const w = sw * scale, h = sh * scale;
+      const x = (dw - w) / 2, y = (dh - h) / 2;
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, dw, dh);
+      ctx.drawImage(hidden, x, y, w, h);
     }
     drawHandle = requestAnimationFrame(draw);
   }
