@@ -566,18 +566,25 @@ function showPreview() {
   v.load();
   show('screenPreview');
   const banner = $('dimBanner');
-  if (banner) banner.textContent = '⏳ Midiendo dimensiones del archivo...';
-  // Diagnóstico: medir dimensiones reales del archivo grabado.
-  // Fallbacks porque loadedmetadata a veces no dispara en iOS Safari.
+  const N = recordedSegments.length;
+  if (banner) {
+    if (N > 1) {
+      banner.textContent = `📹 ${N} clips · se unirán en un solo video al enviar`;
+      banner.classList.remove('bad');
+    } else {
+      banner.textContent = '⏳ Midiendo dimensiones del archivo...';
+    }
+  }
+  if (typeof _updatePreviewButtons === 'function') _updatePreviewButtons();
+  // Diagnóstico: medir dimensiones reales del archivo grabado (solo si es 1 clip).
   let measured = false;
   const measure = () => {
-    if (measured) return;
+    if (measured || N > 1) return; // si hay multi-clip, no sobreescribir el banner
     const w = v.videoWidth, h = v.videoHeight;
     if (!w || !h) return;
     measured = true;
     const ratio = (w / h).toFixed(3);
     const isPortrait916 = Math.abs((w / h) - 0.5625) < 0.01;
-    console.log(`[rec] file dimensions: ${w}x${h} ratio=${ratio}`);
     if (banner) {
       banner.textContent = `📁 Archivo: ${w}×${h} ${isPortrait916 ? '✓ 9:16' : '⚠ NO 9:16 (' + ratio + ')'}`;
       banner.classList.toggle('bad', !isPortrait916);
@@ -637,9 +644,8 @@ function tpPlayPause() {
 
 // ===== Cloudinary upload =====
 async function uploadAndCommit() {
-  // Si hay múltiples segmentos (porque hubo camera swap mid-recording), subir
-  // todos. El desktop muestra el último en el modal pero todos quedan en el
-  // entry's recordedVideos array.
+  // Sube cada clip a Cloudinary, después construye una URL de concat para que
+  // el video final sea UNO solo (Cloudinary genera el video unido on-demand).
   const segments = recordedSegments.length > 0 ? recordedSegments : (recordedBlob ? [{ blob: recordedBlob, mime: recordedMime }] : []);
   if (segments.length === 0) return;
   show('screenUploading');
@@ -647,18 +653,15 @@ async function uploadAndCommit() {
   $('uploadPct').textContent = '0%';
   reportStatus('uploading');
   try {
-    let lastResult = null;
-    const additionalUrls = [];
+    const uploaded = [];
     for (let i = 0; i < segments.length; i++) {
       const seg = segments[i];
-      // Para múltiples segments mostramos progreso por segmento + texto de cuál vamos.
       if (segments.length > 1) {
         $('uploadPct').textContent = `Clip ${i + 1}/${segments.length} · 0%`;
       }
       const r = await uploadToCloudinaryBlob(seg.blob, seg.mime, (pct) => {
         if (segments.length > 1) {
           $('uploadPct').textContent = `Clip ${i + 1}/${segments.length} · ${pct}%`;
-          // Progreso global aproximado: (i + pct/100) / segments.length * 100
           const globalPct = Math.round(((i + pct / 100) / segments.length) * 100);
           $('progressFill').style.width = globalPct + '%';
         } else {
@@ -666,20 +669,53 @@ async function uploadAndCommit() {
           $('uploadPct').textContent = pct + '%';
         }
       });
-      if (i < segments.length - 1) additionalUrls.push(r.secure_url);
-      lastResult = r;
+      uploaded.push({
+        url: r.secure_url,
+        publicId: r.public_id,
+        bytes: r.bytes || null,
+        format: r.format || null,
+        duration: r.duration || null,
+        width: r.width || null,
+        height: r.height || null
+      });
     }
+
+    // v3.11.25: Cloudinary concat — construye una URL que une todos los clips
+    // en uno. Format: https://res.cloudinary.com/<cloud>/video/upload/
+    //   l_video:<clip2_id>,fl_splice/l_video:<clip3_id>,fl_splice/<clip1_id>.<ext>
+    // Cloudinary genera el video concatenado on-demand la primera vez que se accede.
+    function buildConcatUrl(items) {
+      if (items.length === 1) return items[0].url;
+      const base = items[0];
+      // Extraer el "cloud prefix" del URL del base clip
+      // URL: https://res.cloudinary.com/<cloud>/video/upload/<v123>/<publicId>.<ext>
+      const m = base.url.match(/^(https:\/\/res\.cloudinary\.com\/[^/]+\/video\/upload\/)(?:v\d+\/)?(.+?)\.([a-z0-9]+)(?:\?.*)?$/i);
+      if (!m) return base.url;
+      const prefix = m[1];
+      const baseExt = m[3];
+      // Escapar / en public_id como :
+      const escapeId = (id) => id.replace(/\//g, ':');
+      const layers = items.slice(1).map(it => `l_video:${escapeId(it.publicId)},fl_splice`).join('/');
+      return `${prefix}${layers}/${escapeId(base.publicId)}.${baseExt}`;
+    }
+
+    const concatUrl = buildConcatUrl(uploaded);
+    const last = uploaded[uploaded.length - 1];
+
     const updateData = {
       status: 'completed',
-      videoUrl: lastResult.secure_url,
-      videoBytes: lastResult.bytes || null,
-      videoFormat: lastResult.format || null,
-      videoDuration: lastResult.duration || null,
-      videoWidth: lastResult.width || null,
-      videoHeight: lastResult.height || null,
+      videoUrl: concatUrl,
+      videoBytes: last.bytes,
+      videoFormat: last.format,
+      videoDuration: null, // duration is unknown for the concat (Cloudinary generates on-demand)
+      videoWidth: last.width,
+      videoHeight: last.height,
       completedAt: firebase.firestore.FieldValue.serverTimestamp()
     };
-    if (additionalUrls.length > 0) updateData.additionalVideoUrls = additionalUrls;
+    // Guardar también las URLs individuales (por si se quieren bajar separadas)
+    if (uploaded.length > 1) {
+      updateData.individualClipUrls = uploaded.map(u => u.url);
+    }
     await sessionRef.update(updateData);
     show('screenDone');
   } catch (e) {
@@ -961,6 +997,14 @@ $('btnRetake').addEventListener('click', () => {
   updateMultiSegmentUI();
   show('screenRecord');
 });
+
+// v3.11.25: en el preview, mostrar/ocultar botón "Ver todos" si hay multi-clips
+function _updatePreviewButtons() {
+  const btn = document.getElementById('btnViewClips');
+  if (btn) btn.style.display = (recordedSegments.length > 1) ? '' : 'none';
+}
+const _btnViewClips = document.getElementById('btnViewClips');
+if (_btnViewClips) _btnViewClips.addEventListener('click', () => qpOpen());
 $('btnUpload').addEventListener('click', uploadAndCommit);
 $('btnSaveLocal').addEventListener('click', () => saveLocally($('btnSaveLocal')));
 $('btnSaveLocalAfter').addEventListener('click', () => saveLocally($('btnSaveLocalAfter')));

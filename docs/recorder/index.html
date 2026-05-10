@@ -16,7 +16,7 @@
   <link rel="manifest" href="manifest.json">
   <title>Task Manager — Grabar</title>
   <link rel="icon" type="image/png" href="../icon.png">
-  <link rel="stylesheet" href="recorder.css?v=31124">
+  <link rel="stylesheet" href="recorder.css?v=31125">
 </head>
 <body>
 
@@ -128,9 +128,10 @@
     <!-- Pantalla 4: previsualización + subir -->
     <section class="screen screen-preview" id="screenPreview">
       <video id="recordedPreview" controls playsinline></video>
-      <!-- Banner persistente con las dimensiones REALES del archivo grabado -->
+      <!-- Banner persistente con info del archivo / número de clips -->
       <div class="dim-banner" id="dimBanner"></div>
       <div class="preview-controls">
+        <button class="btn btn-ghost" id="btnViewClips" style="display:none">📋 Ver todos</button>
         <button class="btn btn-ghost" id="btnRetake">🔄 Repetir</button>
         <button class="btn btn-ghost" id="btnSaveLocal">💾 Guardar</button>
         <button class="btn btn-primary" id="btnUpload">📤 Enviar al desktop</button>
@@ -177,6 +178,6 @@
     window.auth = firebase.auth();
   </script>
   <script src="jsqr.min.js?v=31124"></script>
-  <script src="recorder.js?v=31124"></script>
+  <script src="recorder.js?v=31125"></script>
 </body>
 </html>

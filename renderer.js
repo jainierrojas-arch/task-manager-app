@@ -75,6 +75,17 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.25': {
+    title: 'Recorder multi-clip: video concat via Cloudinary + PWA + scanner QR + calidad bumped',
+    features: [
+      '🎬 <strong>Clips se UNEN en un solo video</strong>: cuando grabás 3 clips en el celular y le das ✓ Listo, mi código sube cada uno a Cloudinary y construye una URL de "concat transform" que une los 3 en uno solo. El entry en el Depósito termina con UN video que reproduce todos los clips seguidos.',
+      '📋 <strong>Preview muestra "Ver todos los clips"</strong>: en la pantalla de preview ahora hay un botón para ver TODOS los clips antes de enviar — podés ver cada uno, eliminar individualmente, y reproducir todos seguidos como playlist.',
+      '🎚 <strong>Calidad de grabación mejorada</strong>: bitrate subido de 6 a 10 Mbps + framerate de 30 a 60fps. Más detalle visual y movimiento fluido (más cerca de la cámara nativa del celular).',
+      '📱 <strong>PWA install</strong>: el recorder ahora se instala como app en tu home screen (Safari → Compartir → Añadir a pantalla de inicio). Fullscreen real, sin barra de URL, experiencia tipo app nativa.',
+      '📷 <strong>Scanner QR integrado en la PWA</strong>: si abrís el recorder desde la home y no hay sesión, podés tocar "Escanear QR" y la PWA usa su propia cámara para leer el QR del desktop — bypasses Safari completamente.',
+      '↶ <strong>Undo/Done/Ver buttons</strong>: estilo TikTok/IG: anillo de progreso alrededor del botón rojo (un arco por clip), badge "N CLIPS" arriba del botón, y los botones ↶/✓/👁 aparecen cuando tenés clips guardados.'
+    ]
+  },
   '3.11.18': {
     title: 'Aislamiento real de workspaces + fix renombrar',
     features: [
