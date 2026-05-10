@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.16': {
+    title: 'Fix portada vacía: regex meta más robusto + detección de img menos restrictiva',
+    features: [
+      '🔍 <strong>Regex de meta tags order-independent</strong>: antes asumía orden específico (property antes que content). Ahora primero matcheo el <code>&lt;meta&gt;</code> tag completo y después extraigo content de adentro — funciona aunque IG ponga los atributos en cualquier orden.',
+      '🖼 <strong>Más fallbacks para imagen</strong>: probamos en orden <code>og:image:secure_url</code> → <code>og:image</code> → <code>twitter:image:src</code> → <code>twitter:image</code> → <code>&lt;link rel="image_src"&gt;</code>.',
+      '🎨 <strong>Decode de HTML entities en la URL de imagen</strong>: las URLs de IG suelen tener <code>&amp;amp;</code> que rompía el cargado. Ahora se decodifican antes de guardar.',
+      '📐 <strong>Detección de imagen del DOM más permisiva</strong>: si no hay imágenes >200x200 visibles, baja el threshold a 100x100. Si igual no hay, toma cualquier imagen visible. Asegura que pageData.image siempre tenga algo cuando hay contenido visual en pantalla.',
+      '🛡 <strong>Microlink también triggea</strong> ahora si falta image O description (antes solo si faltaba description).'
+    ]
+  },
   '3.11.15': {
     title: 'Reels: fetch directo desde el webview autenticado (mejor que Microlink)',
     features: [

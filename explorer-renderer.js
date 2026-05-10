@@ -277,23 +277,50 @@
             const res = await fetch(${JSON.stringify(targetUrl)}, { credentials: 'include' });
             if (!res.ok) return null;
             const html = await res.text();
+            // Helper: encuentra el <meta> tag completo donde uno de sus atributos
+            // es property|name="<prop>", después extrae el atributo content.
+            // Order-independent: maneja cuando content viene antes de property.
             function meta(prop) {
-              const re1 = new RegExp('<meta[^>]+property=["\\']' + prop + '["\\'][^>]+content=["\\']([^"\\']*)["\\']', 'i');
-              const re2 = new RegExp('<meta[^>]+content=["\\']([^"\\']*)["\\'][^>]+property=["\\']' + prop + '["\\']', 'i');
-              const re3 = new RegExp('<meta[^>]+name=["\\']' + prop + '["\\'][^>]+content=["\\']([^"\\']*)["\\']', 'i');
-              const m = html.match(re1) || html.match(re2) || html.match(re3);
+              const escaped = prop.replace(/[.*+?^\${}()|[\\]\\\\]/g, '\\\\$&');
+              // Match cualquier <meta ...> que tenga (property|name)="prop" en cualquier
+              // posición de los atributos.
+              const tagRe = new RegExp('<meta\\\\s+[^>]*?(?:property|name)=["\\']' + escaped + '["\\'][^>]*>', 'i');
+              const tag = html.match(tagRe);
+              if (!tag) return '';
+              const contentRe = /content=["']([^"']*)["']/i;
+              const m = tag[0].match(contentRe);
               return m ? m[1] : '';
             }
-            // Decode HTML entities en el caption
+            // <link rel="image_src" href="..."> también es usado por algunos sitios
+            function linkImageSrc() {
+              const re = /<link[^>]+rel=["']image_src["'][^>]*href=["']([^"']+)["']/i;
+              const m = html.match(re);
+              if (m) return m[1];
+              const re2 = /<link[^>]+href=["']([^"']+)["'][^>]+rel=["']image_src["']/i;
+              const m2 = html.match(re2);
+              return m2 ? m2[1] : '';
+            }
             function decode(s) {
               if (!s) return '';
-              return s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#x27;/g, "'");
+              return s.replace(/&amp;/g, '&')
+                      .replace(/&lt;/g, '<')
+                      .replace(/&gt;/g, '>')
+                      .replace(/&quot;/g, '"')
+                      .replace(/&#039;/g, "'")
+                      .replace(/&#39;/g, "'")
+                      .replace(/&#x27;/g, "'")
+                      .replace(/&apos;/g, "'");
             }
-            return {
-              image: meta('og:image') || meta('twitter:image'),
-              title: decode(meta('og:title') || meta('twitter:title')),
-              description: decode(meta('og:description') || meta('twitter:description') || meta('description'))
-            };
+            const image = decode(
+              meta('og:image:secure_url') ||
+              meta('og:image') ||
+              meta('twitter:image:src') ||
+              meta('twitter:image') ||
+              linkImageSrc()
+            );
+            const title = decode(meta('og:title') || meta('twitter:title'));
+            const description = decode(meta('og:description') || meta('twitter:description') || meta('description'));
+            return { image, title, description };
           } catch (e) { return null; }
         })()
       `;
@@ -372,15 +399,31 @@
             // Si NO hay video visible (caso típico: feed /explore/ donde los reels
             // se muestran como <img> hasta que hacés hover/click), buscar la imagen
             // VISIBLE más cercana al centro del viewport — es la que el usuario está
-            // mirando.
+            // mirando. Threshold bajo (100x100) para capturar thumbnails chicos.
             let primaryImg = null;
             if (!primary) {
               const imgs = Array.from(document.querySelectorAll('img'));
               const vpCenterY = window.innerHeight / 2;
-              const candidates = imgs.filter(i => {
+              const visibleNotData = imgs.filter(i => {
                 const r = i.getBoundingClientRect();
-                return r.width > 200 && r.height > 200 && r.top < window.innerHeight && r.bottom > 0 && i.src && !i.src.startsWith('data:');
-              }).sort((a, b) => {
+                return r.top < window.innerHeight && r.bottom > 0 && r.width > 0 && r.height > 0 &&
+                       i.src && !i.src.startsWith('data:');
+              });
+              // Pasada 1: imágenes "grandes" (>= 200x200), priorizando centro del viewport
+              let candidates = visibleNotData.filter(i => {
+                const r = i.getBoundingClientRect();
+                return r.width >= 200 && r.height >= 200;
+              });
+              // Pasada 2: si no hay grandes, bajar a 100x100
+              if (candidates.length === 0) {
+                candidates = visibleNotData.filter(i => {
+                  const r = i.getBoundingClientRect();
+                  return r.width >= 100 && r.height >= 100;
+                });
+              }
+              // Pasada 3: si igual no hay, todas las visibles
+              if (candidates.length === 0) candidates = visibleNotData.slice();
+              candidates.sort((a, b) => {
                 const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
                 const da = Math.abs((ra.top + ra.bottom) / 2 - vpCenterY);
                 const db = Math.abs((rb.top + rb.bottom) / 2 - vpCenterY);
@@ -504,8 +547,8 @@
             og = await fetchUrlHtmlMeta(targetUrl);
           }
         } catch (e) { /* ignore */ }
-        // 2) Fallback a Microlink si el fetch directo no devolvió descripción
-        if ((!og || !og.description) && window.api && window.api.fetchOgData) {
+        // 2) Fallback a Microlink si falta image O description
+        if ((!og || !og.image || !og.description) && window.api && window.api.fetchOgData) {
           try {
             const ogMicro = await withTimeout(window.api.fetchOgData(targetUrl), 12000, 'fetchOgData');
             if (ogMicro) {
