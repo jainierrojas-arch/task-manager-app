@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.17': {
+    title: 'Fix: distinguir reel real vs página de audio (carátula del álbum)',
+    features: [
+      '🎵 <strong>Bug detectado</strong>: cuando guardabas un reel que usaba audio de otra persona (música), tu URL podía ser <code>instagram.com/reels/audio/CXXXX/</code> — la página del AUDIO, no del reel. La <code>og:image</code> de esa página es la <strong>carátula del álbum/audio</strong>, por eso aparecían portadas raras como "ACIDO III" o "Epic Motivational" en lugar del reel.',
+      '🎯 <strong>Fix</strong>: ahora <code>/reels/audio/</code> se trata como página genérica (no específica). Mi código baja al modo "buscar reel visible en pantalla" — encuentra la imagen del reel que estás mirando, hace walk-up del DOM al <code>&lt;a href="/reel/CXXX/"&gt;</code> de ESE reel específico, y desde ahí extrae portada + caption reales.',
+      '🚫 <strong>Mismo trato para TikTok</strong>: <code>tiktok.com/music/...</code> y <code>tiktok.com/sound/...</code> también se tratan como genéricos para no agarrar la carátula del audio.',
+      '✅ <strong>El walk-up del DOM ahora rechaza explícitamente</strong> <code>/reels/audio/</code> al buscar el <code>&lt;a href&gt;</code> ancestor — fuerza a encontrar un reel real.'
+    ]
+  },
   '3.11.16': {
     title: 'Fix portada vacía: regex meta más robusto + detección de img menos restrictiva',
     features: [

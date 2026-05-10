@@ -438,10 +438,12 @@
             if (primaryEl) {
               if (primary && primary.poster) detectedPoster = primary.poster;
               else if (primaryImg && primaryImg.src) detectedPoster = primaryImg.src;
-              // Walk up del DOM hasta encontrar <a href="/reel|reels|p|tv/...">
+              // Walk up del DOM hasta encontrar <a href> que apunte a un reel/post
+              // ESPECÍFICO (NO /reels/audio/ que es la página del audio).
+              const RE_SPECIFIC_HREF = /\\/(?:(?:reel|p|tv)\\/[A-Za-z0-9_-]+|reels\\/(?!audio\\/)[A-Za-z0-9_-]+)/;
               let el = primaryEl;
               while (el && el !== document.body) {
-                if (el.tagName === 'A' && el.href && /\\/(reel|reels|p|tv)\\/[A-Za-z0-9_-]+/.test(el.href)) {
+                if (el.tagName === 'A' && el.href && RE_SPECIFIC_HREF.test(el.href)) {
                   detectedUrl = el.href; break;
                 }
                 el = el.parentElement;
@@ -450,10 +452,13 @@
               if (!detectedUrl) {
                 const containers = [primaryEl.closest('article'), primaryEl.closest('[role="presentation"]'), primaryEl.closest('div[class*="x"]')].filter(Boolean);
                 for (const c of containers) {
-                  const a = c.querySelector('a[href*="/reel/"], a[href*="/reels/"], a[href*="/p/"], a[href*="/tv/"]');
-                  if (a && a.href && /\\/(reel|reels|p|tv)\\/[A-Za-z0-9_-]+/.test(a.href)) {
-                    detectedUrl = a.href; break;
+                  const links = c.querySelectorAll('a[href*="/reel/"], a[href*="/reels/"], a[href*="/p/"], a[href*="/tv/"]');
+                  for (const a of links) {
+                    if (a.href && RE_SPECIFIC_HREF.test(a.href)) {
+                      detectedUrl = a.href; break;
+                    }
                   }
+                  if (detectedUrl) break;
                 }
               }
             }
@@ -513,18 +518,21 @@
 
     try {
       const pageData = await extractPageData();
-      // v3.11.11: regex estricta — requerir CONTENT ID después de /reel/, etc.
-      // Antes /reels/ (feed page) matcheaba. Ahora solo /reel/CXXX/ pasa.
-      const RE_SPECIFIC = /\/(reel|reels|p|tv)\/[A-Za-z0-9_-]+/;
+      // v3.11.17: detectar URLs específicas excluyendo /reels/audio/ (página del
+      // audio, NO un reel específico — su og:image es la carátula del álbum/audio).
+      // Acepta: /reel/CXXX/, /p/CXXX/, /tv/CXXX/, /reels/CXXX/ (NOT /reels/audio/CXXX/)
+      const RE_SPECIFIC = /\/(?:(?:reel|p|tv)\/[A-Za-z0-9_-]+|reels\/(?!audio\/)[A-Za-z0-9_-]+)/;
       const targetUrl = (pageData && pageData.url && RE_SPECIFIC.test(pageData.url))
         ? pageData.url
         : url;
       const usingDetectedReel = targetUrl !== url;
-      // Detectar si la URL final es genérica (feed/explore/home, sin contenido específico)
+      // Detectar si la URL final es genérica (feed/explore/home/audio page)
       const isGenericFeedUrl =
         /^https?:\/\/(www\.)?instagram\.com\/(explore|reels|reel)\/?(\?|#|$)/i.test(targetUrl) ||
+        /^https?:\/\/(www\.)?instagram\.com\/reels\/audio\//i.test(targetUrl) ||
         /^https?:\/\/(www\.)?instagram\.com\/?(\?|#|$)/i.test(targetUrl) ||
-        /^https?:\/\/(www\.)?tiktok\.com\/(foryou|explore|trending)\/?(\?|#|$)/i.test(targetUrl) ||
+        /^https?:\/\/(www\.)?tiktok\.com\/(foryou|explore|trending|music|sound)\/?(\?|#|$)/i.test(targetUrl) ||
+        /^https?:\/\/(www\.)?tiktok\.com\/(music|sound)\//i.test(targetUrl) ||
         /^https?:\/\/(www\.)?tiktok\.com\/?(\?|#|$)/i.test(targetUrl) ||
         /^https?:\/\/(www\.)?youtube\.com\/(shorts|feed)\/?(\?|#|$)/i.test(targetUrl);
 
