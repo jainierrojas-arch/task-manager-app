@@ -1003,20 +1003,33 @@ function renderEntryHtml(e) {
   const hasAnyLink = Array.isArray(e.links) && e.links.some(l => l && l.url);
   const transcript = e.transcription || null;
   const variations = Array.isArray(e.scriptVariations) ? e.scriptVariations : [];
+  // v3.10.2: videos grabados desde el celular — visible como botón aparte
+  const recordedVideos = Array.isArray(e.recordedVideos) ? e.recordedVideos : [];
+  let recordedHtml = '';
+  if (recordedVideos.length > 0) {
+    const last = recordedVideos[recordedVideos.length - 1];
+    const lbl = recordedVideos.length === 1 ? '🎥 Ver video grabado' : `🎥 Ver videos grabados (${recordedVideos.length})`;
+    recordedHtml = `<button class="btn btn-ghost btn-small" data-open-recorded="${esc(e.id)}" data-recorded-url="${esc(last.url)}" title="Ver video grabado desde el celular" style="background:rgba(255,128,64,0.12);color:#ff9866;border:1px solid rgba(255,128,64,0.35);font-weight:600">${lbl}</button>`;
+  }
   let transcriptHtml = '';
-  if (hasAnyLink || transcript) {
+  if (hasAnyLink || transcript || recordedVideos.length > 0) {
     if (transcript) {
-      // v3.9.21: en lugar de inline expandable, un solo botón que abre el modal
-      // completo con todas las opciones (variaciones, teleprompter, copiar, etc).
       const variationLabel = variations.length > 0 ? ` · ${variations.length} variación(es)` : '';
       transcriptHtml = `
-        <div class="entry-transcript" style="margin-top:8px">
+        <div class="entry-transcript" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">
           <button class="btn btn-ghost btn-small" data-open-transcript="${esc(e.id)}" title="Abrir editor de transcripción con teleprompter y variaciones" style="background:rgba(78,205,196,0.12);color:#4ecdc4;border:1px solid rgba(78,205,196,0.35);font-weight:600">🎤 Ver transcripción${variationLabel}</button>
+          ${recordedHtml}
         </div>`;
     } else if (hasAnyLink) {
       transcriptHtml = `
-        <div class="entry-transcript" style="margin-top:8px">
+        <div class="entry-transcript" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">
           <button class="btn btn-ghost btn-small" data-transcribe="${esc(e.id)}" title="Transcribir audio del video con OpenAI Whisper">🎤 Transcribir video</button>
+          ${recordedHtml}
+        </div>`;
+    } else if (recordedVideos.length > 0) {
+      transcriptHtml = `
+        <div class="entry-transcript" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">
+          ${recordedHtml}
         </div>`;
     }
   }
@@ -1791,7 +1804,12 @@ document.getElementById('confirmAssign').addEventListener('click', async () => {
   // Tomar solo el primer link de cada tipo para las casillas de la tarea.
   // Carruseles tambien se mapean al slot videoLink para que la preview se muestre.
   const links = assigningEntry.links || [];
-  let videoLink = links.find(l => l.type === 'video')?.url
+  // v3.10.2: si hay un video grabado desde el celular, ese va PRIMERO en el slot
+  // videoLink — es lo que el editor necesita ver, no el reel de IG de referencia.
+  const recordedVids = Array.isArray(assigningEntry.recordedVideos) ? assigningEntry.recordedVideos : [];
+  const lastRecordedUrl = recordedVids.length > 0 ? recordedVids[recordedVids.length - 1].url : null;
+  let videoLink = lastRecordedUrl
+    || links.find(l => l.type === 'video')?.url
     || links.find(l => l.type === 'carrusel')?.url;
   let materialLink = links.find(l => l.type === 'material')?.url
     || links.find(l => l.type === 'recurso')?.url;
@@ -1834,6 +1852,13 @@ document.getElementById('confirmAssign').addEventListener('click', async () => {
       taskData.coverImage = assigningEntry.coverImage;
       if (assigningEntry.coverWidth) taskData.coverWidth = assigningEntry.coverWidth;
       if (assigningEntry.coverHeight) taskData.coverHeight = assigningEntry.coverHeight;
+    }
+    // v3.10.2: propagar mediaUrls + videos grabados para que el editor los vea en su tarea
+    if (Array.isArray(assigningEntry.mediaUrls) && assigningEntry.mediaUrls.length > 0) {
+      taskData.mediaUrls = assigningEntry.mediaUrls.slice();
+    }
+    if (recordedVids.length > 0) {
+      taskData.recordedVideos = recordedVids.slice();
     }
     if (amount && amount > 0) {
       const deadline = new Date();
@@ -1893,6 +1918,7 @@ document.getElementById('confirmAssign').addEventListener('click', async () => {
       if (assigningEntry.coverHeight) taskData.coverHeight = assigningEntry.coverHeight;
     }
     if (assigningEntry.mediaUrls) taskData.mediaUrls = assigningEntry.mediaUrls;
+    if (recordedVids.length > 0) taskData.recordedVideos = recordedVids.slice();
     if (amount && amount > 0) {
       const deadline = new Date();
       if (unit === 'minutes') deadline.setMinutes(deadline.getMinutes() + amount);
@@ -2509,6 +2535,51 @@ function _renderTranscriptionModalContent(entryId) {
     original.style.display = 'none';
     if (!_setTranscriptionStatus._userMsg) _setTranscriptionStatus('⏳ Iniciando transcripción...');
   }
+  // v3.10.2: sección de videos grabados desde el celular — visible siempre que existan
+  const recSec = document.getElementById('transcriptionRecordedSection');
+  if (recSec) {
+    const recs = Array.isArray(entry.recordedVideos) ? entry.recordedVideos : [];
+    if (recs.length === 0) {
+      recSec.style.display = 'none';
+      recSec.innerHTML = '';
+    } else {
+      recSec.style.display = 'block';
+      recSec.innerHTML = `
+        <div style="font-size:11px;font-weight:700;color:#ff9866;letter-spacing:0.5px;text-transform:uppercase;margin:14px 0 8px">🎥 Videos grabados desde el celular (${recs.length})</div>
+        ${recs.map((rv, i) => `
+          <div style="margin-bottom:10px;padding:10px;background:rgba(255,128,64,0.05);border:1px solid rgba(255,128,64,0.2);border-radius:8px">
+            <video src="${esc(rv.url)}" controls preload="metadata" playsinline style="width:100%;max-height:240px;background:#000;border-radius:6px;margin-bottom:6px"></video>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+              <span style="font-size:10px;color:var(--text-dim);flex:1;min-width:120px">Grabación ${i + 1}${rv.recordedAt ? ' · ' + new Date(rv.recordedAt).toLocaleString() : ''}</span>
+              <button class="btn btn-ghost btn-small" data-copy-recorded="${esc(rv.url)}" style="padding:2px 8px;font-size:10px">📋 Copiar link</button>
+              <button class="btn btn-ghost btn-small" data-open-recorded-ext="${esc(rv.url)}" style="padding:2px 8px;font-size:10px">🔗 Abrir</button>
+              <button class="btn btn-danger btn-small" data-del-recorded="${i}" style="padding:2px 8px;font-size:10px">🗑</button>
+            </div>
+            <div style="font-size:9px;color:var(--text-dim);font-family:monospace;margin-top:4px;word-break:break-all">${esc(rv.url)}</div>
+          </div>
+        `).join('')}
+      `;
+      recSec.querySelectorAll('[data-copy-recorded]').forEach(b => b.addEventListener('click', () => {
+        navigator.clipboard.writeText(b.dataset.copyRecorded);
+        b.textContent = '✓';
+        setTimeout(() => { b.textContent = '📋 Copiar link'; }, 1500);
+      }));
+      recSec.querySelectorAll('[data-open-recorded-ext]').forEach(b => b.addEventListener('click', () => {
+        try { window.api.openExternal(b.dataset.openRecordedExt); } catch (e) { window.open(b.dataset.openRecordedExt, '_blank', 'noopener'); }
+      }));
+      recSec.querySelectorAll('[data-del-recorded]').forEach(b => b.addEventListener('click', async () => {
+        if (!confirm('Borrar esta grabación de la entry? (El archivo en Cloudinary queda)')) return;
+        const idx = parseInt(b.dataset.delRecorded);
+        const newRecs = recs.slice(); newRecs.splice(idx, 1);
+        const removedUrl = recs[idx].url;
+        const newMedia = (Array.isArray(entry.mediaUrls) ? entry.mediaUrls : []).filter(u => u !== removedUrl);
+        await db.collection('depositEntries').doc(entryId).update({
+          recordedVideos: newRecs,
+          mediaUrls: newMedia
+        });
+      }));
+    }
+  }
   // Variaciones
   const list = document.getElementById('transcriptionVariationsList');
   const variations = Array.isArray(entry.scriptVariations) ? entry.scriptVariations : [];
@@ -2585,6 +2656,20 @@ document.addEventListener('click', (ev) => {
     ev.preventDefault();
     ev.stopPropagation();
     openTranscriptionModal(openTranscriptBtn.dataset.openTranscript);
+    return;
+  }
+  const openRecordedBtn = ev.target.closest('[data-open-recorded]');
+  if (openRecordedBtn) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    const entry = entries.find(en => en.id === openRecordedBtn.dataset.openRecorded);
+    const recs = entry && Array.isArray(entry.recordedVideos) ? entry.recordedVideos : [];
+    if (recs.length === 1) {
+      try { window.api.openExternal(recs[0].url); } catch (e) { window.open(recs[0].url, '_blank', 'noopener'); }
+    } else if (recs.length > 1) {
+      // Múltiples videos: abrir el modal de transcripción que ahora muestra la sección de grabados
+      openTranscriptionModal(openRecordedBtn.dataset.openRecorded);
+    }
     return;
   }
 });
@@ -2900,7 +2985,15 @@ async function _attachRecordedVideoToEntry(entryId, videoUrl) {
   const data = snap.data() || {};
   const mediaUrls = Array.isArray(data.mediaUrls) ? data.mediaUrls.slice() : [];
   if (!mediaUrls.includes(videoUrl)) mediaUrls.push(videoUrl);
-  const update = { mediaUrls };
+  // v3.10.2: trackeo separado de videos grabados desde el celular para mostrarlos
+  // como botón visible en la card y propagarlos al asignar tarea.
+  const recordedVideos = Array.isArray(data.recordedVideos) ? data.recordedVideos.slice() : [];
+  recordedVideos.push({
+    url: videoUrl,
+    recordedAt: new Date().toISOString(),
+    sessionId: _phoneRecSessionId || null
+  });
+  const update = { mediaUrls, recordedVideos };
   // Si no había cover, usar el video como cover (Cloudinary genera thumb)
   if (!data.coverImage) update.coverImage = videoUrl;
   await ref.update(update);

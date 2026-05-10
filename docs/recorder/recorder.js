@@ -133,12 +133,20 @@ function fmtTime(ms) {
   return mm + ':' + ss;
 }
 function updateTimer() {
-  if (recStart) $('timer').textContent = fmtTime(Date.now() - recStart);
+  if (!recStart) return;
+  // Si está pausado, congelar el timer en el momento de la pausa.
+  const now = recPausedAt > 0 ? recPausedAt : Date.now();
+  $('timer').textContent = fmtTime(now - recStart - recPausedAccum);
 }
+
+let recPausedAccum = 0; // ms acumulados en pausa para que el timer siga siendo realista
+let recPausedAt = 0;
 
 function startRecording() {
   if (!stream) return;
   recordedChunks = [];
+  recPausedAccum = 0;
+  recPausedAt = 0;
   const mime = pickMime();
   recordedMime = mime || 'video/webm';
   try {
@@ -157,16 +165,46 @@ function startRecording() {
   recStart = Date.now();
   $('btnRecord').classList.add('recording');
   $('timer').classList.add('active');
+  $('btnPauseRec').style.display = '';
+  $('btnPauseRec').textContent = '⏸';
   if (timerHandle) clearInterval(timerHandle);
   timerHandle = setInterval(updateTimer, 250);
   reportStatus('recording');
 }
 
+function pauseOrResumeRecording() {
+  if (!mediaRecorder) return;
+  if (mediaRecorder.state === 'recording') {
+    try { mediaRecorder.pause(); } catch (e) { console.warn('pause unsupported', e); return; }
+    recPausedAt = Date.now();
+    $('btnPauseRec').textContent = '▶';
+    $('btnRecord').classList.remove('recording');
+    $('timer').classList.remove('active');
+    $('timer').classList.add('paused');
+    reportStatus('paused');
+  } else if (mediaRecorder.state === 'paused') {
+    try { mediaRecorder.resume(); } catch (e) { console.warn('resume unsupported', e); return; }
+    if (recPausedAt) recPausedAccum += Date.now() - recPausedAt;
+    recPausedAt = 0;
+    $('btnPauseRec').textContent = '⏸';
+    $('btnRecord').classList.add('recording');
+    $('timer').classList.remove('paused');
+    $('timer').classList.add('active');
+    reportStatus('recording');
+  }
+}
+
 function stopRecording() {
   if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
+  if (mediaRecorder.state === 'paused' && recPausedAt > 0) {
+    recPausedAccum += Date.now() - recPausedAt;
+    recPausedAt = 0;
+  }
   mediaRecorder.stop();
   $('btnRecord').classList.remove('recording');
   $('timer').classList.remove('active');
+  $('timer').classList.remove('paused');
+  $('btnPauseRec').style.display = 'none';
   if (timerHandle) clearInterval(timerHandle);
 }
 
@@ -313,9 +351,10 @@ if (speedSlider) {
 }
 
 $('btnRecord').addEventListener('click', () => {
-  if (mediaRecorder && mediaRecorder.state === 'recording') stopRecording();
+  if (mediaRecorder && (mediaRecorder.state === 'recording' || mediaRecorder.state === 'paused')) stopRecording();
   else startRecording();
 });
+$('btnPauseRec').addEventListener('click', pauseOrResumeRecording);
 $('btnPlayPause').addEventListener('click', tpPlayPause);
 $('btnCancel').addEventListener('click', () => {
   if (mediaRecorder && mediaRecorder.state === 'recording') {
@@ -335,5 +374,108 @@ $('btnUpload').addEventListener('click', uploadAndCommit);
 $('btnAnother').addEventListener('click', () => {
   setError('Sesión usada', 'Esta sesión ya envió un video. Generá un QR nuevo en el desktop.');
 });
+
+// ===== Draggable + resizable teleprompter =====
+// Pointer events para que funcione tanto con touch (celular) como mouse (debug en desktop).
+// Posición/tamaño persistidos en localStorage para que el usuario configure UNA vez.
+(function setupTeleprompterTransform() {
+  const tp = $('teleprompter');
+  const drag = $('tpDragHandle');
+  const resize = $('tpResizeHandle');
+  if (!tp || !drag || !resize) return;
+
+  // Restaurar transformación previa
+  try {
+    const saved = JSON.parse(localStorage.getItem('tpTransform') || 'null');
+    if (saved && typeof saved === 'object') applyTransform(saved);
+  } catch (e) {}
+
+  function applyTransform(t) {
+    if (typeof t.left === 'number') tp.style.left = t.left + 'px';
+    if (typeof t.top === 'number') tp.style.top = t.top + 'px';
+    if (typeof t.width === 'number') { tp.style.width = t.width + 'px'; }
+    if (typeof t.height === 'number') { tp.style.height = t.height + 'px'; }
+  }
+  function persist() {
+    const r = tp.getBoundingClientRect();
+    localStorage.setItem('tpTransform', JSON.stringify({
+      left: Math.round(r.left), top: Math.round(r.top),
+      width: Math.round(r.width), height: Math.round(r.height)
+    }));
+  }
+
+  // ---- Drag ----
+  let dragState = null;
+  function onDragStart(ev) {
+    const pt = ev.touches ? ev.touches[0] : ev;
+    const r = tp.getBoundingClientRect();
+    dragState = { dx: pt.clientX - r.left, dy: pt.clientY - r.top, w: r.width, h: r.height };
+    ev.preventDefault();
+  }
+  function onDragMove(ev) {
+    if (!dragState) return;
+    const pt = ev.touches ? ev.touches[0] : ev;
+    let x = pt.clientX - dragState.dx;
+    let y = pt.clientY - dragState.dy;
+    const maxX = window.innerWidth - 80;
+    const maxY = window.innerHeight - 80;
+    x = Math.max(-dragState.w + 80, Math.min(maxX, x));
+    y = Math.max(0, Math.min(maxY, y));
+    tp.style.left = x + 'px';
+    tp.style.top = y + 'px';
+    ev.preventDefault();
+  }
+  function onDragEnd() {
+    if (!dragState) return;
+    dragState = null;
+    persist();
+  }
+  drag.addEventListener('touchstart', onDragStart, { passive: false });
+  drag.addEventListener('touchmove', onDragMove, { passive: false });
+  drag.addEventListener('touchend', onDragEnd);
+  drag.addEventListener('mousedown', (e) => {
+    onDragStart(e);
+    const mv = (ev) => onDragMove(ev);
+    const up = () => { onDragEnd(); document.removeEventListener('mousemove', mv); document.removeEventListener('mouseup', up); };
+    document.addEventListener('mousemove', mv);
+    document.addEventListener('mouseup', up);
+  });
+
+  // ---- Resize ----
+  let resizeState = null;
+  function onResizeStart(ev) {
+    const pt = ev.touches ? ev.touches[0] : ev;
+    const r = tp.getBoundingClientRect();
+    resizeState = { startX: pt.clientX, startY: pt.clientY, w: r.width, h: r.height };
+    ev.preventDefault();
+    ev.stopPropagation();
+  }
+  function onResizeMove(ev) {
+    if (!resizeState) return;
+    const pt = ev.touches ? ev.touches[0] : ev;
+    const dx = pt.clientX - resizeState.startX;
+    const dy = pt.clientY - resizeState.startY;
+    const newW = Math.max(180, Math.min(window.innerWidth - 8, resizeState.w + dx));
+    const newH = Math.max(140, Math.min(window.innerHeight - 8, resizeState.h + dy));
+    tp.style.width = newW + 'px';
+    tp.style.height = newH + 'px';
+    ev.preventDefault();
+  }
+  function onResizeEnd() {
+    if (!resizeState) return;
+    resizeState = null;
+    persist();
+  }
+  resize.addEventListener('touchstart', onResizeStart, { passive: false });
+  resize.addEventListener('touchmove', onResizeMove, { passive: false });
+  resize.addEventListener('touchend', onResizeEnd);
+  resize.addEventListener('mousedown', (e) => {
+    onResizeStart(e);
+    const mv = (ev) => onResizeMove(ev);
+    const up = () => { onResizeEnd(); document.removeEventListener('mousemove', mv); document.removeEventListener('mouseup', up); };
+    document.addEventListener('mousemove', mv);
+    document.addEventListener('mouseup', up);
+  });
+})();
 
 init();

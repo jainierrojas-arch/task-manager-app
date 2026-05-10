@@ -35,9 +35,11 @@
     <section class="screen screen-record" id="screenRecord">
       <video id="preview" autoplay muted playsinline></video>
 
-      <!-- Teleprompter overlay -->
+      <!-- Teleprompter overlay (draggable + resizable) -->
       <div class="teleprompter" id="teleprompter">
+        <div class="tp-drag-handle" id="tpDragHandle" title="Arrastrar para mover">⋮⋮</div>
         <div class="tp-text" id="tpText"></div>
+        <div class="tp-resize-handle" id="tpResizeHandle" title="Arrastrar para redimensionar"></div>
       </div>
 
       <!-- Top bar: cámara + tamaño de texto -->
@@ -64,6 +66,7 @@
         <button class="recordbtn" id="btnRecord" aria-label="Grabar">
           <div class="recinner"></div>
         </button>
+        <button class="iconbtn ghost" id="btnPauseRec" title="Pausar/reanudar grabación" style="display:none">⏸</button>
         <button class="iconbtn ghost" id="btnPlayPause" title="Play/Pausa autoscroll">▶</button>
       </div>
     </section>

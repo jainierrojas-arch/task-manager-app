@@ -75,6 +75,18 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.10.2': {
+    title: 'Recorder pro: pausa, teleprompter movible/redimensionable y video visible siempre',
+    features: [
+      '🎥 <strong>Botón "Ver video grabado" en la card del entry</strong>: una vez que grabás desde el celular, aparece un botón naranja al lado de "Ver transcripción". Click → se abre el video de Cloudinary directo.',
+      '📂 <strong>Sección Videos grabados en el modal de transcripción</strong>: cada grabación queda con su player + link copiable + botón abrir + 🗑 borrar. Persistente, no se pierde.',
+      '🎬 <strong>Editor ve el video automáticamente</strong>: al asignar la tarea, el video grabado se mete como <code>videoLink</code> de la tarea (prioritario sobre el reel de IG de referencia). El editor abre la tarea y ve "🎬 Video de referencia" con tu grabación.',
+      '⏸ <strong>Botón Pausar/Reanudar grabación en el celular</strong>: al lado derecho del botón de grabar. Tap pausa el video, tap de nuevo continúa donde lo dejaste. El timer se congela en pausa (no suma tiempo muerto).',
+      '✥ <strong>Teleprompter movible</strong>: arrastrá la barra superior del teleprompter para moverlo a cualquier parte de la pantalla del celular.',
+      '↘ <strong>Teleprompter redimensionable</strong>: agarrá la esquina inferior derecha y arrastrá para hacerlo más grande/chico. La posición y tamaño se guardan — la próxima vez que abrís el recorder, queda como lo dejaste.',
+      '⏱ <strong>Status "pausado"</strong> visible en el desktop cuando el celular está en pausa.'
+    ]
+  },
   '3.10.1': {
     title: 'Recorder: speed slider + video queda visible en el modal',
     features: [
