@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.5': {
+    title: 'Explorer captura portada + caption del reel automáticamente',
+    features: [
+      '🖼 <strong>Portada del video</strong>: el Explorer ahora extrae la imagen de la página directamente del DOM (og:image meta tag o el poster del &lt;video&gt;) — la cover real del reel/TikTok aparece en la card del Depósito, no más placeholder genérico.',
+      '📝 <strong>Caption automático como descripción</strong>: el caption del reel/TikTok se guarda como <code>description</code> en la entry. Cuando programes el contenido más adelante, el caption original ya está pre-cargado para reutilizarlo o adaptarlo.',
+      '🏷 <strong>Título inteligente</strong>: si la página tiene un og:title útil, lo usa. Si solo tiene "Instagram"/"TikTok" genérico, agarra la primera línea del caption como título de la entry.',
+      '🚀 <strong>Sin login walls</strong>: como leemos los datos directamente del DOM ya renderizado en el webview (donde ya estás logueado en IG/TikTok), no falla por bloqueo de login como pasaba con fetchOgData.',
+      '📤 <strong>Caption fluye al programador</strong>: cuando vayás a "Programar" la entry, el modal de scheduling ya recibe el caption original como descripción — listo para reutilizar tal cual o variar con Claude.'
+    ]
+  },
   '3.11.4': {
     title: 'Explorer: guardar directo en cualquier categoría/subcategoría',
     features: [

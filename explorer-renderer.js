@@ -152,6 +152,53 @@
     return window._explorerLoadCategories();
   };
 
+  // ===== Extraer datos de la página actual del webview =====
+  // En lugar de depender solo de fetchOgData (que falla cuando IG pide login
+  // o tiene throttling), leemos el DOM ya renderizado del webview — el usuario
+  // está logueado dentro del webview, todos los datos están disponibles.
+  async function extractPageData() {
+    if (!webviewReady) return null;
+    try {
+      const script = `
+        (() => {
+          function meta(prop) {
+            const el = document.querySelector('meta[property="' + prop + '"]') ||
+                       document.querySelector('meta[name="' + prop + '"]');
+            return el ? (el.content || '') : '';
+          }
+          const ogImage = meta('og:image');
+          const ogDescription = meta('og:description');
+          const ogTitle = meta('og:title');
+          let videoPoster = '';
+          try {
+            const v = document.querySelector('video');
+            if (v && v.poster) videoPoster = v.poster;
+            else if (v && v.getAttribute('poster')) videoPoster = v.getAttribute('poster');
+          } catch (e) {}
+          // Try to find caption-like text inside the article
+          let caption = '';
+          try {
+            const h1 = document.querySelector('article h1') || document.querySelector('h1');
+            if (h1 && h1.textContent) caption = h1.textContent.trim();
+          } catch (e) {}
+          if (!caption) caption = ogDescription || '';
+          return {
+            url: location.href,
+            image: ogImage || videoPoster || '',
+            title: (ogTitle || document.title || '').trim(),
+            description: caption.trim().slice(0, 2000),
+            ogDescription: (ogDescription || '').trim()
+          };
+        })();
+      `;
+      const data = await browser.executeJavaScript(script, false);
+      return data || null;
+    } catch (e) {
+      console.warn('[explorer] extractPageData failed', e);
+      return null;
+    }
+  }
+
   // ===== Save to Deposit =====
   saveBtn.addEventListener('click', async () => {
     if (typeof currentUser === 'undefined' || !currentUser) {
@@ -171,16 +218,33 @@
       return;
     }
     saveBtn.disabled = true;
-    saveBtn.textContent = '⏳ Guardando...';
+    saveBtn.textContent = '⏳ Extrayendo datos...';
 
     try {
+      // 1) Extraer datos directamente de la página del webview (caption, poster, etc)
+      const pageData = await extractPageData();
+      saveBtn.textContent = '⏳ Guardando...';
+
       const lower = url.toLowerCase();
       const isVideo = /instagram\.com\/(reel|p|tv)\/|tiktok\.com\/.+\/video\/|youtube\.com\/(shorts|watch)|youtu\.be\//.test(lower);
       const linkType = isVideo ? 'video' : 'material';
-      const cleanTitle = (title || '').trim() || (() => {
-        try { return new URL(url).hostname.replace(/^www\./, ''); } catch (e) { return 'Referencia'; }
-      })();
-      // Parse "catId|subId" o "catId" o ""
+
+      // 2) Build title — preferir ogTitle de la página > browser.getTitle() > hostname
+      // Limpiar el sufijo de plataforma común (ej: "Foo - Instagram")
+      function cleanPageTitle(t) {
+        if (!t) return '';
+        return t.replace(/\s*[•|·\-—]\s*(Instagram|TikTok|YouTube|Facebook|X|Twitter)\s*$/i, '').trim();
+      }
+      let finalTitle = cleanPageTitle(pageData && pageData.title) ||
+                       cleanPageTitle(title) ||
+                       (() => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch (e) { return 'Referencia'; } })();
+      // Si el título igual es genérico ("Instagram"), usar la primera línea de la caption
+      if (/^(instagram|tiktok|youtube)$/i.test(finalTitle.trim()) && pageData && pageData.description) {
+        const firstLine = pageData.description.split('\n')[0].slice(0, 120);
+        if (firstLine) finalTitle = firstLine;
+      }
+
+      // 3) Parse "catId|subId" o "catId" o ""
       const rawValue = categorySelect.value || '';
       let categoryId = null, subcategoryId = null;
       if (rawValue) {
@@ -188,9 +252,10 @@
         categoryId = parts[0] || null;
         subcategoryId = parts[1] || null;
       }
+
       const data = {
-        title: cleanTitle.slice(0, 200),
-        description: '',
+        title: finalTitle.slice(0, 200),
+        description: (pageData && pageData.description) ? pageData.description.slice(0, 2000) : '',
         links: [{ type: linkType, url, label: linkType === 'video' ? 'Video' : 'Material' }],
         categoryId,
         status: 'idea',
@@ -198,7 +263,13 @@
         createdByName: (typeof currentUserData !== 'undefined' && currentUserData ? currentUserData.name : null) || (currentUser.email || '').split('@')[0],
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
       };
-      // Resolver nombres desde la lista cacheada (más rápido que ir a Firestore)
+      // Cover image desde la página o desde og:image — la marcamos con
+      // coverFetcherV alto para que el deposit-renderer no la sobreescriba
+      // intentando un re-fetch.
+      if (pageData && pageData.image) {
+        data.coverImage = pageData.image;
+        data.coverFetcherV = 6;
+      }
       if (categoryId) {
         const cat = _allCats.find(c => c.id === categoryId);
         if (cat) data.categoryName = cat.name || '';
@@ -211,19 +282,24 @@
         }
       }
       const ref = await db.collection('depositEntries').add(data);
-      // Best-effort: fetch OG metadata para la cover (no esperar)
-      if (window.api && window.api.fetchOgData) {
+
+      // 4) Fallback: si no pudimos extraer la cover de la página, intentar
+      // fetchOgData en background como respaldo.
+      if (!data.coverImage && window.api && window.api.fetchOgData) {
         window.api.fetchOgData(url).then(og => {
-          if (og && (og.image || og.title || og.description)) {
-            const upd = { coverFetcherV: 6 };
-            if (og.image) upd.coverImage = og.image;
-            if (og.title && !data.title) upd.title = og.title.slice(0, 200);
-            if (og.description) upd.description = og.description.slice(0, 500);
-            db.collection('depositEntries').doc(ref.id).update(upd).catch(() => {});
+          if (og && og.image) {
+            db.collection('depositEntries').doc(ref.id).update({
+              coverImage: og.image,
+              coverFetcherV: 6
+            }).catch(() => {});
           }
         }).catch(() => {});
       }
-      showToast('✓ Guardado en el Depósito');
+      const summary = [];
+      if (data.coverImage) summary.push('portada');
+      if (data.description) summary.push('caption');
+      const detail = summary.length ? ` (con ${summary.join(' + ')})` : '';
+      showToast('✓ Guardado en el Depósito' + detail);
     } catch (e) {
       console.error('[explorer] save failed', e);
       showToast('Error: ' + (e.message || 'desconocido'), 'error');
