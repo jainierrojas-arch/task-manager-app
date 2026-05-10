@@ -260,6 +260,51 @@
       new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout: ' + label + ' tardó más de ' + ms + 'ms')), ms))
     ]);
   }
+  // ===== Fetch reel HTML from inside the webview (uses authenticated session) =====
+  // Cuando detectamos una URL específica de reel (ej via img walk-up), pero el
+  // DOM actual no tiene la caption (porque estamos en /explore/, no abrimos el
+  // reel), hacemos un fetch desde adentro del webview. La fetch desde el webview
+  // usa SUS cookies (estás logueado en IG), bypasses CORS porque es same-origin
+  // (instagram.com → instagram.com), y devuelve el HTML real del reel con meta
+  // tags llenos.
+  async function fetchUrlHtmlMeta(targetUrl) {
+    const browser = getActiveBrowser();
+    if (!browser) return null;
+    try {
+      const script = `
+        (async () => {
+          try {
+            const res = await fetch(${JSON.stringify(targetUrl)}, { credentials: 'include' });
+            if (!res.ok) return null;
+            const html = await res.text();
+            function meta(prop) {
+              const re1 = new RegExp('<meta[^>]+property=["\\']' + prop + '["\\'][^>]+content=["\\']([^"\\']*)["\\']', 'i');
+              const re2 = new RegExp('<meta[^>]+content=["\\']([^"\\']*)["\\'][^>]+property=["\\']' + prop + '["\\']', 'i');
+              const re3 = new RegExp('<meta[^>]+name=["\\']' + prop + '["\\'][^>]+content=["\\']([^"\\']*)["\\']', 'i');
+              const m = html.match(re1) || html.match(re2) || html.match(re3);
+              return m ? m[1] : '';
+            }
+            // Decode HTML entities en el caption
+            function decode(s) {
+              if (!s) return '';
+              return s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#x27;/g, "'");
+            }
+            return {
+              image: meta('og:image') || meta('twitter:image'),
+              title: decode(meta('og:title') || meta('twitter:title')),
+              description: decode(meta('og:description') || meta('twitter:description') || meta('description'))
+            };
+          } catch (e) { return null; }
+        })()
+      `;
+      const data = await withTimeout(browser.executeJavaScript(script, false), 8000, 'fetchUrlHtmlMeta');
+      return data || null;
+    } catch (e) {
+      console.warn('[explorer] fetchUrlHtmlMeta failed', e.message);
+      return null;
+    }
+  }
+
   async function extractPageData() {
     const browser = getActiveBrowser();
     if (!browser) return null;
@@ -441,14 +486,38 @@
         /^https?:\/\/(www\.)?youtube\.com\/(shorts|feed)\/?(\?|#|$)/i.test(targetUrl);
 
       saveBtn.textContent = '⏳ Buscando portada...';
-      // Solo llamar Microlink si tenemos URL ESPECÍFICA. Timeout de 12s — si
-      // tarda más, abortamos sin colgar la app.
+      // Estrategia para URL específica:
+      // 1) Fetch desde adentro del webview con cookies autenticadas (most reliable)
+      // 2) Si falla, Microlink server-side (fetch-og-data)
       let og = null;
-      if (!isGenericFeedUrl && window.api && window.api.fetchOgData) {
+      if (!isGenericFeedUrl) {
+        // 1) Same-domain fetch desde el webview (autenticado)
         try {
-          og = await withTimeout(window.api.fetchOgData(targetUrl), 12000, 'fetchOgData');
-        } catch (e) {
-          console.warn('[explorer] fetchOgData skipped:', e.message);
+          const browserUrl = getActiveBrowser() ? getActiveBrowser().getURL() : '';
+          // Solo si el target y el browser actual son del mismo dominio (CORS)
+          const sameDomain = (() => {
+            try {
+              return new URL(browserUrl).hostname === new URL(targetUrl).hostname;
+            } catch (e) { return false; }
+          })();
+          if (sameDomain) {
+            og = await fetchUrlHtmlMeta(targetUrl);
+          }
+        } catch (e) { /* ignore */ }
+        // 2) Fallback a Microlink si el fetch directo no devolvió descripción
+        if ((!og || !og.description) && window.api && window.api.fetchOgData) {
+          try {
+            const ogMicro = await withTimeout(window.api.fetchOgData(targetUrl), 12000, 'fetchOgData');
+            if (ogMicro) {
+              og = {
+                image: (og && og.image) || ogMicro.image,
+                title: (og && og.title) || ogMicro.title,
+                description: (og && og.description) || ogMicro.description
+              };
+            }
+          } catch (e) {
+            console.warn('[explorer] fetchOgData skipped:', e.message);
+          }
         }
       }
       saveBtn.textContent = '⏳ Guardando...';

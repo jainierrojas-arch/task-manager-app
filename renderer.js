@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.15': {
+    title: 'Reels: fetch directo desde el webview autenticado (mejor que Microlink)',
+    features: [
+      '🔥 <strong>Fetch desde adentro del webview</strong>: cuando guardás un reel desde el feed, mi código ahora hace <code>fetch(reelUrl)</code> directamente desde el webview que está logueado en IG. Como es same-origin, NO hay CORS y como tiene tus cookies de IG, el HTML que devuelve es el del reel REAL (no login wall).',
+      '📝 <strong>Caption garantizado</strong>: el HTML del reel tiene el <code>og:description</code> con el caption completo. Lo extraigo con regex y lo guardo como descripción + primera línea como título.',
+      '🛡 <strong>Microlink como fallback</strong>: si por algún motivo el fetch directo falla, sigue usando Microlink como respaldo.',
+      '🧬 <strong>Mismo flujo para TikTok</strong>: cuando estás navegando TikTok logueado, el fetch funciona igual.',
+      '⚡ <strong>Más rápido</strong>: el fetch directo es ~1s, Microlink es 5-10s. Las entries se guardan más rápido cuando estás en el mismo dominio que el reel.'
+    ]
+  },
   '3.11.14': {
     title: 'Caption de reels — fetcher comparte sesión IG con el Explorer',
     features: [
