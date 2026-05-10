@@ -2227,17 +2227,60 @@ document.getElementById('categoryNameInput').addEventListener('keypress', (e) =>
 function isTranscribableLink(l) {
   if (!l || !l.url) return false;
   const url = l.url;
-  // Rechazar plataformas protegidas (no se pueden descargar directo) ANTES
-  // de cualquier otra check, sin importar el l.type
-  if (/(instagram\.com|tiktok\.com|youtube\.com|youtu\.be|facebook\.com|fb\.com|cdninstagram\.com|fbcdn\.net|tiktokcdn\.com)/i.test(url)) return false;
+  // v3.9.15: ahora aceptamos plataformas protegidas — usamos Cobalt.tools para extraer
+  // el URL real del video antes de mandarlo a Whisper.
   // Cloudinary video/raw — descargable directo
   if (/res\.cloudinary\.com\/.+\/(video|raw)\/upload\//i.test(url)) return true;
   // URL directa a archivo de audio/video
   if (/\.(mp4|mov|webm|m4v|m4a|mp3|wav|mpga|mpeg|flac|ogg|oga)(\?.*)?$/i.test(url)) return true;
-  // Si está marcado como video pero NO es de plataforma protegida ni Cloudinary,
-  // intentamos igual — podría ser un link directo no-estándar
+  // Plataformas protegidas — Cobalt extrae
+  if (/(instagram\.com|tiktok\.com|youtube\.com|youtu\.be|facebook\.com|fb\.com|twitter\.com|x\.com|reddit\.com|vimeo\.com|soundcloud\.com|twitch\.tv)/i.test(url)) return true;
+  // Marcado como video — intentamos
   if (l.type === 'video') return true;
   return false;
+}
+
+// v3.9.15: detecta si el URL es de plataforma protegida que necesita extracción
+function isProtectedPlatformUrl(url) {
+  return /(instagram\.com|tiktok\.com|youtube\.com|youtu\.be|facebook\.com|fb\.com|twitter\.com|x\.com|reddit\.com|vimeo\.com|soundcloud\.com|twitch\.tv)/i.test(url);
+}
+
+// v3.9.15: usa Cobalt.tools API para extraer el URL directo del media desde
+// URLs de IG/TikTok/YouTube/etc. Devuelve URL directa que podemos descargar.
+async function extractDirectMediaUrl(platformUrl) {
+  const cobaltEndpoints = [
+    'https://api.cobalt.tools/api/json',
+    'https://co.wuk.sh/api/json'
+  ];
+  let lastError = null;
+  for (const endpoint of cobaltEndpoints) {
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          url: platformUrl,
+          isAudioOnly: true,
+          aFormat: 'mp3'
+        })
+      });
+      if (!res.ok) { lastError = 'HTTP ' + res.status + ' en ' + endpoint; continue; }
+      const data = await res.json();
+      if (data.status === 'stream' || data.status === 'redirect' || data.status === 'tunnel') {
+        if (data.url) return data.url;
+      }
+      if (data.url) return data.url;
+      if (data.status === 'error') { lastError = data.text || 'error sin mensaje'; continue; }
+      if (data.status === 'rate-limit') { lastError = 'Rate limit'; continue; }
+      lastError = 'Respuesta inesperada: ' + (data.status || 'unknown');
+    } catch (e) {
+      lastError = e.message;
+    }
+  }
+  throw new Error('No se pudo extraer el URL del video. ' + (lastError || 'Cobalt no respondió.'));
 }
 
 // v3.9.1: helper que devuelve la URL óptima de audio para mandar a Whisper.
@@ -2298,8 +2341,15 @@ async function transcribeEntry(entryId, btn) {
     return;
   }
   try {
-    const audioUrl = audioFetchUrl(videoLink.url);
-    _setTranscriptionStatus('⏳ Descargando audio desde: ' + audioUrl.slice(0, 60) + '...');
+    let downloadUrl = videoLink.url;
+    // v3.9.15: si es URL de plataforma protegida (IG/TikTok/YouTube), extraer
+    // el URL directo del video usando Cobalt.tools antes de descargarlo.
+    if (isProtectedPlatformUrl(downloadUrl)) {
+      _setTranscriptionStatus('🔍 Extrayendo URL del video (' + downloadUrl.match(/(instagram|tiktok|youtube|youtu|facebook|twitter|x\.com|vimeo)/i)[0] + ')...');
+      downloadUrl = await extractDirectMediaUrl(downloadUrl);
+    }
+    const audioUrl = audioFetchUrl(downloadUrl);
+    _setTranscriptionStatus('⏳ Descargando audio desde: ' + audioUrl.slice(0, 80) + '...');
     const audioRes = await fetch(audioUrl);
     if (!audioRes.ok) throw new Error('No se pudo bajar el audio (HTTP ' + audioRes.status + ')');
     const contentType = audioRes.headers.get('content-type') || '';

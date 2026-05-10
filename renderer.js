@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.9.15': {
+    title: 'Transcripción ahora funciona con Instagram / TikTok / YouTube directo',
+    features: [
+      '🚀 <strong>Cobalt.tools integrado</strong>: cuando le des click a "Transcribir" en una entry con link de Instagram / TikTok / YouTube / Twitter / Vimeo / etc., la app usa Cobalt.tools para extraer la URL directa del audio antes de mandarlo a Whisper. Sin pasar por Cloudinary.',
+      '📋 <strong>Plataformas soportadas</strong>: Instagram (reels, posts, stories), TikTok, YouTube (videos, shorts), Twitter/X, Facebook, Reddit, Vimeo, SoundCloud, Twitch.',
+      '🔁 <strong>Fallback dual</strong>: si el endpoint principal de Cobalt no responde, prueba con un instance alternativo automáticamente.',
+      '⚠️ <strong>Cobalt es servicio público gratuito</strong>: tiene rate limits (~1 request por minuto sostenido). Si transcribís muchos videos seguidos puede saturar — esperar unos segundos y reintentar.',
+      '✅ <strong>Cloudinary sigue siendo la opción más confiable</strong> para volumen alto, pero ahora ya NO es obligatorio.'
+    ]
+  },
   '3.9.14': {
     title: 'Fix Transcribir: detectar URLs no descargables + filename correcto',
     features: [
