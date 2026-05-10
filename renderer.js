@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.8': {
+    title: 'Explorer detecta el reel específico que estás viendo (no la página de explore)',
+    features: [
+      '🎯 <strong>Fix portada genérica</strong>: el bug era que cuando guardabas estando en <code>instagram.com/explore/</code> (el grid de reels), Microlink scrapeaba esa página y devolvía la imagen genérica del explore (las 9 fotos de pulpo/playa/perro/etc).',
+      '🔍 <strong>Detección del reel activo</strong>: ahora el explorer escanea el DOM, encuentra el video más visible/grande en pantalla, y sube por el árbol del DOM hasta encontrar un <code>&lt;a href="/reel/..."&gt;</code>. Usa ESA URL específica para Microlink + para el link de la entry.',
+      '💪 <strong>Funciona desde el feed</strong>: ya no tenés que abrir cada reel a su página individual antes de guardar — podés estar scrolleando explore, hacer click en el reel que te gusta para que aparezca en pantalla, y guardarlo. La portada y caption salen del reel real, no de la página de explore.',
+      '📊 <strong>Toast indica si detectó reel</strong>: si dice <code>"reel detectado"</code> en el toast, significa que mi código encontró el reel específico aunque tu URL en el browser fuera genérica.'
+    ]
+  },
   '3.11.7': {
     title: 'Explorer: selector manual de tipo + fix screenshot fallback + mejor detección',
     features: [

@@ -198,6 +198,49 @@
           try {
             hasVideo = !!(document.querySelector('article video') || document.querySelector('video'));
           } catch (e) {}
+
+          // ===== Detectar el URL del reel/post ESPECÍFICO al que estás mirando.
+          // Si estás en /explore/ o /reels/ (feed), location.href es genérico;
+          // pero el reel específico que está en pantalla tiene un <a> con su URL.
+          // Estrategia: tomar el video más visible/grande, subir por el DOM hasta
+          // encontrar un <a href="/reel/...">, y usar esa URL en vez de location.href.
+          let detectedUrl = '';
+          let detectedPoster = '';
+          try {
+            const allVideos = Array.from(document.querySelectorAll('video'));
+            // Prefer playing video, sino el más grande visible
+            let primary = allVideos.find(v => !v.paused && v.currentTime > 0);
+            if (!primary) {
+              const visible = allVideos.filter(v => {
+                const r = v.getBoundingClientRect();
+                return r.width > 100 && r.height > 100 && r.top < window.innerHeight && r.bottom > 0;
+              }).sort((a, b) => {
+                const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+                return (rb.width * rb.height) - (ra.width * ra.height);
+              });
+              primary = visible[0];
+            }
+            if (primary) {
+              if (primary.poster) detectedPoster = primary.poster;
+              // Walk up para encontrar <a> con /reel/ o /p/ en el href
+              let el = primary;
+              while (el && el !== document.body) {
+                if (el.tagName === 'A' && el.href && /\/(reel|reels|p|tv)\//.test(el.href)) {
+                  detectedUrl = el.href;
+                  break;
+                }
+                el = el.parentElement;
+              }
+              // Si no, buscar el primer <a> /reel/|/p/ DESCENDIENTE del padre cercano
+              if (!detectedUrl) {
+                const containers = [primary.closest('article'), primary.closest('[role="presentation"]'), primary.closest('div[class*="x"]')].filter(Boolean);
+                for (const c of containers) {
+                  const a = c.querySelector('a[href*="/reel/"], a[href*="/reels/"], a[href*="/p/"]');
+                  if (a && a.href) { detectedUrl = a.href; break; }
+                }
+              }
+            }
+          } catch (e) {}
           // Carousel detection: SOLO si NO hay video Y hay señales claras de
           // múltiples slides. Buscamos aria-labels específicas de "go to slide N".
           let isCarousel = false;
@@ -222,14 +265,22 @@
             if (h1 && h1.textContent) caption = h1.textContent.trim();
           } catch (e) {}
           if (!caption) caption = ogDescription || '';
+          // URL final: si detectamos un reel específico, usar ESA en vez de
+          // location.href (que puede ser /explore/ genérico).
+          const finalUrl = detectedUrl || location.href;
+          // Si detectamos un poster del primary video, preferirlo sobre el og:image
+          // genérico de la página (especialmente útil en feeds con varios reels).
+          const finalImage = detectedPoster || videoPoster || ogImage || domImage || '';
           return {
-            url: location.href,
-            image: ogImage || videoPoster || domImage || '',
+            url: finalUrl,
+            originalPageUrl: location.href,
+            image: finalImage,
             title: (ogTitle || document.title || '').trim(),
             description: caption.trim().slice(0, 2000),
             ogDescription: (ogDescription || '').trim(),
             hasVideo,
-            isCarousel
+            isCarousel,
+            detectedReelUrl: detectedUrl
           };
         })();
       `;
@@ -260,21 +311,27 @@
       return;
     }
     saveBtn.disabled = true;
-    saveBtn.textContent = '⏳ Extrayendo datos...';
+    saveBtn.textContent = '⏳ Detectando reel...';
 
     try {
-      // 1) Correr en PARALELO: fetchOgData (Microlink server-side, mejor cover)
-      //    Y extractPageData (DOM del webview, mejor caption porque user logueado).
-      //    Mergeamos los resultados después.
-      const [ogResult, pageResult] = await Promise.allSettled([
-        (window.api && window.api.fetchOgData) ? window.api.fetchOgData(url) : Promise.resolve(null),
-        extractPageData()
-      ]);
-      const og = ogResult.status === 'fulfilled' ? ogResult.value : null;
-      const pageData = pageResult.status === 'fulfilled' ? pageResult.value : null;
+      // 1) Primero extraer del DOM — esto nos da la URL ESPECÍFICA del reel
+      // que el usuario está viendo (incluso si la URL del browser es genérica
+      // como /explore/ o /reels/).
+      const pageData = await extractPageData();
+      // Si encontramos un reel específico en el DOM, usar ESA URL para todo.
+      const targetUrl = (pageData && pageData.url && /\/(reel|reels|p|tv)\//.test(pageData.url))
+        ? pageData.url
+        : url;
+      const usingDetectedReel = targetUrl !== url;
+
+      saveBtn.textContent = '⏳ Buscando portada...';
+      // 2) Microlink en background sobre la URL específica del reel
+      const og = await ((window.api && window.api.fetchOgData)
+        ? window.api.fetchOgData(targetUrl).catch(() => null)
+        : Promise.resolve(null));
       saveBtn.textContent = '⏳ Guardando...';
 
-      const lower = url.toLowerCase();
+      const lower = targetUrl.toLowerCase();
       const isReel = /instagram\.com\/(reel|reels)\//.test(lower);
       const isTikTokVideo = /tiktok\.com\/.+\/video\//.test(lower) || /tiktok\.com\/v\//.test(lower);
       const isYouTubeShort = /youtube\.com\/shorts/.test(lower);
@@ -370,7 +427,7 @@
       const data = {
         title: finalTitle.slice(0, 200),
         description: description.slice(0, 2000),
-        links: [{ type: linkType, url, label: linkType === 'video' ? 'Video' : (linkType === 'carrusel' ? 'Carrusel' : 'Material') }],
+        links: [{ type: linkType, url: targetUrl, label: linkType === 'video' ? 'Video' : (linkType === 'carrusel' ? 'Carrusel' : 'Material') }],
         categoryId,
         status: 'idea',
         createdBy: currentUser.uid,
@@ -397,6 +454,7 @@
       const summary = [];
       if (coverImage) summary.push('portada=' + (coverSource || 'sí'));
       if (description) summary.push('caption');
+      if (usingDetectedReel) summary.push('reel detectado');
       const detail = summary.length ? ` (${summary.join(', ')})` : '';
       showToast('✓ ' + linkType + detail);
       // Reset al "Auto" para el próximo guardado
