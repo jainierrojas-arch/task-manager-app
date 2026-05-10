@@ -53,8 +53,8 @@ contextBridge.exposeInMainWorld('api', {
   getMakeWebhook: () => ipcRenderer.invoke('get-make-webhook'),
   setMakeWebhook: (url) => ipcRenderer.invoke('set-make-webhook', url),
   sendToMakeWebhook: (payload) => ipcRenderer.invoke('send-to-make-webhook', payload),
-  // v3.9.16: extracción de URL directa desde IG/TikTok/YouTube via Cobalt
-  extractMediaUrl: (url) => ipcRenderer.invoke('extract-media-url', url),
+  // v3.9.17: descarga audio via yt-dlp local (Cobalt cambió a auth-only)
+  extractAudioViaYtDlp: (url) => ipcRenderer.invoke('extract-audio-via-ytdlp', url),
   // Cloudinary unsigned upload config (para subir archivos directos desde la app)
   getCloudinaryConfig: () => ipcRenderer.invoke('get-cloudinary-config'),
   setCloudinaryConfig: (cfg) => ipcRenderer.invoke('set-cloudinary-config', cfg),

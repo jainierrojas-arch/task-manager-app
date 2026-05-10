@@ -2245,17 +2245,24 @@ function isProtectedPlatformUrl(url) {
   return /(instagram\.com|tiktok\.com|youtube\.com|youtu\.be|facebook\.com|fb\.com|twitter\.com|x\.com|reddit\.com|vimeo\.com|soundcloud\.com|twitch\.tv)/i.test(url);
 }
 
-// v3.9.16: usa el handler IPC del main process para extraer el URL directo.
-// El main process hace la llamada HTTP sin restricciones de CORS.
-async function extractDirectMediaUrl(platformUrl) {
-  if (!window.api || !window.api.extractMediaUrl) {
-    throw new Error('extractMediaUrl no disponible. Update la app.');
+// v3.9.17: usa yt-dlp via main process para descargar el audio directamente.
+// Devuelve un Blob listo para mandar a Whisper. yt-dlp soporta cientos de plataformas.
+async function extractAudioBlob(platformUrl) {
+  if (!window.api || !window.api.extractAudioViaYtDlp) {
+    throw new Error('extractAudioViaYtDlp no disponible. Update la app.');
   }
-  const result = await window.api.extractMediaUrl(platformUrl);
+  const result = await window.api.extractAudioViaYtDlp(platformUrl);
   if (!result || !result.ok) {
-    throw new Error(result && result.error ? result.error : 'Cobalt extracción falló');
+    if (result && result.errorCode === 'NOT_INSTALLED') {
+      throw new Error('yt-dlp no está instalado. Instalalo con:\n\n  brew install yt-dlp\n\n(en Terminal). Después reintenta.');
+    }
+    throw new Error(result && result.error ? result.error : 'Extracción falló');
   }
-  return result.url;
+  // Decodear base64 a Blob
+  const binary = atob(result.data);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes.buffer], { type: result.mimeType || 'audio/mpeg' });
 }
 
 // v3.9.1: helper que devuelve la URL óptima de audio para mandar a Whisper.
@@ -2316,35 +2323,35 @@ async function transcribeEntry(entryId, btn) {
     return;
   }
   try {
-    let downloadUrl = videoLink.url;
-    // v3.9.15: si es URL de plataforma protegida (IG/TikTok/YouTube), extraer
-    // el URL directo del video usando Cobalt.tools antes de descargarlo.
-    if (isProtectedPlatformUrl(downloadUrl)) {
-      _setTranscriptionStatus('🔍 Extrayendo URL del video (' + downloadUrl.match(/(instagram|tiktok|youtube|youtu|facebook|twitter|x\.com|vimeo)/i)[0] + ')...');
-      downloadUrl = await extractDirectMediaUrl(downloadUrl);
-    }
-    const audioUrl = audioFetchUrl(downloadUrl);
-    _setTranscriptionStatus('⏳ Descargando audio desde: ' + audioUrl.slice(0, 80) + '...');
-    const audioRes = await fetch(audioUrl);
-    if (!audioRes.ok) throw new Error('No se pudo bajar el audio (HTTP ' + audioRes.status + ')');
-    const contentType = audioRes.headers.get('content-type') || '';
-    // Si el server devuelve HTML, es porque el URL no es realmente un archivo de audio
-    if (contentType.includes('text/html') || contentType.includes('application/xhtml')) {
-      throw new Error('El URL no apunta a un archivo de audio — devolvió HTML. Probablemente es un link de YouTube/Instagram/TikTok. Subí el video a Cloudinary primero.');
-    }
-    const audioBlob = await audioRes.blob();
-    if (audioBlob.size < 1000) {
-      throw new Error('Archivo demasiado chico (' + audioBlob.size + ' bytes). Probablemente el URL no devolvió un audio válido.');
-    }
-    if (audioBlob.size > 25 * 1024 * 1024) throw new Error('Audio muy grande (>25MB).');
-    _setTranscriptionStatus('🎤 Enviando a Whisper (' + Math.round(audioBlob.size / 1024) + ' KB)...');
-    // Determinar el filename con extensión correcta para Whisper
+    let audioBlob;
     let filename = 'audio.mp3';
-    if (contentType.includes('video/mp4') || /\.mp4(\?|$)/i.test(audioUrl)) filename = 'audio.mp4';
-    else if (contentType.includes('video/quicktime') || /\.mov(\?|$)/i.test(audioUrl)) filename = 'audio.mov';
-    else if (contentType.includes('audio/mpeg') || /\.mp3(\?|$)/i.test(audioUrl)) filename = 'audio.mp3';
-    else if (contentType.includes('audio/wav') || /\.wav(\?|$)/i.test(audioUrl)) filename = 'audio.wav';
-    else if (contentType.includes('video/webm') || /\.webm(\?|$)/i.test(audioUrl)) filename = 'audio.webm';
+    // v3.9.17: si es URL de plataforma protegida (IG/TikTok/YouTube), usar yt-dlp
+    // para descargar el audio directamente. yt-dlp maneja la extracción.
+    if (isProtectedPlatformUrl(videoLink.url)) {
+      const platform = videoLink.url.match(/(instagram|tiktok|youtube|youtu|facebook|twitter|x\.com|vimeo)/i)[0];
+      _setTranscriptionStatus('🔄 Descargando audio con yt-dlp (' + platform + ')... Tarda 10-30s.');
+      audioBlob = await extractAudioBlob(videoLink.url);
+      _setTranscriptionStatus('🎤 Enviando ' + Math.round(audioBlob.size / 1024) + 'KB a Whisper...');
+    } else {
+      // URL directa o Cloudinary — fetch normal
+      const audioUrl = audioFetchUrl(videoLink.url);
+      _setTranscriptionStatus('⏳ Descargando audio...');
+      const audioRes = await fetch(audioUrl);
+      if (!audioRes.ok) throw new Error('No se pudo bajar el audio (HTTP ' + audioRes.status + ')');
+      const contentType = audioRes.headers.get('content-type') || '';
+      if (contentType.includes('text/html')) {
+        throw new Error('El URL devolvió HTML, no audio. Verificá que sea link directo a archivo o Cloudinary.');
+      }
+      audioBlob = await audioRes.blob();
+      if (audioBlob.size < 1000) throw new Error('Archivo muy chico (' + audioBlob.size + ' bytes)');
+      if (audioBlob.size > 25 * 1024 * 1024) throw new Error('Audio muy grande (>25MB)');
+      // Filename según content-type para que Whisper acepte
+      if (contentType.includes('video/mp4') || /\.mp4(\?|$)/i.test(audioUrl)) filename = 'audio.mp4';
+      else if (contentType.includes('video/quicktime') || /\.mov(\?|$)/i.test(audioUrl)) filename = 'audio.mov';
+      else if (contentType.includes('audio/wav') || /\.wav(\?|$)/i.test(audioUrl)) filename = 'audio.wav';
+      else if (contentType.includes('video/webm') || /\.webm(\?|$)/i.test(audioUrl)) filename = 'audio.webm';
+      _setTranscriptionStatus('🎤 Enviando a Whisper...');
+    }
     const formData = new FormData();
     formData.append('file', audioBlob, filename);
     formData.append('model', 'whisper-1');

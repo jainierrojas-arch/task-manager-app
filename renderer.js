@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.9.17': {
+    title: 'Transcripción IG/TikTok/YouTube via yt-dlp local (más confiable)',
+    features: [
+      '🚀 <strong>Cobalt → yt-dlp</strong>: Cobalt cambió a auth-only en 2024 (ya no es público gratis). Reemplazado por <strong>yt-dlp</strong> que corre localmente — el estándar para descargar de cualquier red social. Soporta más plataformas que Cobalt.',
+      '⚙️ <strong>Pre-requisito UNA SOLA VEZ</strong>: tenés que instalar yt-dlp con un comando en terminal:<br><code>brew install yt-dlp</code><br>(Homebrew, gratis, 30 segundos. En Windows: <code>winget install yt-dlp</code>)',
+      '✅ <strong>Después de instalar</strong>: cualquier link de IG/TikTok/YouTube/Twitter/Facebook/Reddit/Vimeo/SoundCloud/Twitch transcribe directo. Sin Cloudinary, sin pasos manuales.',
+      '🔍 <strong>Ventajas vs Cobalt</strong>: yt-dlp es más confiable, no tiene rate limits, soporta 1000+ plataformas, se actualiza solo cuando las plataformas cambian.',
+      '⚠️ <strong>Si yt-dlp no está instalado</strong>: el modal te avisa con el comando exacto a copiar/pegar.'
+    ]
+  },
   '3.9.16': {
     title: 'Fix CORS de Cobalt + botón X del modal',
     features: [

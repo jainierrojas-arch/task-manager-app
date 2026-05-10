@@ -745,54 +745,83 @@ function registerIpcHandlers() {
     return { ok: true };
   });
   // POST al webhook de Make con el payload del post a programar
-  // v3.9.16: Cobalt.tools API proxy — corre en main process para evitar CORS
-  // del renderer (origen file://). Devuelve URL directa del media para descargar.
-  ipcMain.handle('extract-media-url', async (_, platformUrl) => {
+  // v3.9.17: usa yt-dlp (instalado localmente) para descargar el audio de cualquier
+  // plataforma soportada. Cobalt cambió a auth-only en 2024, así que esto es lo
+  // más confiable. Requisito: usuario debe tener yt-dlp instalado (brew install yt-dlp).
+  ipcMain.handle('extract-audio-via-ytdlp', async (_, platformUrl) => {
     if (!platformUrl) return { ok: false, error: 'URL vacía' };
-    const https = require('https');
-    const endpoints = ['https://api.cobalt.tools/api/json', 'https://co.wuk.sh/api/json'];
-    let lastError = null;
-    for (const endpoint of endpoints) {
-      try {
-        const parsed = new URL(endpoint);
-        const body = JSON.stringify({ url: platformUrl, isAudioOnly: true, aFormat: 'mp3' });
-        const result = await new Promise((resolve) => {
-          const req = https.request({
-            host: parsed.hostname,
-            port: parsed.port || 443,
-            path: parsed.pathname,
-            method: 'POST',
-            headers: {
-              'Accept': 'application/json',
-              'Content-Type': 'application/json',
-              'Content-Length': Buffer.byteLength(body),
-              'User-Agent': 'TaskManager/1.0'
-            }
-          }, (res) => {
-            let data = '';
-            res.on('data', c => { data += c; });
-            res.on('end', () => {
-              try { resolve({ ok: res.statusCode === 200, status: res.statusCode, body: data, json: JSON.parse(data) }); }
-              catch (e) { resolve({ ok: false, error: 'Invalid JSON: ' + data.slice(0, 200) }); }
-            });
-          });
-          req.on('error', (e) => resolve({ ok: false, error: e.message }));
-          req.setTimeout(20000, () => { try { req.destroy(); } catch (_) {} resolve({ ok: false, error: 'Timeout (20s)' }); });
-          req.write(body);
-          req.end();
-        });
-        if (!result.ok) { lastError = result.error || ('HTTP ' + result.status); continue; }
-        const j = result.json;
-        if ((j.status === 'stream' || j.status === 'redirect' || j.status === 'tunnel') && j.url) return { ok: true, url: j.url };
-        if (j.url) return { ok: true, url: j.url };
-        if (j.status === 'error') { lastError = j.text || 'Cobalt error'; continue; }
-        if (j.status === 'rate-limit') { lastError = 'Rate limit en ' + endpoint; continue; }
-        lastError = 'Respuesta inesperada: ' + (j.status || 'unknown');
-      } catch (e) {
-        lastError = e.message;
+    const fs = require('fs');
+    const path = require('path');
+    const os = require('os');
+    const { spawn } = require('child_process');
+    const tempBasePath = path.join(os.tmpdir(), `tm-transcribe-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    const tempPath = tempBasePath + '.%(ext)s';
+    return new Promise((resolve) => {
+      // Buscar yt-dlp en PATH común para Mac (brew) y Windows
+      const ytdlpPaths = ['/opt/homebrew/bin/yt-dlp', '/usr/local/bin/yt-dlp', 'yt-dlp', 'yt-dlp.exe'];
+      let proc = null;
+      let pathIndex = 0;
+      function tryNextPath() {
+        if (pathIndex >= ytdlpPaths.length) {
+          resolve({ ok: false, error: 'yt-dlp no instalado', errorCode: 'NOT_INSTALLED' });
+          return;
+        }
+        const ytdlpBin = ytdlpPaths[pathIndex++];
+        try {
+          proc = spawn(ytdlpBin, [
+            '-f', 'bestaudio',
+            '-x', '--audio-format', 'mp3',
+            '--audio-quality', '5',
+            '-o', tempPath,
+            '--no-playlist',
+            '--no-warnings',
+            '--no-progress',
+            platformUrl
+          ]);
+          attachHandlers();
+        } catch (e) {
+          tryNextPath();
+        }
       }
-    }
-    return { ok: false, error: lastError || 'Cobalt no respondió' };
+      let stderr = '';
+      function attachHandlers() {
+        if (!proc) return;
+        proc.stderr.on('data', (d) => { stderr += d.toString(); });
+        proc.on('error', (e) => {
+          if (e.code === 'ENOENT') {
+            tryNextPath();
+          } else {
+            resolve({ ok: false, error: e.message });
+          }
+        });
+        proc.on('close', (code) => {
+          const finalPath = tempBasePath + '.mp3';
+          if (code === 0 && fs.existsSync(finalPath)) {
+            try {
+              const buf = fs.readFileSync(finalPath);
+              fs.unlinkSync(finalPath);
+              if (buf.length > 25 * 1024 * 1024) {
+                return resolve({ ok: false, error: 'Audio muy grande (>25MB) — video demasiado largo' });
+              }
+              resolve({ ok: true, data: buf.toString('base64'), mimeType: 'audio/mpeg', size: buf.length });
+            } catch (e) {
+              resolve({ ok: false, error: 'Error leyendo audio: ' + e.message });
+            }
+          } else {
+            // Intentar también si el output quedó con otra extensión
+            const candidates = fs.readdirSync(os.tmpdir()).filter(f => f.startsWith(path.basename(tempBasePath)));
+            for (const c of candidates) {
+              try { fs.unlinkSync(path.join(os.tmpdir(), c)); } catch (_) {}
+            }
+            const errMsg = stderr.slice(-400).trim() || ('yt-dlp exit ' + code);
+            resolve({ ok: false, error: errMsg });
+          }
+        });
+        // Timeout de 90 seg
+        setTimeout(() => { try { proc.kill(); } catch (_) {} }, 90000);
+      }
+      tryNextPath();
+    });
   });
 
   ipcMain.handle('send-to-make-webhook', async (_, payload) => {
