@@ -154,15 +154,18 @@ html, body {
   touch-action: pan-y;
 }
 
+/* Topbar: columna vertical pegada al costado izquierdo para liberar la parte
+   superior de la pantalla. En landscape, sigue siendo vertical-izquierda. */
 .topbar {
   position: absolute;
   top: max(14px, env(safe-area-inset-top));
-  left: 14px;
-  right: 14px;
+  left: max(10px, env(safe-area-inset-left));
+  right: auto;
   display: flex;
+  flex-direction: column;
   gap: 8px;
   z-index: 5;
-  flex-wrap: wrap;
+  width: auto;
 }
 
 .bottombar {
@@ -197,14 +200,7 @@ html, body {
   #btnPlayPause { order: 2; }
   #btnRecord    { order: 3; }
   #btnPauseRec  { order: 4; }
-  /* Topbar: stack vertical en el costado IZQUIERDO para no chocar con bottombar */
-  .topbar {
-    left: max(14px, env(safe-area-inset-left));
-    right: auto;
-    flex-direction: column;
-    top: max(14px, env(safe-area-inset-top));
-    width: auto;
-  }
+  /* Topbar ya es vertical-izquierdo en portrait también, no hace falta overrides aquí */
   /* Speed slider: abajo a la izquierda — fuera de la zona del pulgar derecho */
   .speedctl {
     right: auto;

@@ -470,6 +470,56 @@ $('btnRetake').addEventListener('click', () => {
   show('screenRecord');
 });
 $('btnUpload').addEventListener('click', uploadAndCommit);
+$('btnSaveLocal').addEventListener('click', () => saveLocally($('btnSaveLocal')));
+$('btnSaveLocalAfter').addEventListener('click', () => saveLocally($('btnSaveLocalAfter')));
+
+// Guarda el video en el celular del usuario. En iOS Safari (donde el download
+// directo a veces NO funciona porque iOS abre el video en lugar de bajarlo),
+// usamos la Web Share API para que el usuario tenga el botón nativo "Guardar
+// vídeo" en la hoja de compartir del sistema. En Android Chrome y desktop,
+// el <a download> funciona y baja directo a la carpeta de descargas.
+async function saveLocally(btn) {
+  if (!recordedBlob) {
+    alert('No hay video para guardar');
+    return;
+  }
+  const ext = recordedMime.includes('mp4') ? 'mp4' : 'webm';
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const filename = `taskmgr-${stamp}.${ext}`;
+  const file = new File([recordedBlob], filename, { type: recordedMime });
+
+  // 1) Web Share API con file (iOS 15+ y Android Chrome): saca el share sheet
+  //    nativo donde el usuario elige "Guardar vídeo" → va a Fotos / Galería.
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      if (btn) { btn.disabled = true; btn.textContent = '⏳ Abriendo...'; }
+      await navigator.share({ files: [file], title: 'Video grabado', text: 'Video del Task Manager Recorder' });
+      if (btn) { btn.textContent = '✓ Compartido'; setTimeout(() => { btn.textContent = '💾 Guardar'; btn.disabled = false; }, 1800); }
+      return;
+    } catch (e) {
+      // Usuario canceló el share — caer al download tradicional.
+      if (e && e.name !== 'AbortError') console.warn('[saveLocally] share failed', e);
+      if (btn) { btn.disabled = false; btn.textContent = '💾 Guardar'; }
+    }
+  }
+
+  // 2) Fallback: <a download> — funciona en Android Chrome, desktop, etc.
+  try {
+    const url = URL.createObjectURL(recordedBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    if (btn) { btn.textContent = '✓ Descargado'; setTimeout(() => { btn.textContent = '💾 Guardar'; }, 1800); }
+  } catch (e) {
+    console.error('[saveLocally] download failed', e);
+    alert('No se pudo guardar el archivo: ' + e.message);
+  }
+}
 $('btnAnother').addEventListener('click', () => {
   setError('Sesión usada', 'Esta sesión ya envió un video. Generá un QR nuevo en el desktop.');
 });

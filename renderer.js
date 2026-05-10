@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.10.5': {
+    title: 'Recorder: topbar a la izquierda + guardar en celular',
+    features: [
+      '👈 <strong>Botones de la barra superior reubicados al costado izquierdo</strong>: cámara/fuente/teleprompter/slider toggle ahora son una columna vertical pegada a la izquierda. Liberé toda la franja superior de la pantalla — más espacio para framing del video.',
+      '💾 <strong>Botón "Guardar" en el celular</strong>: en la pantalla de previsualización (después de grabar) hay un botón nuevo para descargar el video al teléfono. En iOS abre el share sheet nativo (Guardar vídeo → Fotos). En Android baja directo a Descargas.',
+      '💾 <strong>También podés guardar después de enviar al desktop</strong>: en la pantalla "Video enviado!" hay un botón "💾 Guardar también en el celular" para tener el archivo local además de en Cloudinary.'
+    ]
+  },
   '3.10.4': {
     title: 'Recorder: fix zoom exagerado + slider colapsable + landscape OK',
     features: [
