@@ -502,9 +502,13 @@ function startRecording() {
 }
 
 // Tap rojo: start / pause / resume según estado.
+// v3.11.55: el teleprompter ahora se sincroniza con la grabación — pausa y
+// reanuda automáticamente cuando se aprieta el botón rojo.
 function recordButtonTap() {
   if (!mediaRecorder || mediaRecorder.state === 'inactive') {
     startRecording();
+    // Auto-start del teleprompter al empezar a grabar
+    if (!tpPlaying) tpPlayPause();
     return;
   }
   if (mediaRecorder.state === 'recording') {
@@ -514,7 +518,6 @@ function recordButtonTap() {
     }
     try { mediaRecorder.pause(); } catch (e) {
       console.warn('pause unsupported', e);
-      // Browser sin soporte de pause: caer a stop (cierra sesión completa).
       try { mediaRecorder.stop(); } catch (_) {}
       return;
     }
@@ -522,7 +525,8 @@ function recordButtonTap() {
     $('timer').classList.remove('active');
     $('timer').classList.add('paused');
     reportStatus('paused');
-    // updateMultiSegmentUI corre desde onpause
+    // Pausar teleprompter en sync
+    if (tpPlaying) tpPlayPause();
   } else if (mediaRecorder.state === 'paused') {
     try { mediaRecorder.resume(); } catch (e) { console.warn('resume unsupported', e); return; }
     recLastResumeTs = Date.now();
@@ -531,6 +535,8 @@ function recordButtonTap() {
     $('timer').classList.add('active');
     reportStatus('recording');
     updateMultiSegmentUI();
+    // Reanudar teleprompter en sync
+    if (!tpPlaying) tpPlayPause();
   }
 }
 
@@ -553,6 +559,8 @@ function finishRecording() {
   $('btnRecord').classList.remove('recording');
   $('timer').classList.remove('active');
   $('timer').classList.remove('paused');
+  // v3.11.55: pausar teleprompter al finalizar
+  if (tpPlaying) tpPlayPause();
 }
 
 // Descarta el último fragmento. Visible solo cuando hay fragmento(s) Y NO estamos en recording.
@@ -807,6 +815,51 @@ $('btnRecord').addEventListener('click', recordButtonTap);
 $('btnUndo').addEventListener('click', discardLastFragment);
 $('btnDone').addEventListener('click', finishRecording);
 $('btnPlayPause').addEventListener('click', tpPlayPause);
+
+// ===== v3.11.55: control por teclado / Bluetooth shutter remote =====
+// Muchos gimbals y selfie sticks emiten Space, Enter o VolumeUp como botón
+// shutter. La PWA escucha esos keys y dispara el record button para que
+// puedas controlar grabar/pausar desde el remoto bluetooth en tu mano.
+// Nota: iOS Safari intercepta volume keys a nivel sistema y NO los pasa al
+// web app — en iPhone solo va a andar el botón "shutter" del remote si emite
+// Enter o Space (algunos remotes tienen esa opción). En Android casi todos
+// funcionan.
+document.addEventListener('keydown', (e) => {
+  // Solo cuando estamos en pantalla de grabación o preview
+  if (!$('screenRecord').classList.contains('active')) return;
+  // Ignorar si el foco está en un input/textarea (no robar typing)
+  const tag = (e.target && e.target.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  const k = e.key || '';
+  const c = e.code || '';
+  const triggers = [' ', 'Enter', 'MediaPlayPause', 'AudioVolumeUp', 'AudioVolumeDown', 'VolumeUp', 'VolumeDown', 'MediaPlay', 'MediaPause'];
+  if (triggers.includes(k) || c === 'Space' || c === 'Enter') {
+    e.preventDefault();
+    recordButtonTap();
+  }
+});
+
+// ===== v3.11.55: control remoto desde la PC vía Firestore =====
+// El desktop puede escribir comandos en el doc de sesión y el celular los ejecuta.
+// Esto permite controlar grabar/pausar desde la PC mientras el celu está en el
+// gimbal lejos.
+//   sessionRef.update({remoteCommand: {action: 'toggle'|'done'|'discard', ts: <unique>}})
+let _lastRemoteCmdTs = 0;
+if (sessionRef) {
+  sessionRef.onSnapshot((snap) => {
+    if (!snap.exists) return;
+    const data = snap.data() || {};
+    const cmd = data.remoteCommand;
+    if (!cmd || !cmd.ts || cmd.ts <= _lastRemoteCmdTs) return;
+    _lastRemoteCmdTs = cmd.ts;
+    const action = cmd.action;
+    console.log('[remote] cmd received:', action);
+    if (action === 'toggle') recordButtonTap();
+    else if (action === 'done') finishRecording();
+    else if (action === 'discard') discardLastFragment();
+    showDebug('📡 Control remoto: ' + action);
+  }, (err) => console.warn('[remote] snapshot error', err.message));
+}
 
 $('btnCancel').addEventListener('click', () => {
   const isActive = mediaRecorder && (mediaRecorder.state === 'recording' || mediaRecorder.state === 'paused');

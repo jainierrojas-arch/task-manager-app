@@ -2981,10 +2981,24 @@ async function openPhoneRecorderModal() {
   _phoneRecUnsub = db.collection('recordingSessions').doc(_phoneRecSessionId).onSnapshot(async (snap) => {
     if (!snap.exists) return;
     const d = snap.data();
+    // v3.11.55: mostrar/ocultar panel de control remoto según el estado del celu
+    const remoteCtl = document.getElementById('phoneRecRemoteCtl');
+    if (remoteCtl) {
+      const isLive = ['connected', 'recording', 'paused'].includes(d.status);
+      remoteCtl.style.display = isLive ? '' : 'none';
+      const toggleBtn = document.getElementById('phoneRecToggleBtn');
+      if (toggleBtn) {
+        if (d.status === 'recording') toggleBtn.textContent = '⏸ Pausar';
+        else if (d.status === 'paused') toggleBtn.textContent = '▶ Continuar';
+        else toggleBtn.textContent = '⏺ Grabar';
+      }
+    }
     if (d.status === 'connected') {
       document.getElementById('phoneRecStatusText').textContent = '📱 Celular conectado — listo para grabar.';
     } else if (d.status === 'recording') {
       document.getElementById('phoneRecStatusText').textContent = '🔴 Grabando en el celular...';
+    } else if (d.status === 'paused') {
+      document.getElementById('phoneRecStatusText').textContent = '⏸ Pausado.';
     } else if (d.status === 'uploading') {
       document.getElementById('phoneRecStatusText').textContent = '📤 Subiendo video a Cloudinary...';
     } else if (d.status === 'completed' && d.videoUrl) {
@@ -3098,6 +3112,22 @@ async function _attachRecordedVideoToEntry(entryId, videoUrl) {
       // Reusar el mismo entry/script: abrir una sesión nueva.
       openPhoneRecorderModal();
     });
+
+    // v3.11.55: control remoto desde la PC — manda comandos al celu vía Firestore
+    async function sendRemoteCommand(action) {
+      if (!_phoneRecSessionId) return;
+      try {
+        await db.collection('recordingSessions').doc(_phoneRecSessionId).update({
+          remoteCommand: { action, ts: Date.now() }
+        });
+      } catch (e) { console.warn('[remote] send failed', e.message); }
+    }
+    const toggleBtn = document.getElementById('phoneRecToggleBtn');
+    if (toggleBtn) toggleBtn.addEventListener('click', () => sendRemoteCommand('toggle'));
+    const discardBtn = document.getElementById('phoneRecDiscardBtn');
+    if (discardBtn) discardBtn.addEventListener('click', () => sendRemoteCommand('discard'));
+    const doneBtn = document.getElementById('phoneRecDoneBtn');
+    if (doneBtn) doneBtn.addEventListener('click', () => sendRemoteCommand('done'));
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', attach);
   else attach();

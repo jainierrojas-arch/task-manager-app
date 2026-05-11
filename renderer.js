@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.55': {
+    title: 'Control remoto del recorder + teleprompter sincronizado + Bluetooth shutter',
+    features: [
+      '⏯ <strong>Teleprompter sincronizado con la grabación</strong>: cuando pausás la grabación, el teleprompter también se pausa. Cuando reanudás, vuelve a scrollear. Cuando das Done, se detiene. Antes había que pausar los dos por separado.',
+      '📡 <strong>Control remoto desde la PC</strong> mientras el celu está en un gimbal lejos: en el modal de "Grabar desde Celular" hay tres botones nuevos:<br>• <strong>⏯ Grabar/Pausar</strong> — toggle de grabación<br>• <strong>↶ Descartar último</strong> — borra el último fragmento<br>• <strong>✓ Finalizar</strong> — termina y manda al desktop<br>Los comandos viajan por Firestore y el celu los ejecuta en milisegundos.',
+      '🎮 <strong>Bluetooth shutter remote del gimbal</strong>: la PWA del celu ahora escucha <code>Space</code>, <code>Enter</code>, <code>MediaPlayPause</code> y <code>VolumeUp/Down</code> como triggers del botón rojo. En Android cualquier shutter remote BT (que mande VolumeUp) controla la grabación. En iPhone Safari iOS roba los volumen keys así que solo va con remotes que manden Enter/Space.',
+      '🛠 <strong>Bonus: cómo usarlo en un setup pro</strong>: pone el celu en el gimbal, abrí Transcribir en la PC, conectá el remote BT en el gimbal a tu mano. Tap remote → graba/pausa. O usá los botones de la PC con el mouse. El teleprompter se sincroniza automáticamente.'
+    ]
+  },
   '3.11.54': {
     title: '"🎬 Video de referencia" al lado de "Grabación" — el editor ve los dos',
     features: [
