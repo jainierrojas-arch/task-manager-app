@@ -2400,7 +2400,10 @@ async function transcribeEntry(entryId, btn) {
     const endpoint = isGroqKey
       ? 'https://api.groq.com/openai/v1/audio/transcriptions'
       : 'https://api.openai.com/v1/audio/transcriptions';
-    const modelName = isGroqKey ? 'whisper-large-v3-turbo' : 'whisper-1';
+    // v3.11.45: cambio a whisper-large-v3 (no turbo). El turbo tiene cola en el
+    // free tier y para videos de >1min se queda procesando 80-180s. La versión
+    // estándar es más confiable aunque un poquito más lenta para audios cortos.
+    const modelName = isGroqKey ? 'whisper-large-v3' : 'whisper-1';
     const providerLabel = isGroqKey ? 'Groq' : 'Whisper';
     const formData = new FormData();
     formData.append('file', audioBlob, filename);
@@ -2416,15 +2419,21 @@ async function transcribeEntry(entryId, btn) {
       const xhr = new XMLHttpRequest();
       xhr.open('POST', endpoint);
       xhr.setRequestHeader('Authorization', 'Bearer ' + apiKey);
-      // v3.11.43: timeout 90s (antes 180s) — Groq responde en <30s típicamente,
-      // si tarda más es que algo está mal (red bloqueada, rate limit silencioso,
-      // etc) y mejor fallar rápido con error claro.
-      xhr.timeout = 90000;
+      // v3.11.45: timeout 150s — el modelo whisper-large-v3 procesa videos
+      // largos (>5min) en 30-90s típicamente. 150s da margen sin esperar 3min.
+      xhr.timeout = 150000;
+      const startedAt = Date.now();
       let lastTick = Date.now();
       let heartbeatTimer = setInterval(() => {
         const elapsed = Math.round((Date.now() - lastTick) / 1000);
+        const totalElapsed = Math.round((Date.now() - startedAt) / 1000);
         if (xhr.readyState === 4) { clearInterval(heartbeatTimer); return; }
-        if (elapsed > 5) _setTranscriptionStatus('⏳ Procesando en ' + providerLabel + '... (' + elapsed + 's). Si pasa de 60s probablemente la red está bloqueando.');
+        if (elapsed > 5) {
+          let warn = '';
+          if (totalElapsed > 60) warn = ' Audio largo o red lenta — esperá un poco.';
+          if (totalElapsed > 120) warn = ' Casi por timeout (150s).';
+          _setTranscriptionStatus('⏳ ' + providerLabel + ' transcribiendo... ' + elapsed + 's (audio ' + sizeKb + 'KB).' + warn);
+        }
       }, 2000);
       xhr.upload.addEventListener('progress', (e) => {
         if (e.lengthComputable) {
@@ -2434,7 +2443,11 @@ async function transcribeEntry(entryId, btn) {
         }
       });
       xhr.upload.addEventListener('error', () => { clearInterval(heartbeatTimer); reject(new Error('Error de red subiendo a ' + providerLabel + '. Revisá conexión / firewall.')); });
-      xhr.ontimeout = () => { clearInterval(heartbeatTimer); reject(new Error(providerLabel + ' tardó >3 min. Reintenta o usá un video más corto.')); };
+      xhr.ontimeout = () => {
+        clearInterval(heartbeatTimer);
+        const totalSec = Math.round((Date.now() - startedAt) / 1000);
+        reject(new Error(providerLabel + ' tardó >' + totalSec + 's (timeout 150s) — audio era ' + sizeKb + 'KB. Probá con un video más corto o cambiá a key de Deepgram si tu red bloquea Groq.'));
+      };
       xhr.onerror = () => { clearInterval(heartbeatTimer); reject(new Error('Error de red. ¿Hay firewall/proxy bloqueando ' + providerLabel.toLowerCase() + '.com?')); };
       xhr.onload = () => {
         clearInterval(heartbeatTimer);

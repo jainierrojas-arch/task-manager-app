@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.45': {
+    title: 'Modelo Groq cambiado a whisper-large-v3 (estable) + timeout 150s + diagnóstico con tamaño',
+    features: [
+      '🤖 <strong>Modelo Groq cambiado a <code>whisper-large-v3</code></strong> (antes <code>whisper-large-v3-turbo</code>). El turbo tiene cola en free tier para videos >1min y se quedaba procesando 80-180s. El no-turbo es ligeramente más lento para audios cortos pero MUCHO más confiable para >1min.',
+      '⏱ <strong>Timeout 150s</strong> (90s era muy corto para audios largos). El heartbeat ahora muestra "(N segundos)" con el tamaño del audio (KB) para que sepas qué se está enviando y por dónde va.',
+      '🩺 <strong>Mensaje de timeout incluye contexto</strong>: cuánto tardó, tamaño del audio, y sugerencia "probá con video más corto o pasá a Deepgram si la red bloquea Groq".'
+    ]
+  },
   '3.11.44': {
     title: 'FIX CRÍTICO: bug "Assignment to constant variable" rompía toda la transcripción',
     features: [
