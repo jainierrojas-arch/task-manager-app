@@ -957,24 +957,20 @@ function registerIpcHandlers() {
       });
     }
 
-    // v3.11.47: estrategias de cookies en cascada. yt-dlp para Instagram (y a
-    // veces TikTok) requiere cookies de sesión. Probamos en orden:
-    //   1) Sin cookies (rápido, funciona para TikTok/YouTube/Twitter/etc)
-    //   2) chrome  (multiplataforma)
-    //   3) safari  (solo Mac)  /  edge (solo Win)
-    //   4) firefox (común en ambos)
-    //   5) brave   (cada vez más popular)
-    // Cookie-related: el stderr menciona "cookies", "Sign in", "authentication", "login required".
+    // v3.11.48: estrategias en orden de MENOR fricción.
+    // Mac: safari NO pide keychain (su DB de cookies es accesible directo).
+    // Win: edge tampoco pide nada. Chrome al final porque en Mac pide el password.
     const isWin = process.platform === 'win32';
     const isMac = process.platform === 'darwin';
     const strategies = [
-      { label: 'sin cookies', args: [] },
-      { label: 'cookies de chrome', args: ['--cookies-from-browser', 'chrome'] }
+      { label: 'sin cookies', args: [] }
     ];
     if (isMac) strategies.push({ label: 'cookies de safari', args: ['--cookies-from-browser', 'safari'] });
     if (isWin) strategies.push({ label: 'cookies de edge', args: ['--cookies-from-browser', 'edge'] });
     strategies.push({ label: 'cookies de firefox', args: ['--cookies-from-browser', 'firefox'] });
     strategies.push({ label: 'cookies de brave', args: ['--cookies-from-browser', 'brave'] });
+    // chrome al final — en Mac pide password del llavero (molesto pero funciona).
+    strategies.push({ label: 'cookies de chrome', args: ['--cookies-from-browser', 'chrome'] });
 
     let lastFail = null;
     for (const strat of strategies) {

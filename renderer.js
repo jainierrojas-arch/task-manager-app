@@ -75,6 +75,13 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.48': {
+    title: 'Cookies cascade ordenado por fricción — Safari/Edge primero, Chrome al final',
+    features: [
+      '🔇 <strong>Sin más prompts de "Permitir Chrome Safe Storage"</strong>: en Mac, Safari va primero (no requiere keychain). En Windows, Edge primero. Chrome queda al final porque en Mac pide el password del llavero para descifrar sus cookies.',
+      '🎯 Por defecto el caso normal pasa silencioso: usás IG en Safari/Edge → la app lee esas cookies sin pedir nada. Si solo usás Chrome, ahí sí va a aparecer el prompt una vez ("Permitir siempre" + password) y nunca más.'
+    ]
+  },
   '3.11.47': {
     title: 'Fix Instagram auth en yt-dlp — cookies del browser en cascada (Chrome → Safari/Edge → Firefox)',
     features: [
