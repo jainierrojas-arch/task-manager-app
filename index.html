@@ -2774,6 +2774,23 @@
             </div>
           </div>
 
+          <!-- v3.11.51: Conectar Instagram (admin) — comparte cookies con todo el workspace -->
+          <div class="settings-group">
+            <div class="settings-label">🔌 Conectar Instagram (para Transcribir)</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+              <button class="btn btn-primary btn-small" id="connectInstagramBtn">Conectar Instagram</button>
+              <button class="btn btn-ghost btn-small" id="disconnectInstagramBtn" style="display:none">Desconectar</button>
+            </div>
+            <div class="status-indicator" id="instagramConnStatus" style="margin-top:6px">
+              <span class="status-dot disconnected"></span>
+              <span>No conectado</span>
+            </div>
+            <div class="telegram-instructions">
+              <p><strong>Por qué:</strong> Instagram requiere cookies para descargar audio de reels. La app abre una ventana de IG, te logueas UNA vez, y las cookies se guardan en Firestore para todo el workspace — el equipo no necesita hacer nada en sus máquinas.</p>
+              <p style="margin-top:6px"><strong>Recomendado:</strong> creá una cuenta de IG aparte (no la tuya personal) para usar acá, así no compartís credenciales sensibles con el equipo.</p>
+            </div>
+          </div>
+
           <div class="settings-group">
             <div class="settings-label">Tema de la interfaz</div>
             <div style="display:flex;gap:8px;flex-wrap:wrap">

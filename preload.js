@@ -65,6 +65,10 @@ contextBridge.exposeInMainWorld('api', {
   extractAudioViaYtDlp: (url) => ipcRenderer.invoke('extract-audio-via-ytdlp', url),
   // v3.11.46: llamada a Whisper/Groq desde Node (más confiable en Windows con firewalls corporativos)
   callTranscriptionApi: (payload) => ipcRenderer.invoke('call-transcription-api', payload),
+  // v3.11.51: conexión a Instagram desde Settings (admin) → comparte cookies con todo el workspace
+  connectInstagram: () => ipcRenderer.invoke('connect-instagram'),
+  saveInstagramCookies: (cookies) => ipcRenderer.invoke('save-instagram-cookies', cookies),
+  hasInstagramCookiesFile: () => ipcRenderer.invoke('has-instagram-cookies-file'),
   // Cloudinary unsigned upload config (para subir archivos directos desde la app)
   getCloudinaryConfig: () => ipcRenderer.invoke('get-cloudinary-config'),
   setCloudinaryConfig: (cfg) => ipcRenderer.invoke('set-cloudinary-config', cfg),
