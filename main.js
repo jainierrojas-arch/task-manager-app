@@ -845,15 +845,20 @@ function registerIpcHandlers() {
         }
         const ytdlpBin = ytdlpPaths[pathIndex++];
         try {
-          // v3.9.19: NO convertir a mp3 (eso requiere ffmpeg) — bajar el formato
-          // nativo (m4a/webm/mp4 según plataforma). Whisper los acepta todos.
-          // Preferir m4a > mp4 > webm para mejor compatibilidad con Whisper.
+          // v3.9.19 + v3.11.40: NO convertir a mp3 (eso requiere ffmpeg) — bajar
+          // el formato nativo (m4a/webm/mp4 según plataforma). Whisper acepta
+          // todos. Selector permisivo con fallback en cascada: si la plataforma
+          // (TikTok, IG nuevo formato) no ofrece bestaudio, cae a best (video
+          // con audio incluido) que Whisper también acepta. Antes daba
+          // "Requested format is not available" en TikTok puntuales.
           proc = spawn(ytdlpBin, [
-            '-f', 'bestaudio[ext=m4a]/bestaudio[ext=mp4]/bestaudio[ext=webm]/bestaudio',
+            '-f', 'bestaudio[ext=m4a]/bestaudio[ext=mp4]/bestaudio[ext=webm]/bestaudio/best[ext=mp4]/best[ext=webm]/best',
             '-o', tempPath,
             '--no-playlist',
             '--no-warnings',
             '--no-progress',
+            '--no-check-certificate',
+            '--max-filesize', '25M',
             platformUrl
           ]);
           attachHandlers();

@@ -2385,19 +2385,30 @@ async function transcribeEntry(entryId, btn) {
       else if (contentType.includes('video/webm') || /\.webm(\?|$)/i.test(audioUrl)) filename = 'audio.webm';
       _setTranscriptionStatus('🎤 Enviando a Whisper...');
     }
+    // v3.11.40: routing automático según el provider del API key.
+    // - Keys de OpenAI (sk-...) van a api.openai.com con model "whisper-1".
+    // - Keys de Groq (gsk_...) van a api.groq.com con model "whisper-large-v3-turbo".
+    // Groq es la alternativa para países bloqueados por OpenAI (Venezuela, Cuba,
+    // Irán, etc) — mismo formato de API, gratis con tier generoso.
+    const isGroqKey = apiKey.startsWith('gsk_');
+    const endpoint = isGroqKey
+      ? 'https://api.groq.com/openai/v1/audio/transcriptions'
+      : 'https://api.openai.com/v1/audio/transcriptions';
+    const modelName = isGroqKey ? 'whisper-large-v3-turbo' : 'whisper-1';
+    const providerLabel = isGroqKey ? 'Groq' : 'Whisper';
     const formData = new FormData();
     formData.append('file', audioBlob, filename);
-    formData.append('model', 'whisper-1');
+    formData.append('model', modelName);
     formData.append('language', 'es');
     // v3.11.39: usar XMLHttpRequest para tener progreso de upload + timeout +
     // heartbeat. Antes fetch() se quedaba congelado en "Enviando a Whisper..."
     // sin feedback ni timeout — los chicos de Windows reportaron cuelgues
     // permanentes con archivos chicos (354KB).
     const sizeKb = Math.round(audioBlob.size / 1024);
-    _setTranscriptionStatus('📤 Subiendo ' + sizeKb + 'KB a Whisper...');
+    _setTranscriptionStatus('📤 Subiendo ' + sizeKb + 'KB a ' + providerLabel + '...');
     const result = await new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', 'https://api.openai.com/v1/audio/transcriptions');
+      xhr.open('POST', endpoint);
       xhr.setRequestHeader('Authorization', 'Bearer ' + apiKey);
       xhr.timeout = 180000; // 3 min — Whisper procesa rápido pero el upload puede ser lento
       let lastTick = Date.now();
@@ -2409,13 +2420,13 @@ async function transcribeEntry(entryId, btn) {
       xhr.upload.addEventListener('progress', (e) => {
         if (e.lengthComputable) {
           const pct = Math.round((e.loaded / e.total) * 100);
-          _setTranscriptionStatus('📤 Subiendo a Whisper... ' + pct + '%');
-          if (pct >= 100) { lastTick = Date.now(); _setTranscriptionStatus('🎤 Whisper transcribiendo...'); }
+          _setTranscriptionStatus('📤 Subiendo a ' + providerLabel + '... ' + pct + '%');
+          if (pct >= 100) { lastTick = Date.now(); _setTranscriptionStatus('🎤 ' + providerLabel + ' transcribiendo...'); }
         }
       });
-      xhr.upload.addEventListener('error', () => { clearInterval(heartbeatTimer); reject(new Error('Error de red subiendo a Whisper. Revisá conexión / firewall.')); });
-      xhr.ontimeout = () => { clearInterval(heartbeatTimer); reject(new Error('Whisper tardó >3 min. Reintenta o usá un video más corto.')); };
-      xhr.onerror = () => { clearInterval(heartbeatTimer); reject(new Error('Error de red. ¿Hay firewall/proxy bloqueando api.openai.com?')); };
+      xhr.upload.addEventListener('error', () => { clearInterval(heartbeatTimer); reject(new Error('Error de red subiendo a ' + providerLabel + '. Revisá conexión / firewall.')); });
+      xhr.ontimeout = () => { clearInterval(heartbeatTimer); reject(new Error(providerLabel + ' tardó >3 min. Reintenta o usá un video más corto.')); };
+      xhr.onerror = () => { clearInterval(heartbeatTimer); reject(new Error('Error de red. ¿Hay firewall/proxy bloqueando ' + providerLabel.toLowerCase() + '.com?')); };
       xhr.onload = () => {
         clearInterval(heartbeatTimer);
         try {
@@ -2423,9 +2434,15 @@ async function transcribeEntry(entryId, btn) {
           if (xhr.status >= 200 && xhr.status < 300) resolve(data);
           else {
             const errMsg = (data.error && data.error.message) ? data.error.message : ('HTTP ' + xhr.status);
-            reject(new Error('Whisper API ' + xhr.status + ': ' + errMsg.slice(0, 300)));
+            // v3.11.40: si OpenAI bloqueó por país (403 unsupported_country_region_territory),
+            // mensaje claro con la solución (cambiar a key de Groq).
+            if (xhr.status === 403 && /country|region|territory/i.test(errMsg)) {
+              reject(new Error('OpenAI bloqueó la request por país (403). Solución: pegá una API key de Groq (https://console.groq.com — gratis, sin bloqueo geográfico). Empieza con gsk_. La app detecta y cambia el endpoint sola.'));
+              return;
+            }
+            reject(new Error(providerLabel + ' API ' + xhr.status + ': ' + errMsg.slice(0, 300)));
           }
-        } catch (e) { reject(new Error('Respuesta inválida de Whisper')); }
+        } catch (e) { reject(new Error('Respuesta inválida de ' + providerLabel)); }
       };
       xhr.send(formData);
     });

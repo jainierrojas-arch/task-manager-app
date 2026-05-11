@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.40': {
+    title: 'Soporte Groq (alternativa a Whisper para países bloqueados) + yt-dlp más robusto',
+    features: [
+      '🌎 <strong>OpenAI bloquea por país? Usá Groq</strong>. Los chicos veían "Whisper API 403: Country, region, or territory not supported" porque OpenAI bloquea Venezuela / Cuba / Irán / etc. La app ahora detecta automáticamente si la API key empieza con <code>gsk_</code> (Groq) y rutea al endpoint de Groq (<code>api.groq.com</code>) que NO tiene bloqueo geográfico.',
+      '🎁 <strong>Groq es GRATIS</strong> con tier generoso (25,000 segundos de audio por día). Misma calidad (whisper-large-v3-turbo, mejor incluso que whisper-1 de OpenAI). Andá a <code>console.groq.com</code>, creá cuenta, generá API key (empieza con gsk_), pegala en Settings → OpenAI API Key. La app la detecta y cambia el endpoint sola.',
+      '🏷 <strong>Status label muestra el provider</strong>: ahora dice "Configurado (OpenAI)" o "Configurado (Groq)" para que sepan qué están usando.',
+      '⚠ <strong>Error 403 con mensaje accionable</strong>: si la key de OpenAI sigue ahí pero OpenAI bloquea el país, el error explícitamente dice "pegá una key de Groq" en vez del mensaje críptico.',
+      '🎬 <strong>yt-dlp más permisivo en TikTok/IG</strong>: antes daba "Requested format is not available" en algunos videos de TikTok porque pedíamos m4a/mp4/webm específicos. Ahora el fallback chain incluye <code>best[ext=mp4]/best[ext=webm]/best</code> — cualquier formato que tenga audio sirve. También se agregó <code>--max-filesize 25M</code> para no bajar videos gigantes que después Whisper no acepta.'
+    ]
+  },
   '3.11.39': {
     title: 'Whisper con progreso real + botón "🎬 Grabación" dedicado en tareas',
     features: [
@@ -8197,7 +8207,9 @@ async function loadOpenaiKey() {
     if (key && openaiApiKeyInput) {
       openaiApiKeyInput.value = key.slice(0, 7) + '...' + key.slice(-4); // máscara
       openaiApiKeyInput.dataset.realKey = key;
-      setOpenaiStatus(true, 'Configurado');
+      // v3.11.40: identificar provider (OpenAI vs Groq) en el label
+      const providerLabel = key.startsWith('gsk_') ? 'Groq' : 'OpenAI';
+      setOpenaiStatus(true, 'Configurado (' + providerLabel + ')');
     } else {
       setOpenaiStatus(false, 'No configurado');
     }
@@ -8209,17 +8221,25 @@ if (saveOpenaiKeyBtn) {
   saveOpenaiKeyBtn.addEventListener('click', async () => {
     const value = (openaiApiKeyInput.value || '').trim();
     if (!value || value.includes('...')) { alert('Pegá una API key nueva.'); return; }
-    if (!value.startsWith('sk-')) { alert('La API key debe empezar con sk-'); return; }
+    // v3.11.40: aceptar OpenAI (sk-...) o Groq (gsk_...) — Groq es alternativa
+    // para países bloqueados por OpenAI, mismo API, gratis.
+    const isOpenAI = value.startsWith('sk-');
+    const isGroq = value.startsWith('gsk_');
+    if (!isOpenAI && !isGroq) {
+      alert('La API key debe empezar con sk- (OpenAI) o gsk_ (Groq).\n\nSi OpenAI te bloquea por país, andá a console.groq.com (gratis) y pegá la key de ahí.');
+      return;
+    }
     try {
       await wsConfigRef('openai').set({
         apiKey: value,
+        provider: isGroq ? 'groq' : 'openai',
         updatedBy: currentUser.email,
         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
       }, { merge: true });
       openaiApiKeyInput.dataset.realKey = value;
       openaiApiKeyInput.value = value.slice(0, 7) + '...' + value.slice(-4);
-      setOpenaiStatus(true, 'Configurado');
-      alert('OpenAI API key guardada para este workspace.');
+      setOpenaiStatus(true, 'Configurado (' + (isGroq ? 'Groq' : 'OpenAI') + ')');
+      alert((isGroq ? 'Groq' : 'OpenAI') + ' API key guardada para este workspace.');
     } catch (e) { alert('Error: ' + e.message); }
   });
 }
