@@ -2774,21 +2774,10 @@
             </div>
           </div>
 
-          <!-- v3.11.52: hidden — la captura de cookies en BrowserWindow embedded NO funciona
-               porque IG detecta que el fingerprint del Chromium incrustado no coincide con
-               Chrome real y rechaza las cookies. Mantenemos el código IPC por si en el futuro
-               se puede saltear esa detección, pero la UI se oculta para no confundir. -->
-          <div class="settings-group" style="display:none">
-            <div class="settings-label">🔌 Conectar Instagram (para Transcribir)</div>
-            <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-              <button class="btn btn-primary btn-small" id="connectInstagramBtn">Conectar Instagram</button>
-              <button class="btn btn-ghost btn-small" id="disconnectInstagramBtn" style="display:none">Desconectar</button>
-            </div>
-            <div class="status-indicator" id="instagramConnStatus" style="margin-top:6px">
-              <span class="status-dot disconnected"></span>
-              <span>No conectado</span>
-            </div>
-          </div>
+          <!-- v3.11.53: el feature de Conectar Instagram se eliminó completamente.
+               IG bot detection rechazaba las cookies del BrowserWindow embedded, y los
+               prompts del llavero eran mala UX. Ahora la app usa scrapers públicos
+               (snapinsta para IG, tikwm para TikTok) que funcionan sin auth ni setup. -->
 
           <div class="settings-group">
             <div class="settings-label">Tema de la interfaz</div>

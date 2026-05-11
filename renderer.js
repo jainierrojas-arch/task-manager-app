@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.53': {
+    title: 'Transcribir SIN LOGINS — scrapers públicos para IG (snapinsta) y TikTok (tikwm)',
+    features: [
+      '🎯 <strong>Fin del drama de cookies y prompts del llavero</strong>: la app ahora usa scrapers públicos que NO requieren auth en ningún lado: <code>snapinsta.app</code> para Instagram y <code>tikwm.com</code> para TikTok. Cero login, cero prompts, cero setup — para vos, el equipo y cualquier cliente futuro.',
+      '🚀 <strong>Cómo funciona ahora</strong>: cuando aprietás Transcribir en un reel de IG/TikTok, la app le manda la URL pública del post al scraper, el scraper devuelve la URL del video, la app la baja y la manda a Groq. Todo automático, todo invisible.',
+      '🛡 <strong>Fallback a yt-dlp</strong> si el scraper se cae: si snapinsta o tikwm están temporalmente fuera, yt-dlp es el plan B (con la lógica de cookies anterior). Pero el caso 99% pasa por scrapers.',
+      '🗑 <strong>Eliminado completamente el feature "Conectar Instagram"</strong> de Settings (no funcionaba bien y solo confundía). Ya no aparece más esa sección.',
+      '⚠ <strong>Notas honestas</strong>: snapinsta y tikwm son servicios no-oficiales que podrían cambiar o caerse sin aviso. Si pasa, integro otros alternativos en minutos. Por ahora son los más estables.'
+    ]
+  },
   '3.11.52': {
     title: 'Honesto sobre el IG block: usá Chrome real (Mac: prompt UNA vez, Win: silencioso)',
     features: [
@@ -7760,10 +7770,6 @@ function switchWorkspace(workspaceId) {
   if (typeof reloadOpenaiKeyOnWorkspaceChange === 'function') {
     reloadOpenaiKeyOnWorkspaceChange().catch(() => {});
   }
-  // v3.11.51: re-sync de cookies de IG al cambiar workspace
-  if (typeof syncInstagramCookiesFromFirestore === 'function') {
-    syncInstagramCookiesFromFirestore().catch(() => {});
-  }
   console.log('[workspaces] switched to', workspaceId);
 }
 
@@ -8378,94 +8384,8 @@ window._getOpenaiApiKey = async function() {
 // setTimeout fijo de 1500ms que en Windows lento se ejecutaba antes de tiempo).
 loadOpenaiKey();
 
-// ===== v3.11.51: Conectar Instagram (admin → comparte cookies con todo el workspace) =====
-const connectIgBtn = document.getElementById('connectInstagramBtn');
-const disconnectIgBtn = document.getElementById('disconnectInstagramBtn');
-const igConnStatusEl = document.getElementById('instagramConnStatus');
-
-function setIgConnStatus(connected, label) {
-  if (!igConnStatusEl) return;
-  const dot = igConnStatusEl.querySelector('.status-dot');
-  const text = igConnStatusEl.querySelector('span:last-child');
-  if (dot) dot.className = 'status-dot ' + (connected ? 'connected' : 'disconnected');
-  if (text) text.textContent = label;
-  if (connectIgBtn) connectIgBtn.textContent = connected ? 'Reconectar Instagram' : 'Conectar Instagram';
-  if (disconnectIgBtn) disconnectIgBtn.style.display = connected ? '' : 'none';
-}
-
-async function syncInstagramCookiesFromFirestore() {
-  try {
-    await _waitForWorkspaceReady();
-    if (!currentWorkspaceId) return;
-    const snap = await wsConfigRef('instagram_cookies').get();
-    if (!snap.exists) { setIgConnStatus(false, 'No conectado'); return; }
-    const data = snap.data() || {};
-    const cookies = Array.isArray(data.cookies) ? data.cookies : [];
-    if (cookies.length === 0) { setIgConnStatus(false, 'No conectado'); return; }
-    // Escribir local para yt-dlp
-    if (window.api && window.api.saveInstagramCookies) {
-      await window.api.saveInstagramCookies(cookies);
-    }
-    const conn = data.connectedAt && data.connectedAt.toDate ? data.connectedAt.toDate() : null;
-    const connStr = conn ? conn.toLocaleDateString() : '?';
-    setIgConnStatus(true, 'Conectado' + (data.userLabel ? ' (' + data.userLabel + ')' : '') + ' · ' + connStr);
-  } catch (e) {
-    console.warn('[ig-cookies] sync failed:', e.message);
-    setIgConnStatus(false, 'Error: ' + e.message);
-  }
-}
-
-if (connectIgBtn) {
-  connectIgBtn.addEventListener('click', async () => {
-    if (!window.api || !window.api.connectInstagram) {
-      alert('Versión vieja del preload — cerrá y reabrí la app.');
-      return;
-    }
-    connectIgBtn.disabled = true;
-    setIgConnStatus(false, 'Esperando login...');
-    try {
-      const res = await window.api.connectInstagram();
-      if (!res || !res.ok) {
-        setIgConnStatus(false, 'No conectado');
-        if (res && res.error && !/cerrada antes/i.test(res.error)) alert(res.error);
-        return;
-      }
-      // Guardar localmente para yt-dlp + en Firestore para el equipo
-      await window.api.saveInstagramCookies(res.cookies);
-      await _waitForWorkspaceReady();
-      if (currentWorkspaceId) {
-        await wsConfigRef('instagram_cookies').set({
-          cookies: res.cookies,
-          userId: res.userId || null,
-          userLabel: res.userId ? ('IG ID ' + res.userId.slice(-6)) : null,
-          connectedBy: currentUser ? currentUser.email : null,
-          connectedAt: firebase.firestore.FieldValue.serverTimestamp()
-        });
-      }
-      setIgConnStatus(true, 'Conectado · acabás de loguear');
-      alert('✓ Instagram conectado. Todo el workspace puede usarlo ahora para Transcribir.');
-    } catch (e) {
-      setIgConnStatus(false, 'Error: ' + e.message);
-      alert('Error: ' + e.message);
-    } finally {
-      connectIgBtn.disabled = false;
-    }
-  });
-}
-
-if (disconnectIgBtn) {
-  disconnectIgBtn.addEventListener('click', async () => {
-    if (!confirm('Desconectar Instagram del workspace? El equipo va a perder la capacidad de transcribir reels de IG hasta que vuelvas a conectar.')) return;
-    try {
-      if (window.api && window.api.saveInstagramCookies) await window.api.saveInstagramCookies([]);
-      await wsConfigRef('instagram_cookies').set({ cookies: [], disconnectedAt: firebase.firestore.FieldValue.serverTimestamp() });
-      setIgConnStatus(false, 'No conectado');
-    } catch (e) { alert('Error: ' + e.message); }
-  });
-}
-
-// Cargar el estado en cuanto el workspace está listo (igual que openai)
-syncInstagramCookiesFromFirestore();
+// v3.11.53: feature "Conectar Instagram" removido — ahora la app usa scrapers
+// públicos (snapinsta / tikwm) que no requieren auth ni setup.
 
 // ===== Botones de upload en el modal Programar =====
 const schedUploadSingleBtn = document.getElementById('schedUploadSingleBtn');

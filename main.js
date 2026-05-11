@@ -958,10 +958,171 @@ function registerIpcHandlers() {
     return binPath;
   }
 
-  // v3.9.17 + v3.11.38: usa yt-dlp para descargar el audio de cualquier plataforma
-  // soportada. Auto-bootstrap si no está instalado en el sistema.
+  // v3.11.53: helpers para scrapers públicos (snapinsta / tikwm).
+  // Ninguno requiere auth: el usuario / el equipo / los clientes no hacen nada.
+  // El scraper hace el trabajo en su server, devuelve URL directa al video,
+  // bajamos esa URL desde nuestra app y la mandamos a Whisper.
+  function httpsGetBuffer(targetUrl, headers, redirectsLeft) {
+    if (typeof redirectsLeft !== 'number') redirectsLeft = 6;
+    const url = require('url');
+    const https = require('https');
+    const http = require('http');
+    const parsed = url.parse(targetUrl);
+    const lib = parsed.protocol === 'http:' ? http : https;
+    return new Promise((resolve, reject) => {
+      const req = lib.request({
+        method: 'GET',
+        hostname: parsed.hostname,
+        port: parsed.port,
+        path: parsed.path,
+        headers: Object.assign({
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36'
+        }, headers || {})
+      }, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          if (redirectsLeft <= 0) return reject(new Error('Demasiados redirects'));
+          res.resume();
+          httpsGetBuffer(res.headers.location, headers, redirectsLeft - 1).then(resolve).catch(reject);
+          return;
+        }
+        if (res.statusCode !== 200) return reject(new Error('HTTP ' + res.statusCode));
+        const chunks = [];
+        res.on('data', (d) => chunks.push(d));
+        res.on('end', () => resolve({ buf: Buffer.concat(chunks), contentType: res.headers['content-type'] || '' }));
+        res.on('error', reject);
+      });
+      req.on('error', reject);
+      req.setTimeout(60000, () => { req.destroy(); reject(new Error('Timeout 60s')); });
+      req.end();
+    });
+  }
+  function httpsPostString(targetUrl, body, headers) {
+    const url = require('url');
+    const https = require('https');
+    const parsed = url.parse(targetUrl);
+    return new Promise((resolve, reject) => {
+      const req = https.request({
+        method: 'POST',
+        hostname: parsed.hostname,
+        port: 443,
+        path: parsed.path,
+        headers: Object.assign({
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+          'Content-Length': Buffer.byteLength(body)
+        }, headers || {})
+      }, (res) => {
+        const chunks = [];
+        res.on('data', (d) => chunks.push(d));
+        res.on('end', () => resolve({ status: res.statusCode, text: Buffer.concat(chunks).toString('utf-8') }));
+        res.on('error', reject);
+      });
+      req.on('error', reject);
+      req.setTimeout(30000, () => { req.destroy(); reject(new Error('Timeout 30s')); });
+      req.write(body);
+      req.end();
+    });
+  }
+
+  // Snapinsta: scraper público para Instagram. Devuelve URL del video.
+  async function scrapeIgViaSnapinsta(igUrl) {
+    const body = 'q=' + encodeURIComponent(igUrl) + '&t=media&lang=en';
+    const res = await httpsPostString('https://snapinsta.app/api/ajaxSearch', body, {
+      'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+      'Origin': 'https://snapinsta.app',
+      'Referer': 'https://snapinsta.app/',
+      'X-Requested-With': 'XMLHttpRequest',
+      'Accept': '*/*'
+    });
+    if (res.status !== 200) throw new Error('snapinsta HTTP ' + res.status);
+    let json;
+    try { json = JSON.parse(res.text); }
+    catch (_) { throw new Error('snapinsta no devolvió JSON'); }
+    if (json.status !== 'ok' || !json.data) throw new Error('snapinsta sin data: ' + (json.mess || 'desconocido'));
+    const html = String(json.data);
+    // Buscar la URL del video — primero la versión sin marca de agua / mp4
+    const patterns = [
+      /href="([^"]+\.mp4[^"]*)"[^>]*>\s*<[^>]*>(?:[^<]*)?Download\s*Video/i,
+      /href="([^"]+\.mp4[^"]*)"/i,
+      /data-href="([^"]+\.mp4[^"]*)"/i,
+      /<a[^>]+href="([^"]+)"[^>]*>\s*Download/i
+    ];
+    for (const p of patterns) {
+      const m = html.match(p);
+      if (m && m[1]) {
+        return m[1].replace(/&amp;/g, '&').replace(/\\\//g, '/');
+      }
+    }
+    throw new Error('snapinsta: no encontré URL del video en la respuesta');
+  }
+
+  // tikwm: scraper público para TikTok. GET JSON con URL del video directa.
+  async function scrapeTiktokViaTikwm(ttUrl) {
+    const fetchUrl = 'https://www.tikwm.com/api/?url=' + encodeURIComponent(ttUrl);
+    const result = await httpsGetBuffer(fetchUrl, { 'Accept': 'application/json' });
+    let json;
+    try { json = JSON.parse(result.buf.toString('utf-8')); }
+    catch (_) { throw new Error('tikwm no devolvió JSON'); }
+    if (json.code !== 0 || !json.data) throw new Error('tikwm error: ' + (json.msg || 'desconocido'));
+    const videoUrl = json.data.hdplay || json.data.play || json.data.wmplay;
+    if (!videoUrl) throw new Error('tikwm: no encontré URL del video');
+    return videoUrl;
+  }
+
+  // Wrapper: prueba el scraper apropiado según la plataforma. Devuelve {ok, data, mimeType, ext} igual que yt-dlp.
+  async function tryPublicScraper(platformUrl) {
+    let videoUrl = null;
+    let provider = '';
+    try {
+      if (/instagram\.com/i.test(platformUrl)) {
+        provider = 'snapinsta';
+        videoUrl = await scrapeIgViaSnapinsta(platformUrl);
+      } else if (/tiktok\.com/i.test(platformUrl)) {
+        provider = 'tikwm';
+        videoUrl = await scrapeTiktokViaTikwm(platformUrl);
+      } else {
+        return { ok: false, skip: true };
+      }
+    } catch (e) {
+      return { ok: false, error: provider + ': ' + e.message, skip: false };
+    }
+    if (!videoUrl) return { ok: false, error: provider + ': URL vacía', skip: false };
+    // Descargar el video desde la URL del scraper. Whisper acepta mp4 con audio incluido.
+    try {
+      const dl = await httpsGetBuffer(videoUrl);
+      const buf = dl.buf;
+      if (buf.length > 25 * 1024 * 1024) {
+        return { ok: false, error: 'Audio/video > 25MB (límite de Whisper). Probá un video más corto.' };
+      }
+      if (buf.length < 5000) {
+        return { ok: false, error: provider + ': descarga muy chica (' + buf.length + ' bytes), URL inválida' };
+      }
+      // Inferir extensión y MIME a partir del content-type o de la URL
+      let ext = 'mp4';
+      let mimeType = 'video/mp4';
+      const ct = (dl.contentType || '').toLowerCase();
+      if (ct.includes('webm')) { ext = 'webm'; mimeType = 'video/webm'; }
+      else if (ct.includes('mpeg') || ct.includes('mp3')) { ext = 'mp3'; mimeType = 'audio/mpeg'; }
+      else if (ct.includes('mp4') || ct.includes('video')) { ext = 'mp4'; mimeType = 'video/mp4'; }
+      return { ok: true, data: buf.toString('base64'), mimeType, ext, size: buf.length, provider };
+    } catch (e) {
+      return { ok: false, error: provider + ' descarga: ' + e.message };
+    }
+  }
+
+  // v3.9.17 + v3.11.38 + v3.11.53: extract-audio-via-ytdlp.
+  // Estrategia: primero scraper público (no requiere auth, ni cookies, ni prompts).
+  // Si la plataforma no es IG/TikTok o el scraper falla, cae a yt-dlp como antes.
   ipcMain.handle('extract-audio-via-ytdlp', async (_, platformUrl) => {
     if (!platformUrl) return { ok: false, error: 'URL vacía' };
+
+    // v3.11.53: scraper público primero — funciona sin auth para IG y TikTok.
+    const scraperRes = await tryPublicScraper(platformUrl);
+    if (scraperRes && scraperRes.ok) {
+      return scraperRes;
+    }
+    // Si el scraper se saltó (otra plataforma) o falló, intentamos yt-dlp.
+    console.log('[extract] scraper resultado:', scraperRes && scraperRes.error ? scraperRes.error : 'skip', '→ cae a yt-dlp');
+
     const os = require('os');
     const { spawn } = require('child_process');
     const tempBasePath = path.join(os.tmpdir(), `tm-transcribe-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
