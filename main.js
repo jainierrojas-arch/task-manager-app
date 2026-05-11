@@ -957,20 +957,29 @@ function registerIpcHandlers() {
       });
     }
 
-    // v3.11.48: estrategias en orden de MENOR fricción.
-    // Mac: safari NO pide keychain (su DB de cookies es accesible directo).
-    // Win: edge tampoco pide nada. Chrome al final porque en Mac pide el password.
+    // v3.11.49: SOLO browsers que NO requieren el llavero del OS.
+    // - Safari (Mac): cookies en DB local accesible sin keychain.
+    // - Firefox: cookies en su propio DB, sin keychain.
+    // - Edge (Win): mismas cookies que Chrome PERO Windows no pide credencial.
+    // Excluidos en Mac: Chrome y Brave porque ambos disparan prompt del llavero
+    // "Permitir Safe Storage" que es horrible UX. Si el usuario solo usa esos,
+    // que inicie sesión en Safari/Firefox una vez (o lo activamos opt-in luego).
     const isWin = process.platform === 'win32';
     const isMac = process.platform === 'darwin';
     const strategies = [
       { label: 'sin cookies', args: [] }
     ];
-    if (isMac) strategies.push({ label: 'cookies de safari', args: ['--cookies-from-browser', 'safari'] });
-    if (isWin) strategies.push({ label: 'cookies de edge', args: ['--cookies-from-browser', 'edge'] });
-    strategies.push({ label: 'cookies de firefox', args: ['--cookies-from-browser', 'firefox'] });
-    strategies.push({ label: 'cookies de brave', args: ['--cookies-from-browser', 'brave'] });
-    // chrome al final — en Mac pide password del llavero (molesto pero funciona).
-    strategies.push({ label: 'cookies de chrome', args: ['--cookies-from-browser', 'chrome'] });
+    if (isMac) {
+      strategies.push({ label: 'cookies de safari', args: ['--cookies-from-browser', 'safari'] });
+      strategies.push({ label: 'cookies de firefox', args: ['--cookies-from-browser', 'firefox'] });
+    } else if (isWin) {
+      strategies.push({ label: 'cookies de edge', args: ['--cookies-from-browser', 'edge'] });
+      strategies.push({ label: 'cookies de chrome', args: ['--cookies-from-browser', 'chrome'] });
+      strategies.push({ label: 'cookies de firefox', args: ['--cookies-from-browser', 'firefox'] });
+    } else {
+      strategies.push({ label: 'cookies de firefox', args: ['--cookies-from-browser', 'firefox'] });
+      strategies.push({ label: 'cookies de chrome', args: ['--cookies-from-browser', 'chrome'] });
+    }
 
     let lastFail = null;
     for (const strat of strategies) {
@@ -1004,10 +1013,16 @@ function registerIpcHandlers() {
     // Todas las estrategias fallaron
     let errMsg;
     const r = lastFail || {};
+    const looksLikeIgAuth = /cookie|sign[- ]in|log[- ]?in required|authentication|403/i.test(r.stderr || '');
     if (r.timedOut) {
       errMsg = 'yt-dlp timeout (180s). El video puede ser muy largo o la red está lenta. ';
       errMsg += 'Última actividad: ' + ((r.stdoutLast || '').trim() || 'sin output').slice(-150);
       if (r.stderr) errMsg += ' | stderr: ' + r.stderr.trim().slice(-150);
+    } else if (looksLikeIgAuth && /instagram/i.test(platformUrl)) {
+      // v3.11.49: error claro y accionable para el caso IG-auth
+      errMsg = 'Instagram requiere cookies de sesión y la app no encontró un browser donde estés logueado en IG. Iniciá sesión en Instagram desde ' +
+        (isMac ? 'Safari o Firefox' : isWin ? 'Edge, Chrome o Firefox' : 'Firefox o Chrome') +
+        ' (visitando instagram.com y poniendo tus credenciales), después reintentá Transcribir. La app va a leer esas cookies automáticamente.';
     } else {
       const stderrTrim = (r.stderr || '').trim();
       errMsg = stderrTrim

@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.49': {
+    title: 'Stop a los prompts del llavero — solo browsers sin keychain en la cascada',
+    features: [
+      '🚫 <strong>Eliminados Brave y Chrome de la cascada en Mac</strong>. Esos dos guardan cookies encriptadas con clave del llavero, lo que dispara el popup "Permitir Safe Storage" cada vez que pasaba la cascada. En Mac ahora solo prueba Safari y Firefox (sin keychain, silencioso).',
+      '🪟 <strong>En Windows</strong>: prueba Edge, Chrome y Firefox (Windows no pide credencial para cookies de browser).',
+      '💡 <strong>Si fallan ambos (Safari + Firefox)</strong>: error claro y accionable — "Iniciá sesión en Instagram desde Safari o Firefox, después reintentá". No más cryptic yt-dlp output.'
+    ]
+  },
   '3.11.48': {
     title: 'Cookies cascade ordenado por fricción — Safari/Edge primero, Chrome al final',
     features: [
