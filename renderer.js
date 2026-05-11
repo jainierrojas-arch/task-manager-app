@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.39': {
+    title: 'Whisper con progreso real + botón "🎬 Grabación" dedicado en tareas',
+    features: [
+      '📤 <strong>Whisper ya no se cuelga en "Enviando..."</strong>: cambiamos <code>fetch</code> por <code>XMLHttpRequest</code> con upload progress + heartbeat. Ahora ves "Subiendo 47%..." → "Whisper transcribiendo... (12s)" → resultado. Antes Windows se quedaba sin feedback y sin timeout.',
+      '⏱ <strong>Timeout de 3 minutos</strong> con mensaje claro: "Whisper tardó >3 min. Reintenta o usá un video más corto." Antes el fetch podía quedarse esperando para siempre.',
+      '🛡 <strong>Errores de red explícitos</strong>: si hay firewall/proxy bloqueando api.openai.com, ahora lo dice. Antes te quedabas viendo el spinner sin saber qué pasaba.',
+      '🎬 <strong>Botón "🎬 Grabación" en cada tarea</strong>: cuando el video viene del recorder del celular, en la tarea aparece un chip naranja "🎬 Grabación" (al lado o en lugar del "Video de referencia"). Click → abre el video directo en el browser, sin pasar por la edición. Si grabaste más de uno, dice "🎬 Grabación (3)".',
+      '🔁 <strong>Propagación automática a tareas ya asignadas</strong>: si grababas DESPUÉS de asignar la entry a alguien, la tarea quedaba sin el botón. Ahora <code>_attachRecordedVideoToEntry</code> también busca tareas con <code>depositEntryId</code> matching y les agrega el video.'
+    ]
+  },
   '3.11.38': {
     title: 'Transcribir ya funciona en Windows — yt-dlp se auto-descarga, sin instalación manual',
     features: [
@@ -4231,8 +4241,15 @@ function renderPersonalList() {
       linkBadge = `<span class="task-tag" style="background:rgba(153,102,255,0.2);color:#b794ff;cursor:pointer" onclick="openTaskLink('personalTasks','${task.id}')" title="${esc(task.link)}">🔗 Abrir material</span>`;
     }
     let videoBadge = '';
-    if (task.videoLink) {
-      videoBadge = `<span class="task-tag" style="background:rgba(255,90,90,0.2);color:#ff8a8a;cursor:pointer" onclick="openTaskVideo('personalTasks','${task.id}')" title="${esc(task.videoLink)}">🎬 Video de referencia</span>`;
+    // v3.11.39: badge dedicado para grabaciones del celular en tareas personales
+    const recVidsP = Array.isArray(task.recordedVideos) ? task.recordedVideos : [];
+    const lastRecordedUrlP = recVidsP.length > 0 ? recVidsP[recVidsP.length - 1].url : '';
+    if (lastRecordedUrlP) {
+      const lbl = recVidsP.length > 1 ? `🎬 Grabación (${recVidsP.length})` : '🎬 Grabación';
+      videoBadge += `<span class="task-tag" style="background:rgba(255,128,64,0.22);color:#ff9866;border:1px solid rgba(255,128,64,0.45);cursor:pointer;font-weight:600" onclick="window.api.openExternal('${esc(lastRecordedUrlP)}')" title="Abrir video grabado desde el celular">${lbl}</span>`;
+    }
+    if (task.videoLink && task.videoLink !== lastRecordedUrlP) {
+      videoBadge += `<span class="task-tag" style="background:rgba(255,90,90,0.2);color:#ff8a8a;cursor:pointer" onclick="openTaskVideo('personalTasks','${task.id}')" title="${esc(task.videoLink)}">🎬 Video de referencia</span>`;
     }
     const linkBtn = task.link
       ? `<button class="btn-add-note" onclick="showLinkModal('personalTasks','${task.id}')" title="Editar link">✏️ Link</button>`
@@ -4917,8 +4934,20 @@ function renderTaskList(container, taskList, mode) {
 
       // Video de referencia badge + edit
       let videoBadge = '';
-      if (task.videoLink) {
-        videoBadge = `<span class="task-tag" style="background:rgba(255,90,90,0.2);color:#ff8a8a;cursor:pointer" onclick="openTaskVideo('tasks','${task.id}')" title="${esc(task.videoLink)}">🎬 Video de referencia</span>`;
+      // v3.11.39: si la tarea tiene video grabado desde el celular, mostrar un badge
+      // dedicado "🎬 Grabación" (separado del "Video de referencia" que es el reel de IG).
+      // Click abre el video grabado directo en external. Usuario lo pidió explícitamente.
+      const recVideos = Array.isArray(task.recordedVideos) ? task.recordedVideos : [];
+      const lastRecordedUrl = recVideos.length > 0 ? recVideos[recVideos.length - 1].url : '';
+      const recCount = recVideos.length;
+      if (lastRecordedUrl) {
+        const recLabel = recCount > 1 ? `🎬 Grabación (${recCount})` : '🎬 Grabación';
+        videoBadge += `<span class="task-tag" style="background:rgba(255,128,64,0.22);color:#ff9866;border:1px solid rgba(255,128,64,0.45);cursor:pointer;font-weight:600" onclick="window.api.openExternal('${esc(lastRecordedUrl)}')" title="Abrir video grabado desde el celular">${recLabel}</span>`;
+      }
+      // El "Video de referencia" tradicional (videoLink) solo se muestra si NO coincide con la grabación,
+      // para no duplicar botones cuando el assigner copia recordedUrl → videoLink.
+      if (task.videoLink && task.videoLink !== lastRecordedUrl) {
+        videoBadge += `<span class="task-tag" style="background:rgba(255,90,90,0.2);color:#ff8a8a;cursor:pointer" onclick="openTaskVideo('tasks','${task.id}')" title="${esc(task.videoLink)}">🎬 Video de referencia</span>`;
       }
       let videoBtn = '';
       if (canAddMeta) {

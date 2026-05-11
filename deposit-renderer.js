@@ -2389,16 +2389,46 @@ async function transcribeEntry(entryId, btn) {
     formData.append('file', audioBlob, filename);
     formData.append('model', 'whisper-1');
     formData.append('language', 'es');
-    const whisperRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + apiKey },
-      body: formData
+    // v3.11.39: usar XMLHttpRequest para tener progreso de upload + timeout +
+    // heartbeat. Antes fetch() se quedaba congelado en "Enviando a Whisper..."
+    // sin feedback ni timeout — los chicos de Windows reportaron cuelgues
+    // permanentes con archivos chicos (354KB).
+    const sizeKb = Math.round(audioBlob.size / 1024);
+    _setTranscriptionStatus('📤 Subiendo ' + sizeKb + 'KB a Whisper...');
+    const result = await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', 'https://api.openai.com/v1/audio/transcriptions');
+      xhr.setRequestHeader('Authorization', 'Bearer ' + apiKey);
+      xhr.timeout = 180000; // 3 min — Whisper procesa rápido pero el upload puede ser lento
+      let lastTick = Date.now();
+      let heartbeatTimer = setInterval(() => {
+        const elapsed = Math.round((Date.now() - lastTick) / 1000);
+        if (xhr.readyState === 4) { clearInterval(heartbeatTimer); return; }
+        if (elapsed > 5) _setTranscriptionStatus('⏳ Procesando en Whisper... (' + elapsed + 's)');
+      }, 2000);
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable) {
+          const pct = Math.round((e.loaded / e.total) * 100);
+          _setTranscriptionStatus('📤 Subiendo a Whisper... ' + pct + '%');
+          if (pct >= 100) { lastTick = Date.now(); _setTranscriptionStatus('🎤 Whisper transcribiendo...'); }
+        }
+      });
+      xhr.upload.addEventListener('error', () => { clearInterval(heartbeatTimer); reject(new Error('Error de red subiendo a Whisper. Revisá conexión / firewall.')); });
+      xhr.ontimeout = () => { clearInterval(heartbeatTimer); reject(new Error('Whisper tardó >3 min. Reintenta o usá un video más corto.')); };
+      xhr.onerror = () => { clearInterval(heartbeatTimer); reject(new Error('Error de red. ¿Hay firewall/proxy bloqueando api.openai.com?')); };
+      xhr.onload = () => {
+        clearInterval(heartbeatTimer);
+        try {
+          const data = JSON.parse(xhr.responseText || '{}');
+          if (xhr.status >= 200 && xhr.status < 300) resolve(data);
+          else {
+            const errMsg = (data.error && data.error.message) ? data.error.message : ('HTTP ' + xhr.status);
+            reject(new Error('Whisper API ' + xhr.status + ': ' + errMsg.slice(0, 300)));
+          }
+        } catch (e) { reject(new Error('Respuesta inválida de Whisper')); }
+      };
+      xhr.send(formData);
     });
-    if (!whisperRes.ok) {
-      const errText = await whisperRes.text().catch(() => '');
-      throw new Error('Whisper API ' + whisperRes.status + ': ' + errText.slice(0, 300));
-    }
-    const result = await whisperRes.json();
     const transcript = (result.text || '').trim();
     if (!transcript) throw new Error('Transcripción vacía. ¿El video tiene audio?');
     await db.collection('depositEntries').doc(entryId).update({
@@ -3005,15 +3035,31 @@ async function _attachRecordedVideoToEntry(entryId, videoUrl) {
   // v3.10.2: trackeo separado de videos grabados desde el celular para mostrarlos
   // como botón visible en la card y propagarlos al asignar tarea.
   const recordedVideos = Array.isArray(data.recordedVideos) ? data.recordedVideos.slice() : [];
-  recordedVideos.push({
+  const newRec = {
     url: videoUrl,
     recordedAt: new Date().toISOString(),
     sessionId: _phoneRecSessionId || null
-  });
+  };
+  recordedVideos.push(newRec);
   const update = { mediaUrls, recordedVideos };
   // Si no había cover, usar el video como cover (Cloudinary genera thumb)
   if (!data.coverImage) update.coverImage = videoUrl;
   await ref.update(update);
+  // v3.11.39: propagar a tareas existentes ya creadas desde esta entry. Antes,
+  // si grababas DESPUÉS de asignar, la tarea quedaba sin el botón "🎬 Grabación".
+  try {
+    const tasksSnap = await db.collection('tasks').where('depositEntryId', '==', entryId).get();
+    for (const tDoc of tasksSnap.docs) {
+      const t = tDoc.data() || {};
+      const tRecs = Array.isArray(t.recordedVideos) ? t.recordedVideos.slice() : [];
+      if (tRecs.some(r => r && r.url === videoUrl)) continue;
+      tRecs.push(newRec);
+      const tUpdate = { recordedVideos: tRecs };
+      // Si la tarea no tenía videoLink, usar el grabado para que también sea su preview.
+      if (!t.videoLink) tUpdate.videoLink = videoUrl;
+      await tDoc.ref.update(tUpdate);
+    }
+  } catch (e) { console.warn('[recorded->tasks] no se pudo propagar:', e.message); }
 }
 
 // Wireup del modal phone recorder
