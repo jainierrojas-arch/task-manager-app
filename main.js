@@ -1467,6 +1467,105 @@ function initAutoUpdater() {
   }, 30 * 60 * 1000);
 }
 
+// ===== Custom updater (v3.11.35) =====
+// Bypasses la restricción de firma de macOS de electron-updater. Descarga el
+// ZIP de GitHub releases manualmente, descomprime con `unzip`, reemplaza la
+// app en /Applications con un helper script, y reabre.
+const os = require('os');
+const https = require('https');
+const { spawn } = require('child_process');
+
+let _pendingUpdateZipPath = null;
+let _pendingUpdateVersion = null;
+
+function downloadFile(url, destPath, onProgress) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, (res) => {
+      // GitHub usa redirects para los release assets
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        res.resume();
+        return downloadFile(res.headers.location, destPath, onProgress).then(resolve).catch(reject);
+      }
+      if (res.statusCode !== 200) {
+        res.resume();
+        return reject(new Error(`HTTP ${res.statusCode}`));
+      }
+      const total = parseInt(res.headers['content-length'] || '0', 10);
+      let downloaded = 0;
+      const file = fs.createWriteStream(destPath);
+      res.on('data', (chunk) => {
+        downloaded += chunk.length;
+        if (total > 0 && typeof onProgress === 'function') {
+          onProgress(Math.round((downloaded / total) * 100), downloaded, total);
+        }
+      });
+      res.pipe(file);
+      file.on('finish', () => { file.close(() => resolve(destPath)); });
+      file.on('error', reject);
+    });
+    req.on('error', reject);
+    req.setTimeout(120000, () => { req.destroy(new Error('Download timeout')); });
+  });
+}
+
+ipcMain.handle('custom-download-update', async (_, { url, version }) => {
+  try {
+    if (!url || !version) return { ok: false, error: 'url y version requeridos' };
+    const tmpDir = path.join(os.tmpdir(), 'taskmgr-update');
+    try { fs.mkdirSync(tmpDir, { recursive: true }); } catch (_) {}
+    const zipPath = path.join(tmpDir, `taskmgr-${version}.zip`);
+    // Limpieza de descarga previa
+    try { if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath); } catch (_) {}
+    await downloadFile(url, zipPath, (pct) => {
+      if (mainWindow) mainWindow.webContents.send('custom-update-progress', { pct, version });
+    });
+    _pendingUpdateZipPath = zipPath;
+    _pendingUpdateVersion = version;
+    if (mainWindow) mainWindow.webContents.send('custom-update-ready', { version });
+    return { ok: true, path: zipPath };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('custom-install-update', async () => {
+  if (!_pendingUpdateZipPath || !fs.existsSync(_pendingUpdateZipPath)) {
+    return { ok: false, error: 'No hay update descargada' };
+  }
+  const currentAppPath = app.getAppPath().replace(/\/Contents\/Resources\/app(\.asar)?$/, '');
+  // currentAppPath debería ser tipo /Applications/Task Manager.app
+  // Escribir helper script que se ejecuta después de que la app cierre
+  const helperScriptPath = path.join(os.tmpdir(), `taskmgr-installer-${Date.now()}.sh`);
+  const escapedZip = _pendingUpdateZipPath.replace(/"/g, '\\"');
+  const escapedApp = currentAppPath.replace(/"/g, '\\"');
+  const helperScript = `#!/bin/bash
+set -e
+sleep 2
+TMPDIR=$(mktemp -d /tmp/taskmgr-extract.XXXXXX)
+echo "Extracting to $TMPDIR..."
+/usr/bin/unzip -q -o "${escapedZip}" -d "$TMPDIR"
+NEW_APP=$(find "$TMPDIR" -maxdepth 2 -name "*.app" | head -1)
+if [ -z "$NEW_APP" ]; then
+  echo "ERROR: No .app found in zip" >&2
+  exit 1
+fi
+echo "Replacing ${escapedApp}..."
+/bin/rm -rf "${escapedApp}"
+/bin/mv "$NEW_APP" "${escapedApp}"
+/usr/bin/xattr -dr com.apple.quarantine "${escapedApp}" 2>/dev/null || true
+echo "Opening new app..."
+/usr/bin/open "${escapedApp}"
+/bin/rm -rf "$TMPDIR"
+/bin/rm -f "${escapedZip}"
+`;
+  fs.writeFileSync(helperScriptPath, helperScript, { mode: 0o755 });
+  // Lanzar el script detached para que sobreviva al quit de la app
+  spawn('/bin/bash', [helperScriptPath], { detached: true, stdio: 'ignore' }).unref();
+  // Quit la app — el script se ejecuta y reabre la nueva versión
+  setTimeout(() => { app.quit(); }, 200);
+  return { ok: true };
+});
+
 // v3.11.34: handler para chequeo manual desde el botón en Config
 ipcMain.handle('check-for-updates', async () => {
   try {

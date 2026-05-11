@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.35': {
+    title: 'Auto-instalador real (sin links manuales) — bypasses macOS signing',
+    features: [
+      '🚀 <strong>Auto-instalador propio implementado</strong>: cuando la app detecta una versión nueva, ahora DESCARGA el ZIP automáticamente en background y muestra un banner que dice "✅ vX.X.X lista — click para instalar".',
+      '⚙ <strong>Cómo funciona</strong>: al click, la app escribe un helper script bash en /tmp, lo lanza detached, y se cierra. El script espera 2s, descomprime el zip, reemplaza /Applications/Task Manager.app, y reabre la app nueva. Todo automático.',
+      '🔓 <strong>Bypassea la restricción de firma de macOS</strong>: electron-updater por defecto falla en apps sin firmar. Mi instalador custom no usa Squirrel.Mac — solo unzip + mv + open, que funciona en cualquier app.',
+      '📊 <strong>Banner muestra progreso</strong>: "Descargando 45%..." → "Lista — click para instalar" → "Instalando... reabriendo sola".',
+      '⚠ <strong>IMPORTANTE</strong>: tu equipo ya tiene esta capacidad pero TIENE que estar en una versión que la incluya. Una vez que pasen a v3.11.35+, todas las futuras updates se aplican con un solo click sin descargas manuales.'
+    ]
+  },
   '3.11.34': {
     title: 'Auto-update mejorado: diálogo nativo + banner gigante + botón manual',
     features: [
@@ -8589,17 +8599,69 @@ async function startManualUpdateChecker(currentVersion) {
   setInterval(tryCheck, 30 * 60 * 1000);
 }
 
+let _customUpdateState = 'idle'; // idle | downloading | ready | installing
 function showManualUpdateBanner(latest, currentVersion) {
   const banner = document.getElementById('updateBanner');
   const text = document.getElementById('updateText');
   if (!banner || !text) return;
   banner.style.display = 'block';
-  banner.style.background = '#4ecdc4';
-  banner.style.color = '#0a0c10';
   banner.style.cursor = 'pointer';
+  // v3.11.35: si tenemos downloadUrl Y el handler IPC custom, descargar e
+  // instalar AUTOMÁTICAMENTE sin que el usuario tenga que ir a GitHub.
+  if (latest.downloadUrl && window.api && window.api.customDownloadUpdate) {
+    if (_customUpdateState === 'idle') {
+      _customUpdateState = 'downloading';
+      text.textContent = `⬇ Descargando v${latest.version}... 0%`;
+      banner.onclick = null; // no clickeable mientras descarga
+      // Escuchar progreso
+      window.api.onCustomUpdateProgress(({ pct, version }) => {
+        if (version !== latest.version) return;
+        text.textContent = `⬇ Descargando v${latest.version}... ${pct}%`;
+      });
+      window.api.onCustomUpdateReady(({ version }) => {
+        if (version !== latest.version) return;
+        _customUpdateState = 'ready';
+        text.textContent = `✅ v${latest.version} lista — click para instalar y reabrir`;
+        banner.style.cursor = 'pointer';
+        banner.onclick = async () => {
+          if (_customUpdateState === 'installing') return;
+          _customUpdateState = 'installing';
+          text.textContent = `⏳ Instalando v${latest.version}... la app se va a reabrir sola`;
+          banner.onclick = null;
+          try {
+            await window.api.customInstallUpdate();
+          } catch (e) {
+            text.textContent = `⚠ Error: ${e.message}`;
+            _customUpdateState = 'ready'; // permitir reintentar
+          }
+        };
+      });
+      // Iniciar descarga
+      window.api.customDownloadUpdate({ url: latest.downloadUrl, version: latest.version })
+        .then((result) => {
+          if (!result || !result.ok) {
+            _customUpdateState = 'idle';
+            text.textContent = `⚠ Error descargando: ${result && result.error || 'desconocido'} — click para abrir página`;
+            banner.onclick = () => {
+              const url = latest.downloadUrl || latest.htmlUrl;
+              if (window.api && window.api.openExternal) window.api.openExternal(url);
+            };
+          }
+        })
+        .catch((e) => {
+          _customUpdateState = 'idle';
+          text.textContent = `⚠ Error: ${e.message} — click para abrir página`;
+          banner.onclick = () => {
+            const url = latest.downloadUrl || latest.htmlUrl;
+            if (window.api && window.api.openExternal) window.api.openExternal(url);
+          };
+        });
+    }
+    return;
+  }
+  // Fallback: solo abrir el browser con el link (cuando la API custom no está)
   text.textContent = `🎉 v${latest.version} disponible (tenés v${currentVersion}) — click para descargar`;
   banner.onclick = () => {
-    // Abrir el .zip directo si lo tenemos, sino la página de release
     const url = latest.downloadUrl || latest.htmlUrl;
     if (url && window.api && window.api.openExternal) {
       window.api.openExternal(url);

@@ -50,6 +50,10 @@ contextBridge.exposeInMainWorld('api', {
   onUpdateStatus: (callback) => ipcRenderer.on('update-status', (_, data) => callback(data)),
   installUpdate: () => ipcRenderer.invoke('install-update'),
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+  customDownloadUpdate: ({ url, version }) => ipcRenderer.invoke('custom-download-update', { url, version }),
+  customInstallUpdate: () => ipcRenderer.invoke('custom-install-update'),
+  onCustomUpdateProgress: (callback) => ipcRenderer.on('custom-update-progress', (_, data) => callback(data)),
+  onCustomUpdateReady: (callback) => ipcRenderer.on('custom-update-ready', (_, data) => callback(data)),
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   refreshAllWindows: () => ipcRenderer.invoke('refresh-all-windows'),
 
