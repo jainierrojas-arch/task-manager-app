@@ -893,8 +893,12 @@ function setupRemoteCommandListener() {
   }
 
   // (2) Silent audio loop para que iOS rute los volume keys a nosotros.
-  function makeSilentWavUrl(seconds) {
-    const sampleRate = 8000;
+  // v3.11.59: en lugar de samples 100% cero (que iOS detecta como "no audio"),
+  // generamos ruido casi imperceptible (-60dB) para que iOS lo trate como media
+  // playing real y rutee los volume keys via media volume (capturable) en lugar
+  // de ringer volume (no capturable).
+  function makeNoiseWavUrl(seconds) {
+    const sampleRate = 22050;
     const numSamples = sampleRate * seconds;
     const buffer = new ArrayBuffer(44 + numSamples * 2);
     const view = new DataView(buffer);
@@ -904,6 +908,11 @@ function setupRemoteCommandListener() {
     view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * 2, true);
     view.setUint16(32, 2, true); view.setUint16(34, 16, true); ws(36, 'data');
     view.setUint32(40, numSamples * 2, true);
+    // Ruido casi imperceptible: amplitud ~30 (sobre 32768 max) ≈ -60dB
+    for (let i = 0; i < numSamples; i++) {
+      const sample = (Math.random() - 0.5) * 60;
+      view.setInt16(44 + i * 2, Math.round(sample), true);
+    }
     return URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }));
   }
   let _audioEl = null;
@@ -919,14 +928,25 @@ function setupRemoteCommandListener() {
   function setupSilentAudio() {
     if (_audioEl) { ensureSilentAudioPlaying(); return; }
     try {
-      _audioUrl = makeSilentWavUrl(5);
-      _audioEl = new Audio(_audioUrl);
+      _audioUrl = makeNoiseWavUrl(5);
+      // v3.11.59: crear el <audio> en el DOM (algunos sandboxes de iOS PWA
+      // bloquean Audio() de JS pero permiten <audio> en DOM)
+      _audioEl = document.createElement('audio');
+      _audioEl.src = _audioUrl;
       _audioEl.loop = true;
       _audioEl.preload = 'auto';
-      _audioEl.muted = false; // tiene que ser unmuted para que iOS lo cuente como media
+      _audioEl.muted = false;
       _audioEl.volume = 0.5;
       _audioEl.setAttribute('playsinline', '');
-      _audioEl.play().catch(e => console.warn('[ios-vol] play blocked:', e.message));
+      _audioEl.setAttribute('webkit-playsinline', '');
+      _audioEl.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;top:-100px';
+      document.body.appendChild(_audioEl);
+      _audioEl.play().then(() => {
+        logRemoteEvent('audio playing ✓ (noise -60dB)');
+      }).catch(e => {
+        logRemoteEvent('audio play BLOCKED: ' + e.message);
+        console.warn('[ios-vol] play blocked:', e.message);
+      });
       _lastVol = 0.5;
       _audioEl.addEventListener('volumechange', () => {
         const now = Date.now();
@@ -940,8 +960,17 @@ function setupRemoteCommandListener() {
           _lastVol = 0.5;
         }
       });
-      _audioEl.addEventListener('pause', () => logRemoteEvent('audio.pause (iOS lo paró)'));
+      _audioEl.addEventListener('pause', () => {
+        logRemoteEvent('audio.pause (iOS lo paró)');
+        // Intentar resumir
+        setTimeout(() => { _audioEl.play().catch(() => {}); }, 100);
+      });
       _audioEl.addEventListener('play', () => logRemoteEvent('audio.play'));
+      _audioEl.addEventListener('ended', () => {
+        logRemoteEvent('audio.ended (reiniciando)');
+        _audioEl.currentTime = 0;
+        _audioEl.play().catch(() => {});
+      });
       // Watchdog: cada 2s checkear que está playing
       setInterval(ensureSilentAudioPlaying, 2000);
     } catch (e) { console.warn('[ios-vol] setup failed', e.message); }

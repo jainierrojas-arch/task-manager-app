@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.59': {
+    title: 'Último intento iOS remote: ruido casi imperceptible (-60dB) en lugar de silencio total',
+    features: [
+      '🔊 <strong>Cambio clave</strong>: el audio que generamos para captar los volume keys ahora tiene ruido casi imperceptible (-60dB de amplitud) en lugar de samples 100% cero. Hipótesis: iOS detectaba el silencio puro y lo desclasificaba como "no media playing" → ruteaba los volume keys al ringer del sistema. Con ruido sub-audible, iOS debería tratarlo como media activo y rutear el volumen vía media (capturable por la app).',
+      '📻 <strong>Audio element en el DOM</strong>: ahora insertamos un <code>&lt;audio&gt;</code> en el DOM (posicionado fuera de pantalla) en lugar de usar <code>new Audio()</code> de JS. Algunos sandboxes de iOS PWA tratan distinto los elementos del DOM.',
+      '🛡 <strong>Auto-resume si iOS lo pausa</strong>: cuando el audio se pausa o termina (común cuando MediaRecorder agarra el mic), automáticamente se reinicia. Antes podía quedar muerto y no captar nada.',
+      '🩺 <strong>Más debug en el overlay</strong>: ahora vas a ver "audio playing ✓ (noise -60dB)" cuando arranca, "audio.pause" si iOS lo mata, "volumechange → X.XX" si captura el botón. Si no aparece NINGUNO de esos al apretar el remote, iOS PWA bloqueó 100% y no hay forma técnica.',
+      '🎯 <strong>Cómo probar</strong>: reinstalá la PWA, abrí recorder, primer tap para activar, triple-tap para ver el debug overlay, apretá el remote. Mandame screenshot.'
+    ]
+  },
   '3.11.58': {
     title: 'Debug overlay del control remoto — descubrí qué manda tu gimbal',
     features: [
