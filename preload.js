@@ -49,6 +49,7 @@ contextBridge.exposeInMainWorld('api', {
   // Auto-update
   onUpdateStatus: (callback) => ipcRenderer.on('update-status', (_, data) => callback(data)),
   installUpdate: () => ipcRenderer.invoke('install-update'),
+  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   refreshAllWindows: () => ipcRenderer.invoke('refresh-all-windows'),
 

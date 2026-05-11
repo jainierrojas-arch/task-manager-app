@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.34': {
+    title: 'Auto-update mejorado: diálogo nativo + banner gigante + botón manual',
+    features: [
+      '🚨 <strong>Banner de update ahora gigante y animado</strong>: gradiente turquesa→violeta con pulse animation. Es imposible ignorarlo. Antes era un strip de 12px que se perdía.',
+      '💬 <strong>Diálogo NATIVO cuando la update está lista</strong>: aparece un cuadro de diálogo de macOS con "Instalar ahora" / "Más tarde". Click "Instalar ahora" → app reinicia con la nueva versión.',
+      '🔄 <strong>Botón "Buscar actualizaciones ahora"</strong> en Config (al inicio de la pestaña). Forzá el chequeo manual. Te dice si hay update nueva o si estás en la última.',
+      '⚠ <strong>Tip importante para el equipo</strong>: cuando cierran la app con ✕ (X), la app NO se quita — solo se esconde y sigue corriendo. Las updates se instalan al hacer <strong>Quit</strong> (Cmd+Q) y reabrir. Recomendales que usen Quit cuando ven el diálogo.',
+      '🛡 <strong>Doble sistema</strong>: electron-updater (auto-download + restart) + GitHub API fallback (link de descarga manual). El que funcione primero gana.'
+    ]
+  },
   '3.11.32': {
     title: 'Unión de clips REAL via ffmpeg.wasm + botón Volver más accesible',
     features: [
@@ -8481,11 +8491,50 @@ window.api.getAppVersion().then(v => {
     div.textContent = 'Task Manager v' + v;
     versionEl.appendChild(div);
   }
-  // v3.11.31: chequeo manual de actualizaciones via GitHub API porque la app
-  // no está code-signed (Apple Developer Account requerido $99/año) y
-  // electron-updater falla silenciosamente en macOS sin firma. Este fallback
-  // chequea GitHub releases directo y muestra el banner con link de descarga.
+  // v3.11.31: fallback GitHub API checker (en caso de que electron-updater falle)
   startManualUpdateChecker(v);
+  // v3.11.34: botón "Buscar actualizaciones" en Config
+  const checkBtn = document.getElementById('settingsCheckUpdates');
+  const checkStatus = document.getElementById('settingsUpdateStatus');
+  if (checkBtn && checkStatus) {
+    checkBtn.addEventListener('click', async () => {
+      checkBtn.disabled = true;
+      checkBtn.textContent = '⏳ Buscando...';
+      checkStatus.textContent = '';
+      try {
+        // Probar primero electron-updater
+        let foundUpdate = false;
+        if (window.api && window.api.checkForUpdates) {
+          const r = await window.api.checkForUpdates();
+          if (r && r.ok && r.hasUpdate) {
+            foundUpdate = true;
+            checkStatus.style.color = 'var(--accent)';
+            checkStatus.textContent = `✓ v${r.version} disponible — descargando...`;
+          }
+        }
+        // Sino, chequear GitHub API directo
+        if (!foundUpdate) {
+          const latest = await checkLatestRelease();
+          if (latest && latest.version && compareSemver(latest.version, v) > 0) {
+            foundUpdate = true;
+            showManualUpdateBanner(latest, v);
+            checkStatus.style.color = 'var(--accent)';
+            checkStatus.textContent = `✓ v${latest.version} disponible — revisá el banner turquesa arriba`;
+          }
+        }
+        if (!foundUpdate) {
+          checkStatus.style.color = 'var(--text-secondary)';
+          checkStatus.textContent = `✓ Estás en la última versión (v${v})`;
+        }
+      } catch (e) {
+        checkStatus.style.color = 'var(--danger)';
+        checkStatus.textContent = '⚠ Error al chequear: ' + e.message;
+      } finally {
+        checkBtn.disabled = false;
+        checkBtn.textContent = '🔄 Buscar actualizaciones ahora';
+      }
+    });
+  }
 });
 
 function compareSemver(a, b) {

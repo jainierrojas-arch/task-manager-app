@@ -1431,11 +1431,33 @@ function initAutoUpdater() {
         status: 'ready',
         version: info.version
       });
+      // v3.11.34: diálogo nativo prominente — no se puede ignorar como el banner
+      try {
+        const choice = require('electron').dialog.showMessageBoxSync(mainWindow, {
+          type: 'info',
+          title: 'Actualización disponible',
+          message: `Task Manager v${info.version} está lista para instalar`,
+          detail: 'La nueva versión ya está descargada. Para aplicarla, la app va a cerrarse y reabrirse automáticamente.',
+          buttons: ['Instalar ahora', 'Más tarde'],
+          defaultId: 0,
+          cancelId: 1
+        });
+        if (choice === 0) {
+          autoUpdater.quitAndInstall();
+        }
+      } catch (e) { console.warn('[updater] dialog failed', e); }
     }
   });
 
   autoUpdater.on('error', (err) => {
     console.log('Update error:', err.message);
+    // v3.11.34: enviar también al renderer para mostrar banner de error
+    if (mainWindow) {
+      mainWindow.webContents.send('update-status', {
+        status: 'error',
+        error: err.message
+      });
+    }
   });
 
   // Check for updates every 30 minutes
@@ -1444,6 +1466,20 @@ function initAutoUpdater() {
     autoUpdater.checkForUpdates().catch(() => {});
   }, 30 * 60 * 1000);
 }
+
+// v3.11.34: handler para chequeo manual desde el botón en Config
+ipcMain.handle('check-for-updates', async () => {
+  try {
+    const result = await autoUpdater.checkForUpdates();
+    return {
+      ok: true,
+      hasUpdate: result && result.updateInfo && result.updateInfo.version !== app.getVersion(),
+      version: result && result.updateInfo ? result.updateInfo.version : null
+    };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
 
 app.whenReady().then(() => {
   store.init();

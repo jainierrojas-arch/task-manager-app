@@ -2244,9 +2244,18 @@
         </div>
 
     <!-- Update banner -->
-    <div id="updateBanner" style="display:none;padding:8px 12px;background:#4ecdc4;color:#1a1b2e;font-size:12px;font-weight:600;text-align:center;cursor:pointer;">
-      <span id="updateText">Actualizacion disponible...</span>
+    <!-- Banner de actualización — animado, prominente. v3.11.34 -->
+    <div id="updateBanner" style="display:none;padding:14px 18px;background:linear-gradient(90deg,#4ecdc4,#6c63ff);color:#0a0c10;font-size:14px;font-weight:800;text-align:center;cursor:pointer;animation:updateBannerPulse 1.6s ease-in-out infinite;border-top:2px solid rgba(255,255,255,0.3);border-bottom:2px solid rgba(0,0,0,0.2);">
+      <span style="font-size:18px;margin-right:8px">🎉</span>
+      <span id="updateText">Actualización disponible — click para instalar</span>
+      <span style="font-size:18px;margin-left:8px">⬇</span>
     </div>
+    <style>
+      @keyframes updateBannerPulse {
+        0%, 100% { filter: brightness(1); }
+        50% { filter: brightness(1.15); }
+      }
+    </style>
 
     <!-- Navigation -->
     <div class="nav-tabs">
@@ -2576,6 +2585,19 @@
       <!-- Settings -->
       <div class="tab-content" id="tabSettings">
         <div class="settings-panel">
+
+          <!-- Actualizaciones (v3.11.34) -->
+          <div class="settings-group">
+            <div class="settings-label">Actualizaciones</div>
+            <button class="btn btn-primary btn-small" id="settingsCheckUpdates" style="width:100%;padding:10px;font-weight:700">
+              🔄 Buscar actualizaciones ahora
+            </button>
+            <div id="settingsUpdateStatus" style="font-size:11px;color:var(--text-dim);margin-top:8px;text-align:center"></div>
+            <div style="font-size:10px;color:var(--text-dim);margin-top:6px;line-height:1.5">
+              La app revisa automáticamente cada 30 min al estar abierta. Si hay versión nueva, aparece banner arriba.<br>
+              <strong>Importante:</strong> al cerrar con ✕ la app sigue corriendo. Para instalar updates, usá <strong>Quit</strong> (Cmd+Q) y reabrí.
+            </div>
+          </div>
 
           <!-- Atajos rapidos: papelera, equipo, fijar ventana (movidos del nav arriba) -->
           <div class="settings-group">
