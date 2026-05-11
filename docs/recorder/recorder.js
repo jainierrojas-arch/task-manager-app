@@ -501,13 +501,18 @@ function startRecording() {
   reportStatus('recording');
 }
 
-// v3.11.62: guard universal contra disparos automáticos al inicio.
-// Los primeros 5 segundos después del page load, recordButtonTap solo acepta
-// disparos de source 'tap' (tap físico en el botón rojo). MediaSession,
-// volumechange, gimbal y firestore commands no pueden auto-arrancar la grabación.
+// v3.11.62 + v3.11.63: guard contra disparos automáticos al inicio del page load.
+// Los primeros 5 segundos, sólo se bloquean fuentes AUTOMÁTICAS:
+//   - mediaSession: iOS dispara play al arrancar nuestro audio silencioso
+//   - volumechange: el volume del audio cambia al inicializarse
+//   - firestore: comandos viejos que puedan haber quedado en el doc de sesión
+// PERMITIDAS siempre (intencionales): tap físico en el botón, keydown de teclado,
+// gimbal shortcut desde la Mac. v3.11.63: keydown estaba en la lista de bloqueados
+// por error y eso rompía la tecla Space para pausar.
 const _pageLoadTs = Date.now();
+const _autoSourcesBlocked = ['mediaSession', 'volumechange', 'firestore'];
 function _isAutoTriggerBlocked(source) {
-  if (source === 'tap') return false; // tap físico siempre permitido
+  if (!_autoSourcesBlocked.includes(source)) return false;
   const sinceLoad = Date.now() - _pageLoadTs;
   return sinceLoad < 5000;
 }

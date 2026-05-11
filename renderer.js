@@ -75,6 +75,13 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.63': {
+    title: 'Fix: tecla Space (y gimbal) bloqueada por el guard de auto-start',
+    features: [
+      '⌨️ <strong>Tecla Space funciona de nuevo</strong>: el guard de 5s de v3.11.62 estaba bloqueando los disparos por keyboard también, no solo los automáticos. Ahora solo se bloquean fuentes claramente automáticas (mediaSession, volumechange, firestore) durante los primeros 5s. El keyboard (Space/Enter) y el gimbal shortcut son siempre permitidos porque son acciones intencionales del usuario.',
+      '✅ <strong>Probá ahora</strong>: en la PWA del celular o con un teclado BT/USB, apretá Space → la grabación debería empezar/pausar al instante.'
+    ]
+  },
   '3.11.62': {
     title: 'Guard universal contra auto-start + instrucciones de permiso de Accesibilidad',
     features: [
