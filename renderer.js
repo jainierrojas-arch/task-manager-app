@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.41': {
+    title: 'yt-dlp: timeout 180s + mensajes de error mucho más útiles',
+    features: [
+      '⏱ <strong>Timeout subido de 90s a 180s</strong>: yt-dlp se cortaba en videos largos o redes lentas (Windows en países con peor conexión). Ahora aguanta 3 minutos.',
+      '🩺 <strong>Errores mucho más claros</strong>: antes decía solo "yt-dlp exit 1". Ahora incluye los últimos 400 caracteres del stderr (mensaje real de yt-dlp: rate limit, formato no disponible, video privado, etc), el exit code, y la última línea de actividad del stdout.',
+      '🚦 <strong>Timeout se detecta explícitamente</strong>: si yt-dlp tarda más de 180s, el error dice "yt-dlp timeout (180s). El video puede ser muy largo..." en vez de un código cryptico.',
+      '🧪 <strong>Cómo diagnosticar mejor</strong>: cuando los chicos vean "Error: yt-dlp falló (exit 1): ...", pasame el mensaje exacto — ahí sabremos si es el video, la red, o algo específico de la plataforma (IG/TikTok).'
+    ]
+  },
   '3.11.40': {
     title: 'Soporte Groq (alternativa a Whisper para países bloqueados) + yt-dlp más robusto',
     features: [

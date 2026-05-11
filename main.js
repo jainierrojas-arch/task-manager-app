@@ -867,9 +867,14 @@ function registerIpcHandlers() {
         }
       }
       let stderr = '';
+      let stdoutLast = '';
+      let timedOut = false;
       function attachHandlers() {
         if (!proc) return;
         proc.stderr.on('data', (d) => { stderr += d.toString(); });
+        // v3.11.41: capturar stdout para tener contexto cuando falla (yt-dlp
+        // imprime "Downloading webpage", "Extracting URL", etc).
+        if (proc.stdout) proc.stdout.on('data', (d) => { stdoutLast = d.toString().slice(-200); });
         proc.on('error', (e) => {
           if (e.code === 'ENOENT') {
             tryNextPath();
@@ -901,12 +906,27 @@ function registerIpcHandlers() {
             for (const c of candidates) {
               try { fs.unlinkSync(path.join(os.tmpdir(), c)); } catch (_) {}
             }
-            const errMsg = stderr.slice(-400).trim() || ('yt-dlp exit ' + code);
+            // v3.11.41: mensaje mucho más útil — incluye exit code, stderr last 400
+            // chars, y stdout last 200. Si timed out, decirlo explícitamente.
+            let errMsg;
+            if (timedOut) {
+              errMsg = 'yt-dlp timeout (180s). El video puede ser muy largo o la red está lenta. ';
+              errMsg += 'Última actividad: ' + (stdoutLast.trim() || 'sin output').slice(-150);
+              if (stderr) errMsg += ' | stderr: ' + stderr.slice(-150).trim();
+            } else if (code !== 0) {
+              const stderrTrim = stderr.slice(-400).trim();
+              errMsg = stderrTrim
+                ? 'yt-dlp falló (exit ' + code + '): ' + stderrTrim
+                : 'yt-dlp exit ' + code + ' sin output. Última actividad: ' + (stdoutLast.trim() || 'ninguna');
+            } else {
+              errMsg = 'yt-dlp terminó OK pero no encontró el archivo extraído. stderr: ' + stderr.slice(-200);
+            }
             resolve({ ok: false, error: errMsg });
           }
         });
-        // Timeout de 90 seg
-        setTimeout(() => { try { proc.kill(); } catch (_) {} }, 90000);
+        // v3.11.41: timeout 180s (antes 90s) — yt-dlp tarda para videos largos
+        // o redes lentas (Windows en países con peor conexión).
+        setTimeout(() => { try { timedOut = true; proc.kill(); } catch (_) {} }, 180000);
       }
       tryNextPath();
     });
