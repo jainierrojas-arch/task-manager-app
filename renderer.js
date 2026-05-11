@@ -75,6 +75,17 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.36': {
+    title: 'Recorder TikTok-real: UNA sola grabación con pause/resume — adiós a la unión de clips',
+    features: [
+      '🎬 <strong>Rewrite del recorder: una sola MediaRecorder con pause/resume</strong> (como TikTok de verdad). Antes cada tap-stop creaba una grabación nueva y al final había que unirlas con ffmpeg.wasm — frágil y a veces solo guardaba el último clip. Ahora la MISMA grabación se pausa y reanuda; el browser entrega UN solo video válido sin necesidad de concatenar.',
+      '⏸ <strong>Cómo funciona</strong>: tap rojo (idle) = empieza a grabar. Tap rojo otra vez = pausa, mantiene los segundos grabados. Tap rojo otra vez = continúa la MISMA grabación. Botón ✓ Done = finaliza y muestra UN video listo para subir o guardar.',
+      '↶ <strong>Descartar último fragmento</strong>: visible solo cuando estás pausado. Trunca el contenido del último fragmento manteniendo los anteriores, igual que TikTok ("¿Descartar el último fragmento? Cancelar / Descartar").',
+      '🔄 <strong>Cambio de cámara mid-recording sin cortar</strong>: el MediaRecorder lee del canvas vía captureStream, así que cambiar entre front/back ya NO detiene la grabación. Adiós a los cortes raros entre cámaras.',
+      '⚡ <strong>Sin ffmpeg.wasm en el camino feliz</strong>: ya no hay que cargar 25MB ni esperar el merge — el archivo sale directo de la MediaRecorder. Upload y "Guardar local" instantáneos con un solo archivo.',
+      '⚠ <strong>Refrescá la PWA del celular</strong> para que cargue el código nuevo (Settings → "Borrar caché y datos" o reinstalá el ícono del Home Screen apuntando a /recorder/).'
+    ]
+  },
   '3.11.35': {
     title: 'Auto-instalador real (sin links manuales) — bypasses macOS signing',
     features: [
