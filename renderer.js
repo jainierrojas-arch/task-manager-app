@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.60': {
+    title: 'Fix grabación auto-iniciada al escanear QR (MediaSession.play falso)',
+    features: [
+      '🔧 <strong>Fix crítico</strong>: cuando arrancaba nuestro audio silencioso para captar volume keys, iOS disparaba <code>MediaSession.play</code> action como si el usuario hubiera apretado un botón → la app llamaba <code>recordButtonTap()</code> → grabación arrancaba sola al escanear el QR. Ahora ignoramos esos eventos durante 3.5s después de cada <code>audio.play()</code> programático.',
+      '🛡 <strong>Mismo guard cubre auto-resume del watchdog</strong>: cuando iOS pausa nuestro audio y nosotros lo reiniciamos, también se ignora el MediaSession.play falso que se genera ahí.',
+      '📲 <strong>Volume keys</strong>: el guard sigue intentando captar el evento via volumechange (con audio de ruido -60dB y DOM). Reinstalá la PWA, triple-tap para abrir debug overlay, apretá tu remote y mandame screenshot de qué aparece.'
+    ]
+  },
   '3.11.59': {
     title: 'Último intento iOS remote: ruido casi imperceptible (-60dB) en lugar de silencio total',
     features: [

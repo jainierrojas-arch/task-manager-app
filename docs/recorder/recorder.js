@@ -874,11 +874,30 @@ function setupRemoteCommandListener() {
   }
 
   // (1) MediaSession — algunos remotes mandan Play/Pause y eso pasa por acá.
+  // v3.11.60: ignorar play/pause durante los primeros 3 segundos después de
+  // que nuestro propio audio arranca, porque iOS dispara MediaSession.play
+  // cuando el audio comienza (lo interpreta como user input) y eso hacía que
+  // la grabación arrancara sola al escanear el QR.
+  let _mediaSessionReadyTs = 0;
   function setupMediaSession() {
     if (!('mediaSession' in navigator)) return;
     try {
-      navigator.mediaSession.setActionHandler('play', () => { logRemoteEvent('MediaSession.play'); recordButtonTap(); });
-      navigator.mediaSession.setActionHandler('pause', () => { logRemoteEvent('MediaSession.pause'); recordButtonTap(); });
+      navigator.mediaSession.setActionHandler('play', () => {
+        if (Date.now() < _mediaSessionReadyTs) {
+          logRemoteEvent('MediaSession.play (ignorado — audio init)');
+          return;
+        }
+        logRemoteEvent('MediaSession.play');
+        recordButtonTap();
+      });
+      navigator.mediaSession.setActionHandler('pause', () => {
+        if (Date.now() < _mediaSessionReadyTs) {
+          logRemoteEvent('MediaSession.pause (ignorado — audio init)');
+          return;
+        }
+        logRemoteEvent('MediaSession.pause');
+        recordButtonTap();
+      });
       navigator.mediaSession.setActionHandler('previoustrack', () => { logRemoteEvent('MediaSession.prev'); discardLastFragment(); });
       navigator.mediaSession.setActionHandler('nexttrack', () => { logRemoteEvent('MediaSession.next'); finishRecording(); });
       navigator.mediaSession.playbackState = 'playing';
@@ -890,6 +909,10 @@ function setupRemoteCommandListener() {
         });
       } catch (_) {}
     } catch (e) { console.warn('[mediaSession] setup failed', e.message); }
+  }
+  // Marca el "ready time" — todos los play/pause hasta esa fecha se ignoran.
+  function _markMediaSessionWindowSkip(ms) {
+    _mediaSessionReadyTs = Math.max(_mediaSessionReadyTs, Date.now() + ms);
   }
 
   // (2) Silent audio loop para que iOS rute los volume keys a nosotros.
@@ -922,6 +945,7 @@ function setupRemoteCommandListener() {
   function ensureSilentAudioPlaying() {
     if (!_audioEl) return;
     if (_audioEl.paused || _audioEl.ended || _audioEl.readyState < 2) {
+      _markMediaSessionWindowSkip(1500); // cualquier resume disparado por nosotros
       _audioEl.play().catch(e => console.warn('[ios-vol] resume blocked', e.message));
     }
   }
@@ -941,8 +965,10 @@ function setupRemoteCommandListener() {
       _audioEl.setAttribute('webkit-playsinline', '');
       _audioEl.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;top:-100px';
       document.body.appendChild(_audioEl);
+      _markMediaSessionWindowSkip(3500); // ignorar MediaSession.play/pause durante 3.5s
       _audioEl.play().then(() => {
         logRemoteEvent('audio playing ✓ (noise -60dB)');
+        _markMediaSessionWindowSkip(3500);
       }).catch(e => {
         logRemoteEvent('audio play BLOCKED: ' + e.message);
         console.warn('[ios-vol] play blocked:', e.message);
@@ -962,13 +988,16 @@ function setupRemoteCommandListener() {
       });
       _audioEl.addEventListener('pause', () => {
         logRemoteEvent('audio.pause (iOS lo paró)');
-        // Intentar resumir
-        setTimeout(() => { _audioEl.play().catch(() => {}); }, 100);
+        setTimeout(() => {
+          _markMediaSessionWindowSkip(1500);
+          _audioEl.play().catch(() => {});
+        }, 100);
       });
       _audioEl.addEventListener('play', () => logRemoteEvent('audio.play'));
       _audioEl.addEventListener('ended', () => {
         logRemoteEvent('audio.ended (reiniciando)');
         _audioEl.currentTime = 0;
+        _markMediaSessionWindowSkip(1500);
         _audioEl.play().catch(() => {});
       });
       // Watchdog: cada 2s checkear que está playing
