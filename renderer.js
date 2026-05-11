@@ -75,6 +75,13 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.44': {
+    title: 'FIX CRÍTICO: bug "Assignment to constant variable" rompía toda la transcripción',
+    features: [
+      '🔥 <strong>Fix urgente</strong>: en v3.11.42 agregué <code>apiKey = ...trim()</code> reasignando una <code>const</code> — JavaScript tira "Assignment to constant variable" y la transcripción fallaba inmediatamente sin haber siquiera intentado llamar al endpoint. Cambiado a <code>let</code>. Probá Transcribir de nuevo después de instalar.',
+      'ℹ <strong>Diagnóstico para los chicos en Windows</strong>: si después de actualizar siguen viendo "Groq tardó >90s" o similar, significa que <code>api.groq.com</code> no responde rápido desde su red. Posibles causas: firewall corporativo, DNS lento, o region routing. La key está bien (status dice "Configurado (Groq)").'
+    ]
+  },
   '3.11.43': {
     title: 'Transcripción timeout 90s + heartbeat con nombre real del provider',
     features: [

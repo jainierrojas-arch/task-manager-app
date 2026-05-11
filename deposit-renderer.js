@@ -2346,7 +2346,10 @@ async function transcribeEntry(entryId, btn) {
       : '❌ No hay video transcribible (necesito Cloudinary o URL directa a archivo).', 'error');
     return;
   }
-  const apiKey = await getOpenaiKeyForIframe();
+  // v3.11.44: declaramos con `let` porque después hacemos trim sobre la key
+  // antes de detectar el provider. v3.11.42 tenía `const` y `apiKey = ...trim()`
+  // tiraba "Assignment to constant variable" — rompía toda la transcripción.
+  let apiKey = await getOpenaiKeyForIframe();
   if (!apiKey) {
     _setTranscriptionStatus('❌ Configurá tu OpenAI API key en Settings de la app principal.', 'error');
     return;
