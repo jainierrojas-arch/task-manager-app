@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.31': {
+    title: 'Fix notificaciones de actualización para el equipo',
+    features: [
+      '🎉 <strong>Banner de actualización ahora SÍ aparece para todos</strong>: el problema era que mi app no está code-signed (Apple Developer Account cuesta $99/año y aún no se compró), entonces el auto-updater de Electron falla silenciosamente en macOS — ni vos ni los chicos veían el banner.',
+      '🔍 <strong>Sistema nuevo</strong>: la app ahora chequea GitHub releases directamente cada 30 minutos (vía API pública). Cuando detecta una versión nueva, muestra el banner turquesa arriba: <em>"🎉 v3.11.32 disponible (tenés v3.11.31) — click para descargar"</em>.',
+      '📦 <strong>Click en banner → abre descarga directa</strong>: del archivo <code>.zip</code> del Mac arm64 en la página de releases de GitHub. El usuario lo descarga, descomprime y arrastra el nuevo <code>Task Manager.app</code> a <code>/Applications/</code> (reemplazando el viejo).',
+      '⚠ <strong>Importante — pasaje único</strong>: tus chicos están en versiones viejas, NO van a ver este banner hasta que tengan al menos v3.11.31. Pasales el link del release manualmente UNA vez. A partir de ahí, todas las futuras versiones les van a aparecer en el banner solas.',
+      '🔗 <strong>Link directo para compartir</strong>: <code>https://github.com/jainierrojas-arch/task-manager-app/releases/latest</code> — ese link siempre apunta a la versión más nueva. Mándales eso y que descarguen el <code>arm64-mac.zip</code>.'
+    ]
+  },
   '3.11.30': {
     title: 'Botón maximizar + ventana movible (drag desde la titlebar)',
     features: [
@@ -8461,7 +8471,84 @@ window.api.getAppVersion().then(v => {
     div.textContent = 'Task Manager v' + v;
     versionEl.appendChild(div);
   }
+  // v3.11.31: chequeo manual de actualizaciones via GitHub API porque la app
+  // no está code-signed (Apple Developer Account requerido $99/año) y
+  // electron-updater falla silenciosamente en macOS sin firma. Este fallback
+  // chequea GitHub releases directo y muestra el banner con link de descarga.
+  startManualUpdateChecker(v);
 });
+
+function compareSemver(a, b) {
+  // Compara "3.11.30" vs "3.11.31" → 0 igual, 1 si a>b, -1 si a<b
+  const pa = String(a).replace(/^v/, '').split('.').map(n => parseInt(n, 10) || 0);
+  const pb = String(b).replace(/^v/, '').split('.').map(n => parseInt(n, 10) || 0);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const da = pa[i] || 0, db = pb[i] || 0;
+    if (da > db) return 1;
+    if (da < db) return -1;
+  }
+  return 0;
+}
+
+async function checkLatestRelease() {
+  try {
+    const res = await fetch('https://api.github.com/repos/jainierrojas-arch/task-manager-app/releases/latest', {
+      headers: { 'Accept': 'application/vnd.github+json' }
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data || !data.tag_name) return null;
+    const ver = String(data.tag_name).replace(/^v/, '');
+    // Buscar el asset .zip para Mac arm64 (lo que estamos publicando)
+    const assets = Array.isArray(data.assets) ? data.assets : [];
+    // Prefer arm64 zip, fallback a cualquier zip mac
+    let asset = assets.find(a => /arm64.*mac\.zip$/i.test(a.name)) ||
+                assets.find(a => /mac\.zip$/i.test(a.name)) ||
+                assets.find(a => /\.zip$/i.test(a.name));
+    return {
+      version: ver,
+      htmlUrl: data.html_url, // página de release
+      downloadUrl: asset ? asset.browser_download_url : null,
+      body: data.body || ''
+    };
+  } catch (e) {
+    console.warn('[updateChecker] fetch failed', e);
+    return null;
+  }
+}
+
+async function startManualUpdateChecker(currentVersion) {
+  // Check inmediato + cada 30 min
+  const tryCheck = async () => {
+    const latest = await checkLatestRelease();
+    if (!latest || !latest.version) return;
+    if (compareSemver(latest.version, currentVersion) <= 0) return; // ya estás al día
+    showManualUpdateBanner(latest, currentVersion);
+  };
+  tryCheck();
+  setInterval(tryCheck, 30 * 60 * 1000);
+}
+
+function showManualUpdateBanner(latest, currentVersion) {
+  const banner = document.getElementById('updateBanner');
+  const text = document.getElementById('updateText');
+  if (!banner || !text) return;
+  banner.style.display = 'block';
+  banner.style.background = '#4ecdc4';
+  banner.style.color = '#0a0c10';
+  banner.style.cursor = 'pointer';
+  text.textContent = `🎉 v${latest.version} disponible (tenés v${currentVersion}) — click para descargar`;
+  banner.onclick = () => {
+    // Abrir el .zip directo si lo tenemos, sino la página de release
+    const url = latest.downloadUrl || latest.htmlUrl;
+    if (url && window.api && window.api.openExternal) {
+      window.api.openExternal(url);
+    } else if (url) {
+      window.open(url, '_blank');
+    }
+  };
+}
 
 // ===== UTILITIES =====
 function esc(text) {
