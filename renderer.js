@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.64': {
+    title: '⌨️ Space/Enter en la Mac controlan el celu mientras el modal está abierto',
+    features: [
+      '🎯 <strong>Tip simple que SÍ funciona</strong>: mientras "Grabar desde Celular" está abierto, apretás <strong>Space</strong> o <strong>Enter</strong> en el teclado de la Mac → el celular graba/pausa. El botón "⏯" del panel parpadea morado para confirmar cada press.',
+      '🩹 <strong>Por qué esto SÍ y volume keys NO</strong>: macOS pasa las teclas de letras/números/space al app focado normalmente. Las teclas multimedia (VolumeUp/Down) van por una API privada de Apple que Electron no captura. Space es el atajo más universal para "play/pause" en cualquier player. Adoptamos eso.',
+      '📐 <strong>Cero conflicto con typing</strong>: si el foco está en un input o textarea (estás escribiendo), Space pasa al input normal. Solo activa el toggle cuando el cursor NO está en un campo de texto.',
+      '👋 <strong>Setup workflow</strong>: poné el celu en el gimbal lejos, abrí Task Manager en la Mac, escaneá el QR, dejá la mano sobre el teclado y apretá Space para grabar/pausar mientras hablás. Listo.'
+    ]
+  },
   '3.11.63': {
     title: 'Fix: tecla Space (y gimbal) bloqueada por el guard de auto-start',
     features: [

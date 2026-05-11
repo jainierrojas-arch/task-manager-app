@@ -2937,6 +2937,8 @@ async function openPhoneRecorderModal() {
       }
     }).catch(e => console.warn('[gimbal] register failed', e.message));
   }
+  // v3.11.64: activar el listener de teclado para controlar con Space/Enter desde la Mac
+  attachKeyboardControl();
 
   // Cloudinary config (heredado del parent vía window.api)
   let cfg = null;
@@ -3046,6 +3048,58 @@ function _showPhoneRecResult(videoUrl) {
   if (_phoneRecUnsub) { try { _phoneRecUnsub(); } catch (e) {} _phoneRecUnsub = null; }
 }
 
+// v3.11.64: handler de teclado para controlar el celu desde la Mac.
+// Space/Enter en cualquier parte de la ventana (mientras el modal está abierto)
+// → manda toggle al celu vía Firestore. Mucho más confiable que volume keys
+// (que Apple bloquea a nivel sistema en macOS y iOS).
+let _phoneRecKeyboardHandler = null;
+function attachKeyboardControl() {
+  if (_phoneRecKeyboardHandler) return; // ya enganchado
+  _phoneRecKeyboardHandler = (e) => {
+    if (!_phoneRecSessionId) return;
+    // Ignorar si el foco está en un input/textarea (no robar typing)
+    const tag = (e.target && e.target.tagName) || '';
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target && e.target.isContentEditable)) return;
+    const k = e.key || '';
+    const c = e.code || '';
+    if (k === ' ' || c === 'Space' || k === 'Enter') {
+      e.preventDefault();
+      console.log('[mac-kb] Space/Enter → toggle celu');
+      const btn = document.getElementById('phoneRecToggleBtn');
+      sendRemoteCommandFromKeyboard('toggle', btn);
+    }
+  };
+  document.addEventListener('keydown', _phoneRecKeyboardHandler);
+  // También en el documento del parent (porque deposit puede estar en iframe)
+  try {
+    if (window.parent && window.parent !== window && window.parent.document) {
+      window.parent.document.addEventListener('keydown', _phoneRecKeyboardHandler);
+    }
+  } catch (e) { console.warn('[mac-kb] parent doc unreachable', e.message); }
+}
+function detachKeyboardControl() {
+  if (!_phoneRecKeyboardHandler) return;
+  try { document.removeEventListener('keydown', _phoneRecKeyboardHandler); } catch (e) {}
+  try {
+    if (window.parent && window.parent !== window && window.parent.document) {
+      window.parent.document.removeEventListener('keydown', _phoneRecKeyboardHandler);
+    }
+  } catch (e) {}
+  _phoneRecKeyboardHandler = null;
+}
+async function sendRemoteCommandFromKeyboard(action, btn) {
+  if (!_phoneRecSessionId) return;
+  if (btn) {
+    btn.style.background = 'rgba(108,99,255,0.4)';
+    setTimeout(() => { btn.style.background = ''; }, 400);
+  }
+  try {
+    await db.collection('recordingSessions').doc(_phoneRecSessionId).update({
+      remoteCommand: { action, ts: Date.now() }
+    });
+  } catch (e) { console.warn('[mac-kb] send failed', e.message); }
+}
+
 function closePhoneRecorderModal() {
   const modal = document.getElementById('phoneRecModal');
   if (modal) {
@@ -3059,6 +3113,8 @@ function closePhoneRecorderModal() {
   if (window.api && window.api.unregisterGimbalShortcuts) {
     window.api.unregisterGimbalShortcuts().catch(() => {});
   }
+  // v3.11.64: liberar el listener de teclado al cerrar
+  detachKeyboardControl();
 }
 
 async function _attachRecordedVideoToEntry(entryId, videoUrl) {
