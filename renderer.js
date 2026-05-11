@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.32': {
+    title: 'Unión de clips REAL via ffmpeg.wasm + botón Volver más accesible',
+    features: [
+      '🎬 <strong>Multi-clip ahora se une en UN solo video</strong> antes de subir, usando <code>ffmpeg.wasm</code> client-side. Stream-copy sin re-encoding (super rápido, ~2-5s para clips cortos).',
+      '⏬ <strong>Primera vez carga ~25MB de ffmpeg.wasm</strong> (después queda cacheado en el browser de la PWA). Verás "Cargando ffmpeg..." → "Uniendo clips..." → "Subiendo a Cloudinary..." durante el upload.',
+      '👇 <strong>Botón "← Volver a grabar" ahora abajo</strong> en el footer del overlay de clips — full-width, fácil de tocar con el pulgar. Antes estaba arriba a la esquina, difícil de alcanzar.',
+      '🛡 <strong>Fallback robusto</strong>: si ffmpeg falla por cualquier motivo (CORS, memoria, red), el recorder igual sube el último clip en lugar de bloquear todo.',
+      '📊 <strong>Toast en desktop dice</strong>: "Video agregado al entry (3 clips unidos en uno)" para que sepas cuántos se fusionaron.'
+    ]
+  },
   '3.11.31': {
     title: 'Fix notificaciones de actualización para el equipo',
     features: [

@@ -423,19 +423,28 @@ html, body {
 .quick-preview-header > span {
   color: #fff; font-size: 14px; font-weight: 700;
 }
+.quick-preview-footer {
+  flex: 0 0 auto;
+  padding: 8px 4px max(8px, env(safe-area-inset-bottom));
+  border-top: 1px solid rgba(255,255,255,0.08);
+  display: flex;
+  justify-content: center;
+}
 .quick-preview-back {
   background: var(--accent);
   color: #0a0c10;
   border: 0;
-  padding: 9px 14px;
+  padding: 14px 28px;
   border-radius: 999px;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 800;
   cursor: pointer;
   white-space: nowrap;
-  min-width: 80px;
+  width: 100%;
+  max-width: 360px;
+  box-shadow: 0 4px 14px rgba(78,205,196,0.4);
 }
-.quick-preview-back:active { filter: brightness(0.9); }
+.quick-preview-back:active { filter: brightness(0.85); transform: translateY(1px); }
 .quick-preview video {
   width: 100%;
   max-height: 45vh;

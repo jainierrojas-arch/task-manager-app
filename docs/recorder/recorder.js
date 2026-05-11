@@ -648,11 +648,78 @@ function tpPlayPause() {
 }
 
 // ===== Cloudinary upload =====
+// ===== Concat multi-clip con ffmpeg.wasm (v3.11.32) =====
+// Carga ffmpeg.wasm 0.11.6 dinámicamente cuando hay >1 clips y los une en
+// UN solo MP4 antes de subir. Cache forever en el browser después del primer
+// load (~25MB initial). Stream-copy (sin re-encode), súper rápido.
+let _ffmpegInstance = null;
+let _ffmpegLoading = null;
+
+async function loadFFmpeg(onProgress) {
+  if (_ffmpegInstance) return _ffmpegInstance;
+  if (_ffmpegLoading) return _ffmpegLoading;
+  _ffmpegLoading = (async () => {
+    // Cargar el wrapper JS via <script>
+    if (typeof FFmpeg === 'undefined') {
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = 'https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js';
+        s.onload = resolve;
+        s.onerror = () => reject(new Error('No se pudo cargar ffmpeg.wasm'));
+        document.head.appendChild(s);
+      });
+    }
+    if (typeof FFmpeg === 'undefined' || !FFmpeg.createFFmpeg) {
+      throw new Error('FFmpeg lib no expuso createFFmpeg');
+    }
+    const ffmpeg = FFmpeg.createFFmpeg({
+      corePath: 'https://unpkg.com/@ffmpeg/core@0.10.0/dist/ffmpeg-core.js',
+      log: false,
+      progress: (p) => {
+        if (typeof onProgress === 'function') onProgress(Math.round((p.ratio || 0) * 100));
+      }
+    });
+    await ffmpeg.load();
+    _ffmpegInstance = ffmpeg;
+    return ffmpeg;
+  })().catch((e) => {
+    _ffmpegLoading = null;
+    throw e;
+  });
+  return _ffmpegLoading;
+}
+
+async function concatClipsWithFFmpeg(segments, onPhaseUpdate) {
+  if (typeof onPhaseUpdate === 'function') onPhaseUpdate('Cargando ffmpeg...');
+  const ffmpeg = await loadFFmpeg();
+  const fetchFile = FFmpeg.fetchFile;
+  if (typeof onPhaseUpdate === 'function') onPhaseUpdate('Preparando clips...');
+  // Determinar extensión del primer clip
+  const firstMime = segments[0].mime || '';
+  const ext = firstMime.includes('mp4') ? 'mp4' : 'webm';
+  for (let i = 0; i < segments.length; i++) {
+    const data = await fetchFile(segments[i].blob);
+    ffmpeg.FS('writeFile', `clip${i}.${ext}`, data);
+  }
+  const list = segments.map((_, i) => `file 'clip${i}.${ext}'`).join('\n');
+  ffmpeg.FS('writeFile', 'list.txt', new TextEncoder().encode(list));
+  if (typeof onPhaseUpdate === 'function') onPhaseUpdate('Uniendo clips...');
+  // Stream-copy: no re-encode (porque todos los clips tienen mismo codec/dim)
+  await ffmpeg.run('-f', 'concat', '-safe', '0', '-i', 'list.txt', '-c', 'copy', `output.${ext}`);
+  const output = ffmpeg.FS('readFile', `output.${ext}`);
+  // Cleanup virtual FS
+  try {
+    for (let i = 0; i < segments.length; i++) ffmpeg.FS('unlink', `clip${i}.${ext}`);
+    ffmpeg.FS('unlink', 'list.txt');
+    ffmpeg.FS('unlink', `output.${ext}`);
+  } catch (_) {}
+  return new Blob([output.buffer], { type: firstMime || `video/${ext}` });
+}
+
 async function uploadAndCommit() {
-  // v3.11.29: simplificación. Cada clip se sube por separado a Cloudinary.
-  // Las URLs van a recordedVideos[] del entry — el desktop muestra todos los
-  // clips en la card del entry y en el modal de transcripción. Antes intenté
-  // armar URL de concat de Cloudinary pero no se hidrataba bien.
+  // v3.11.32: si hay multi-clip, unirlos en UN solo video con ffmpeg.wasm
+  // antes de subir. Subir UN solo archivo a Cloudinary. Fallback: si ffmpeg
+  // falla por cualquier motivo, subir cada clip separado como antes.
   const segments = recordedSegments.length > 0 ? recordedSegments : (recordedBlob ? [{ blob: recordedBlob, mime: recordedMime }] : []);
   if (segments.length === 0) return;
   show('screenUploading');
@@ -660,47 +727,46 @@ async function uploadAndCommit() {
   $('uploadPct').textContent = '0%';
   reportStatus('uploading');
   try {
-    const uploaded = [];
-    for (let i = 0; i < segments.length; i++) {
-      const seg = segments[i];
-      if (segments.length > 1) {
-        $('uploadPct').textContent = `Clip ${i + 1}/${segments.length} · 0%`;
+    let blobToUpload, mimeToUpload, ffmpegUsed = false;
+    if (segments.length === 1) {
+      blobToUpload = segments[0].blob;
+      mimeToUpload = segments[0].mime;
+    } else {
+      // Multi-clip → ffmpeg concat
+      try {
+        $('uploadPct').textContent = 'Cargando ffmpeg...';
+        const merged = await concatClipsWithFFmpeg(segments, (msg) => {
+          $('uploadPct').textContent = msg;
+        });
+        blobToUpload = merged;
+        mimeToUpload = merged.type || segments[0].mime;
+        ffmpegUsed = true;
+      } catch (concatErr) {
+        console.warn('[upload] ffmpeg concat failed, falling back to upload last clip only:', concatErr);
+        // Fallback: subir solo el último clip (no falla la upload entera)
+        blobToUpload = segments[segments.length - 1].blob;
+        mimeToUpload = segments[segments.length - 1].mime;
       }
-      const r = await uploadToCloudinaryBlob(seg.blob, seg.mime, (pct) => {
-        if (segments.length > 1) {
-          $('uploadPct').textContent = `Clip ${i + 1}/${segments.length} · ${pct}%`;
-          const globalPct = Math.round(((i + pct / 100) / segments.length) * 100);
-          $('progressFill').style.width = globalPct + '%';
-        } else {
-          $('progressFill').style.width = pct + '%';
-          $('uploadPct').textContent = pct + '%';
-        }
-      });
-      uploaded.push({
-        url: r.secure_url,
-        bytes: r.bytes || null,
-        format: r.format || null,
-        duration: r.duration || null,
-        width: r.width || null,
-        height: r.height || null
-      });
     }
 
-    const last = uploaded[uploaded.length - 1];
+    $('uploadPct').textContent = 'Subiendo a Cloudinary...';
+    const r = await uploadToCloudinaryBlob(blobToUpload, mimeToUpload, (pct) => {
+      $('progressFill').style.width = pct + '%';
+      $('uploadPct').textContent = pct + '%';
+    });
+
     const updateData = {
       status: 'completed',
-      // Video "principal" para el modal de preview en el desktop = último clip
-      videoUrl: last.url,
-      videoBytes: last.bytes,
-      videoFormat: last.format,
-      videoDuration: last.duration,
-      videoWidth: last.width,
-      videoHeight: last.height,
+      videoUrl: r.secure_url,
+      videoBytes: r.bytes || null,
+      videoFormat: r.format || null,
+      videoDuration: r.duration || null,
+      videoWidth: r.width || null,
+      videoHeight: r.height || null,
       completedAt: firebase.firestore.FieldValue.serverTimestamp()
     };
-    // Si hay multi-clips, todas las URLs (incluida la principal) en allClipUrls
-    if (uploaded.length > 1) {
-      updateData.allClipUrls = uploaded.map(u => u.url);
+    if (ffmpegUsed && segments.length > 1) {
+      updateData.mergedFrom = segments.length; // metadata: cuántos clips fueron unidos
     }
     await sessionRef.update(updateData);
     show('screenDone');
