@@ -75,6 +75,13 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.66': {
+    title: 'Thumbnails de TikTok ahora se ven (vía tikwm) + recordatorio para chicos en Windows',
+    features: [
+      '🎬 <strong>Fix thumbnails TikTok</strong>: el fetcher OG ahora usa <code>tikwm.com</code> para sacar el cover real del video de TikTok (mismo que se ve en la app). Antes Microlink devolvía el logo genérico o nada utilizable.',
+      '📲 <strong>Chicos en Windows con errores</strong>: el error de "OpenAI bloqueó por país" y "Instagram bloquea descargas anónimas" son de versiones anteriores. La v3.11.53+ ya usa snapinsta (no requiere cookies) y Groq (no requiere VPN). Tienen que hacer <strong>Quit completo + reabrir</strong> la app para instalar las actualizaciones pendientes. Si después de actualizar siguen con error, mandanos screenshot del status de Settings → OpenAI API Key para verificar que dice "(Groq)".'
+    ]
+  },
   '3.11.65': {
     title: '📚 Librería local en la PWA — múltiples grabaciones guardadas, elegís cuál grabar',
     features: [

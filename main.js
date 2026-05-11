@@ -1761,6 +1761,28 @@ function registerIpcHandlers() {
       return result;
     };
 
+    // v3.11.66: para TikTok usamos tikwm primero — devuelve `cover` que es el
+    // thumbnail real del video (mismo que se ve en TikTok). Microlink para
+    // TikTok suele devolver el logo genérico o nada utilizable.
+    if (isTiktok) {
+      try {
+        const fetchUrl = 'https://www.tikwm.com/api/?url=' + encodeURIComponent(url);
+        const tkRes = await httpsGetBuffer(fetchUrl, { 'Accept': 'application/json' });
+        const tkJson = JSON.parse(tkRes.buf.toString('utf-8'));
+        if (tkJson && tkJson.code === 0 && tkJson.data) {
+          const cover = tkJson.data.origin_cover || tkJson.data.cover || tkJson.data.ai_dynamic_cover;
+          if (cover) {
+            return sanitize({
+              image: cover,
+              title: tkJson.data.title || null,
+              description: (tkJson.data.author && tkJson.data.author.nickname) ? '@' + tkJson.data.author.unique_id : null
+            });
+          }
+        }
+      } catch (e) { console.warn('[og-fetch] tikwm failed:', e.message); }
+      // Si tikwm no devolvió, cae a Microlink abajo (needsMicrolink)
+    }
+
     // Cascada de intentos: el primero que devuelva imagen gana.
     // PREFERIMOS Microlink porque proxea las imagenes a su CDN (URLs estables
     // que cargan en el renderer). Los HTTP/Browser embeds devuelven URLs de
