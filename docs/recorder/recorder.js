@@ -92,18 +92,176 @@ function handleScannedCode(text) {
   location.replace(newUrl);
 }
 
+// v3.11.65: librería local de sesiones guardadas. Cada vez que se escanea un
+// QR exitosamente, se agrega la sesión a localStorage. Al abrir la PWA sin
+// session en la URL, se muestra esa librería para que el usuario pueda elegir
+// cuál grabar sin tener que volver al desktop.
+const LIBRARY_KEY = 'tm_recorder_library_v1';
+function loadLibrary() {
+  try { return JSON.parse(localStorage.getItem(LIBRARY_KEY) || '[]'); }
+  catch (e) { return []; }
+}
+function saveLibrary(list) {
+  try { localStorage.setItem(LIBRARY_KEY, JSON.stringify(list || [])); }
+  catch (e) { console.warn('[library] save failed', e.message); }
+}
+function addToLibrary(entry) {
+  const lib = loadLibrary().filter(x => x.sessionId !== entry.sessionId);
+  lib.unshift({ ...entry, savedAt: Date.now() });
+  // Cap a 50 sesiones
+  saveLibrary(lib.slice(0, 50));
+}
+function removeFromLibrary(sessionId) {
+  saveLibrary(loadLibrary().filter(x => x.sessionId !== sessionId));
+}
+
+async function refreshLibraryStatuses(lib) {
+  // Para cada sesión en localStorage, consultar el doc actual para saber estado
+  const results = await Promise.allSettled(lib.map(async (item) => {
+    try {
+      const snap = await window.db.collection('recordingSessions').doc(item.sessionId).get();
+      if (!snap.exists) return { ...item, status: 'gone' };
+      const d = snap.data() || {};
+      return { ...item, status: d.status || 'unknown', scriptText: d.scriptText || item.scriptText };
+    } catch (e) {
+      return { ...item, status: 'error', error: e.message };
+    }
+  }));
+  return results.map(r => r.value || r.reason);
+}
+
+function fmtTimeAgo(ts) {
+  if (!ts) return '';
+  const diff = Date.now() - ts;
+  if (diff < 60000) return 'recién';
+  if (diff < 3600000) return Math.floor(diff / 60000) + 'min';
+  if (diff < 86400000) return Math.floor(diff / 3600000) + 'h';
+  return Math.floor(diff / 86400000) + 'd';
+}
+
+function statusLabel(s) {
+  if (s === 'pending' || s === 'connected') return '⚪ Lista para grabar';
+  if (s === 'recording') return '🔴 Grabando';
+  if (s === 'paused') return '⏸ Pausada';
+  if (s === 'uploading') return '📤 Subiendo';
+  if (s === 'completed') return '✓ Completada';
+  if (s === 'gone') return '⚠ Expirada';
+  return s || '?';
+}
+
+async function showLibraryScreen() {
+  const screen = document.getElementById('screenLibrary');
+  if (!screen) return false;
+  const list = document.getElementById('libraryList');
+  if (!list) return false;
+  // Esconder otras pantallas, mostrar library
+  ['screenLoading', 'screenError', 'screenScanner', 'screenRecord', 'screenPreview', 'screenUploading', 'screenDone'].forEach(s => {
+    const el = document.getElementById(s);
+    if (el) el.classList.remove('active');
+  });
+  screen.style.display = '';
+  screen.classList.add('active');
+
+  let lib = loadLibrary();
+  if (lib.length === 0) { screen.style.display = 'none'; return false; }
+
+  list.innerHTML = '<div style="text-align:center;color:#999;padding:20px">Cargando estado...</div>';
+  // Filtrar las completadas (no se vuelven a grabar)
+  lib = await refreshLibraryStatuses(lib);
+  // Limpiar las gone/expiradas automáticamente del localStorage (pero las mostramos esta vez)
+  const survivors = lib.filter(item => item.status !== 'gone' && item.status !== 'completed');
+  saveLibrary(survivors);
+
+  if (lib.length === 0) {
+    list.innerHTML = '<div style="text-align:center;color:#999;padding:30px;background:#1a1b22;border-radius:12px">Sin grabaciones guardadas.<br>Tocá "Escanear otro QR" para agregar una.</div>';
+    return true;
+  }
+  list.innerHTML = lib.map((item, idx) => {
+    const script = (item.scriptText || '').slice(0, 80);
+    const canRecord = ['pending', 'connected', 'paused'].includes(item.status);
+    const ageStr = fmtTimeAgo(item.savedAt);
+    const expired = item.status === 'gone';
+    const completed = item.status === 'completed';
+    return `
+      <div style="background:#1a1b22;border:1px solid ${expired || completed ? '#333' : '#444'};border-radius:12px;padding:14px;${expired || completed ? 'opacity:0.55;' : ''}">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-size:11px;color:#888">
+          <span>${statusLabel(item.status)}</span>
+          <span>${ageStr}</span>
+        </div>
+        <div style="font-size:14px;line-height:1.4;margin-bottom:10px;color:#eee">${script.replace(/</g,'&lt;') || '<em style="color:#666">(sin guión)</em>'}${(item.scriptText||'').length > 80 ? '…' : ''}</div>
+        <div style="display:flex;gap:6px">
+          ${canRecord ? `<button data-lib-record="${item.sessionId}" style="flex:1;background:var(--accent,#6c63ff);color:#fff;border:0;padding:10px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer">🎬 Grabar</button>` : ''}
+          <button data-lib-remove="${item.sessionId}" style="${canRecord ? '' : 'flex:1;'}background:transparent;color:#888;border:1px solid #444;padding:10px 14px;border-radius:8px;font-size:12px;cursor:pointer">Quitar</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  list.querySelectorAll('[data-lib-record]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const sid = btn.getAttribute('data-lib-record');
+      // Cargar esa sesión navegando con session param
+      location.replace(location.pathname + '?session=' + encodeURIComponent(sid));
+    });
+  });
+  list.querySelectorAll('[data-lib-remove]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const sid = btn.getAttribute('data-lib-remove');
+      removeFromLibrary(sid);
+      showLibraryScreen();
+    });
+  });
+
+  // Wireup de botones globales (una vez)
+  const scanMoreBtn = document.getElementById('libraryScanMore');
+  if (scanMoreBtn && !scanMoreBtn.dataset.wired) {
+    scanMoreBtn.dataset.wired = '1';
+    scanMoreBtn.addEventListener('click', () => {
+      screen.style.display = 'none';
+      startQrScanner();
+    });
+  }
+  const clearAllBtn = document.getElementById('libraryClearAll');
+  if (clearAllBtn && !clearAllBtn.dataset.wired) {
+    clearAllBtn.dataset.wired = '1';
+    clearAllBtn.addEventListener('click', () => {
+      if (!confirm('Borrar todas las grabaciones guardadas?')) return;
+      saveLibrary([]);
+      showLibraryScreen();
+    });
+  }
+  return true;
+}
+
 if (!SESSION_ID) {
-  setError('Sesión no provista', 'Tocá el botón abajo y apuntá la cámara al QR de tu Task Manager.');
-  const btn = document.getElementById('btnScanQR');
-  if (btn) {
-    btn.style.display = '';
-    btn.addEventListener('click', startQrScanner);
+  // v3.11.65: si tenemos sesiones guardadas en library, mostrar esa pantalla primero
+  if (loadLibrary().length > 0) {
+    showLibraryScreen().then(shown => {
+      if (!shown) {
+        // No quedaron sesiones válidas — fallback al scanner
+        setError('Sesión no provista', 'Tocá el botón abajo y apuntá la cámara al QR de tu Task Manager.');
+        const btn = document.getElementById('btnScanQR');
+        if (btn) { btn.style.display = ''; btn.addEventListener('click', startQrScanner); }
+      }
+    });
+  } else {
+    setError('Sesión no provista', 'Tocá el botón abajo y apuntá la cámara al QR de tu Task Manager.');
+    const btn = document.getElementById('btnScanQR');
+    if (btn) {
+      btn.style.display = '';
+      btn.addEventListener('click', startQrScanner);
+    }
   }
   const cancelBtn = document.getElementById('btnScannerCancel');
   if (cancelBtn) cancelBtn.addEventListener('click', () => {
     stopQrScanner();
-    setError('Sesión no provista', 'Tocá el botón abajo y apuntá la cámara al QR de tu Task Manager.');
-    if (btn) btn.style.display = '';
+    // Si hay library, volver ahí; si no, mostrar error
+    if (loadLibrary().length > 0) showLibraryScreen();
+    else {
+      setError('Sesión no provista', 'Tocá el botón abajo y apuntá la cámara al QR de tu Task Manager.');
+      const btn = document.getElementById('btnScanQR');
+      if (btn) btn.style.display = '';
+    }
   });
   throw new Error('no session id');
 }
@@ -120,6 +278,15 @@ async function loadSession() {
       return false;
     }
     session = snap.data();
+    // v3.11.65: guardar en la library local apenas cargamos una sesión (incluso si ya está completed)
+    try {
+      addToLibrary({
+        sessionId: SESSION_ID,
+        scriptText: session.scriptText || '',
+        entryId: session.entryId || null,
+        cloudName: session.cloudName || null
+      });
+    } catch (e) {}
     if (session.status === 'completed') {
       setError('Esta sesión ya fue usada', 'Generá un QR nuevo en el desktop para grabar otro video.');
       return false;
@@ -725,6 +892,22 @@ async function uploadAndCommit() {
       videoHeight: r.height || null,
       completedAt: firebase.firestore.FieldValue.serverTimestamp()
     });
+    // v3.11.65: remover de library local (ya está completada)
+    try { removeFromLibrary(SESSION_ID); } catch (e) {}
+    // Mostrar botón "Volver a la lista" si quedan más sesiones por grabar
+    try {
+      const remaining = loadLibrary();
+      const btnBack = document.getElementById('btnBackToLibrary');
+      if (btnBack && remaining.length > 0) {
+        btnBack.style.display = '';
+        if (!btnBack.dataset.wired) {
+          btnBack.dataset.wired = '1';
+          btnBack.addEventListener('click', () => {
+            location.replace(location.pathname);
+          });
+        }
+      }
+    } catch (_) {}
     show('screenDone');
   } catch (e) {
     console.error('[upload] failed', e);

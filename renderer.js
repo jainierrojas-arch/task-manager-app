@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.65': {
+    title: '📚 Librería local en la PWA — múltiples grabaciones guardadas, elegís cuál grabar',
+    features: [
+      '🎬 <strong>Cómo funciona</strong>: cada vez que el celular escanea un QR, esa sesión se guarda en la PWA (localStorage). Al abrir el ícono del Home Screen sin un QR, la PWA te muestra todas las sesiones pendientes — tocás una y arrancás a grabar. Después de terminar, te ofrece "📚 Volver a la lista" para grabar la siguiente.',
+      '⚡ <strong>Workflow batch</strong>: en el desktop, hacé click en "Grabar desde Celular" en varios entries seguidos (cada uno te muestra su QR). Escaneá los 3-5 QRs uno tras otro con el celu. Después dejás el cel en el gimbal y desde la PWA tocás cuál grabar, en el orden que quieras. Sin volver al desktop entre grabaciones.',
+      '🧹 <strong>Auto-limpieza</strong>: cuando una sesión se completa (subida al desktop) se elimina automáticamente de la librería. Sesiones expiradas (>1h sin terminar) también se quitan al cargar.',
+      '🗑 <strong>Gestión manual</strong>: cada sesión tiene botón "Quitar" para borrarla individual. Abajo de la lista hay "Limpiar lista" para borrar todo de una.',
+      '📷 <strong>Botón "Escanear otro QR"</strong> al fondo de la lista para agregar más sesiones cuando lo necesites.'
+    ]
+  },
   '3.11.64': {
     title: '⌨️ Space/Enter en la Mac controlan el celu mientras el modal está abierto',
     features: [
