@@ -839,13 +839,12 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// ===== v3.11.55: control remoto desde la PC vía Firestore =====
-// El desktop puede escribir comandos en el doc de sesión y el celular los ejecuta.
-// Esto permite controlar grabar/pausar desde la PC mientras el celu está en el
-// gimbal lejos.
-//   sessionRef.update({remoteCommand: {action: 'toggle'|'done'|'discard', ts: <unique>}})
+// ===== v3.11.56: control remoto desde la PC vía Firestore =====
+// Esto se registra DESPUÉS de que loadSession() asigna sessionRef. Antes el
+// listener se enganchaba al cargar el script cuando sessionRef todavía era null.
 let _lastRemoteCmdTs = 0;
-if (sessionRef) {
+function setupRemoteCommandListener() {
+  if (!sessionRef) { console.warn('[remote] sessionRef null, skipping listener'); return; }
   sessionRef.onSnapshot((snap) => {
     if (!snap.exists) return;
     const data = snap.data() || {};
@@ -854,12 +853,60 @@ if (sessionRef) {
     _lastRemoteCmdTs = cmd.ts;
     const action = cmd.action;
     console.log('[remote] cmd received:', action);
+    showDebug('📡 Control remoto PC: ' + action);
     if (action === 'toggle') recordButtonTap();
     else if (action === 'done') finishRecording();
     else if (action === 'discard') discardLastFragment();
-    showDebug('📡 Control remoto: ' + action);
   }, (err) => console.warn('[remote] snapshot error', err.message));
+  console.log('[remote] listener wired up');
 }
+// Engancharlo apenas tengamos sessionRef. Como init() es async, esperamos un
+// loop a que loadSession lo asigne.
+(async function awaitSessionThenWire() {
+  for (let i = 0; i < 30 && !sessionRef; i++) {
+    await new Promise(r => setTimeout(r, 500));
+  }
+  setupRemoteCommandListener();
+})();
+
+// ===== v3.11.56: iOS volume button capture via silent audio loop =====
+// iOS Safari intercepta los volume keys y NO los pasa al web app. Workaround
+// conocido: reproducir un audio silencioso en loop hace que iOS trate los volume
+// keys como "control de volumen del media playing" → la app puede escuchar el
+// evento volumechange. Eso nos da una forma indirecta de detectar el botón.
+// Sólo se activa después de la primera interacción del usuario (gesture-gated).
+(function setupIosVolumeHack() {
+  // Detectar iOS
+  const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  if (!isIos) return;
+  let audioEl = null;
+  let lastVolume = -1;
+  let lastVolumeTs = 0;
+  function init() {
+    if (audioEl) return;
+    // Audio WAV silencioso (1 sample mudo) embebido como data URL
+    audioEl = new Audio('data:audio/wav;base64,UklGRpAAAABXQVZFZm10IBAAAAABAAIAQB8AAAB9AAAEABAATElTVBoAAABJTkZPSVNGVA4AAABMYXZmNTguMjkuMTAwAGRhdGFEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=');
+    audioEl.loop = true;
+    audioEl.volume = 0.5; // valor inicial: nos da margen arriba y abajo para detectar
+    audioEl.play().catch(e => console.warn('[ios-vol] play blocked', e.message));
+    lastVolume = audioEl.volume;
+    audioEl.addEventListener('volumechange', () => {
+      const now = Date.now();
+      if (now - lastVolumeTs < 200) return; // debounce
+      lastVolumeTs = now;
+      const cur = audioEl.volume;
+      if (Math.abs(cur - lastVolume) > 0.01) {
+        recordButtonTap();
+        // Reset volume al medio para tener margen en ambas direcciones siempre
+        audioEl.volume = 0.5;
+        lastVolume = 0.5;
+      }
+    });
+  }
+  // Necesita user gesture para arrancar (autoplay policy de iOS).
+  document.addEventListener('touchend', init, { once: true });
+  document.addEventListener('click', init, { once: true });
+})();
 
 $('btnCancel').addEventListener('click', () => {
   const isActive = mediaRecorder && (mediaRecorder.state === 'recording' || mediaRecorder.state === 'paused');

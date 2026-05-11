@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.56': {
+    title: 'Fix: control remoto PC ahora SÍ controla el celu + truco para volume keys en iPhone',
+    features: [
+      '🔧 <strong>Fix crítico</strong>: el listener de comandos remotos se registraba ANTES de que <code>sessionRef</code> existiera (cuando cargaba el script), así que los clicks de los botones de la PC no llegaban al celu. Ahora se engancha apenas <code>loadSession()</code> termina.',
+      '🎙 <strong>Truco para volume keys en iPhone</strong>: iOS Safari intercepta los volume keys y no los pasa al web app, pero si tenés un audio playing en loop, iOS deja que la app escuche el evento <code>volumechange</code>. La PWA ahora reproduce un audio silencioso (data URL, sin descargar nada) y dispara el botón rojo cuando detecta un cambio de volumen. Resultado: el remote Bluetooth shutter de tu gimbal funciona también en iPhone ahora.',
+      '⚠ <strong>Necesita gesture inicial</strong>: el audio arranca después del primer tap en la pantalla del recorder (autoplay policy de iOS). Así que primero pegale un tap en cualquier lado, después podés usar el remote del gimbal para todo.',
+      '📲 <strong>Para que el celu cargue el código nuevo</strong>: borrá el ícono actual del PWA, escaneá el QR de nuevo desde Safari y reinstalá. O Settings → Safari → Borrar historial.'
+    ]
+  },
   '3.11.55': {
     title: 'Control remoto del recorder + teleprompter sincronizado + Bluetooth shutter',
     features: [
