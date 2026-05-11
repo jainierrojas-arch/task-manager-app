@@ -888,114 +888,137 @@ function registerIpcHandlers() {
       console.warn('[yt-dlp] auto-bootstrap falló:', bootErr.message);
     }
 
-    return new Promise((resolve) => {
-      // Buscar yt-dlp: primero el bundleado (siempre presente tras bootstrap),
-      // luego PATHs comunes del sistema como fallback.
-      const home = os.homedir();
-      const ytdlpPaths = [];
-      if (bundledPath && fs.existsSync(bundledPath)) ytdlpPaths.push(bundledPath);
-      ytdlpPaths.push(
-        path.join(home, '.local/bin/yt-dlp'),
-        '/opt/homebrew/bin/yt-dlp',
-        '/usr/local/bin/yt-dlp',
-        path.join(home, 'bin/yt-dlp'),
-        'yt-dlp',
-        'yt-dlp.exe'
-      );
-      let proc = null;
-      let pathIndex = 0;
-      function tryNextPath() {
-        if (pathIndex >= ytdlpPaths.length) {
-          resolve({ ok: false, error: 'yt-dlp no instalado', errorCode: 'NOT_INSTALLED' });
-          return;
-        }
-        const ytdlpBin = ytdlpPaths[pathIndex++];
-        try {
-          // v3.9.19 + v3.11.40: NO convertir a mp3 (eso requiere ffmpeg) — bajar
-          // el formato nativo (m4a/webm/mp4 según plataforma). Whisper acepta
-          // todos. Selector permisivo con fallback en cascada: si la plataforma
-          // (TikTok, IG nuevo formato) no ofrece bestaudio, cae a best (video
-          // con audio incluido) que Whisper también acepta. Antes daba
-          // "Requested format is not available" en TikTok puntuales.
-          proc = spawn(ytdlpBin, [
-            '-f', 'bestaudio[ext=m4a]/bestaudio[ext=mp4]/bestaudio[ext=webm]/bestaudio/best[ext=mp4]/best[ext=webm]/best',
-            '-o', tempPath,
-            '--no-playlist',
-            '--no-warnings',
-            '--no-progress',
-            '--no-check-certificate',
-            '--max-filesize', '25M',
-            platformUrl
-          ]);
-          attachHandlers();
-        } catch (e) {
-          tryNextPath();
+    // Buscar yt-dlp: primero el bundleado, luego PATHs comunes del sistema.
+    const home = os.homedir();
+    const ytdlpPaths = [];
+    if (bundledPath && fs.existsSync(bundledPath)) ytdlpPaths.push(bundledPath);
+    ytdlpPaths.push(
+      path.join(home, '.local/bin/yt-dlp'),
+      '/opt/homebrew/bin/yt-dlp',
+      '/usr/local/bin/yt-dlp',
+      path.join(home, 'bin/yt-dlp'),
+      'yt-dlp',
+      'yt-dlp.exe'
+    );
+
+    // Encontrar binario que efectivamente exista. Para los path absolutos
+    // chequeamos fs.existsSync; "yt-dlp"/"yt-dlp.exe" se prueban a ejecutar.
+    function resolveBinary() {
+      for (const p of ytdlpPaths) {
+        if (p.includes('/') || p.includes('\\')) {
+          if (fs.existsSync(p)) return p;
+        } else {
+          // Path-relativo: lo asumimos disponible vía PATH y dejamos que spawn falle si no.
+          return p;
         }
       }
-      let stderr = '';
-      let stdoutLast = '';
-      let timedOut = false;
-      function attachHandlers() {
-        if (!proc) return;
+      return null;
+    }
+    const ytdlpBin = resolveBinary();
+    if (!ytdlpBin) {
+      return { ok: false, error: 'yt-dlp no instalado', errorCode: 'NOT_INSTALLED' };
+    }
+
+    // v3.11.47: ejecuta yt-dlp UNA vez con args dados y devuelve {ok, file, stderr, stdoutLast, code}.
+    // Permite re-llamar con estrategias distintas (cookies de chrome, safari, etc).
+    function runYtDlp(extraArgs, label) {
+      return new Promise((resolve) => {
+        const baseArgs = [
+          '-f', 'bestaudio[ext=m4a]/bestaudio[ext=mp4]/bestaudio[ext=webm]/bestaudio/best[ext=mp4]/best[ext=webm]/best',
+          '-o', tempPath,
+          '--no-playlist',
+          '--no-warnings',
+          '--no-progress',
+          '--no-check-certificate',
+          '--max-filesize', '25M'
+        ];
+        const args = baseArgs.concat(extraArgs || []).concat([platformUrl]);
+        let proc;
+        try { proc = spawn(ytdlpBin, args); }
+        catch (e) { return resolve({ ok: false, error: 'spawn falló: ' + e.message }); }
+        let stderr = '';
+        let stdoutLast = '';
+        let timedOut = false;
         proc.stderr.on('data', (d) => { stderr += d.toString(); });
-        // v3.11.41: capturar stdout para tener contexto cuando falla (yt-dlp
-        // imprime "Downloading webpage", "Extracting URL", etc).
         if (proc.stdout) proc.stdout.on('data', (d) => { stdoutLast = d.toString().slice(-200); });
-        proc.on('error', (e) => {
-          if (e.code === 'ENOENT') {
-            tryNextPath();
-          } else {
-            resolve({ ok: false, error: e.message });
-          }
-        });
+        proc.on('error', (e) => { resolve({ ok: false, error: e.message, errorCode: e.code === 'ENOENT' ? 'NOT_INSTALLED' : null }); });
         proc.on('close', (code) => {
-          // Buscar el archivo final — yt-dlp eligió la extensión según el formato
           const candidates = fs.readdirSync(os.tmpdir()).filter(f => f.startsWith(path.basename(tempBasePath)));
           if (code === 0 && candidates.length > 0) {
-            const fileName = candidates[0];
-            const filePath = path.join(os.tmpdir(), fileName);
-            try {
-              const buf = fs.readFileSync(filePath);
-              fs.unlinkSync(filePath);
-              if (buf.length > 25 * 1024 * 1024) {
-                return resolve({ ok: false, error: 'Audio muy grande (>25MB) — video demasiado largo para Whisper' });
-              }
-              const ext = path.extname(fileName).slice(1).toLowerCase();
-              const mimeMap = { m4a: 'audio/mp4', mp4: 'video/mp4', webm: 'video/webm', mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', opus: 'audio/opus' };
-              const mimeType = mimeMap[ext] || 'application/octet-stream';
-              resolve({ ok: true, data: buf.toString('base64'), mimeType, ext, size: buf.length });
-            } catch (e) {
-              resolve({ ok: false, error: 'Error leyendo audio: ' + e.message });
-            }
+            resolve({ ok: true, fileName: candidates[0] });
           } else {
-            // Cleanup cualquier residuo
             for (const c of candidates) {
               try { fs.unlinkSync(path.join(os.tmpdir(), c)); } catch (_) {}
             }
-            // v3.11.41: mensaje mucho más útil — incluye exit code, stderr last 400
-            // chars, y stdout last 200. Si timed out, decirlo explícitamente.
-            let errMsg;
-            if (timedOut) {
-              errMsg = 'yt-dlp timeout (180s). El video puede ser muy largo o la red está lenta. ';
-              errMsg += 'Última actividad: ' + (stdoutLast.trim() || 'sin output').slice(-150);
-              if (stderr) errMsg += ' | stderr: ' + stderr.slice(-150).trim();
-            } else if (code !== 0) {
-              const stderrTrim = stderr.slice(-400).trim();
-              errMsg = stderrTrim
-                ? 'yt-dlp falló (exit ' + code + '): ' + stderrTrim
-                : 'yt-dlp exit ' + code + ' sin output. Última actividad: ' + (stdoutLast.trim() || 'ninguna');
-            } else {
-              errMsg = 'yt-dlp terminó OK pero no encontró el archivo extraído. stderr: ' + stderr.slice(-200);
-            }
-            resolve({ ok: false, error: errMsg });
+            resolve({ ok: false, code, stderr: stderr.slice(-400), stdoutLast: stdoutLast.slice(-200), timedOut, label });
           }
         });
-        // v3.11.41: timeout 180s (antes 90s) — yt-dlp tarda para videos largos
-        // o redes lentas (Windows en países con peor conexión).
         setTimeout(() => { try { timedOut = true; proc.kill(); } catch (_) {} }, 180000);
+      });
+    }
+
+    // v3.11.47: estrategias de cookies en cascada. yt-dlp para Instagram (y a
+    // veces TikTok) requiere cookies de sesión. Probamos en orden:
+    //   1) Sin cookies (rápido, funciona para TikTok/YouTube/Twitter/etc)
+    //   2) chrome  (multiplataforma)
+    //   3) safari  (solo Mac)  /  edge (solo Win)
+    //   4) firefox (común en ambos)
+    //   5) brave   (cada vez más popular)
+    // Cookie-related: el stderr menciona "cookies", "Sign in", "authentication", "login required".
+    const isWin = process.platform === 'win32';
+    const isMac = process.platform === 'darwin';
+    const strategies = [
+      { label: 'sin cookies', args: [] },
+      { label: 'cookies de chrome', args: ['--cookies-from-browser', 'chrome'] }
+    ];
+    if (isMac) strategies.push({ label: 'cookies de safari', args: ['--cookies-from-browser', 'safari'] });
+    if (isWin) strategies.push({ label: 'cookies de edge', args: ['--cookies-from-browser', 'edge'] });
+    strategies.push({ label: 'cookies de firefox', args: ['--cookies-from-browser', 'firefox'] });
+    strategies.push({ label: 'cookies de brave', args: ['--cookies-from-browser', 'brave'] });
+
+    let lastFail = null;
+    for (const strat of strategies) {
+      const res = await runYtDlp(strat.args, strat.label);
+      if (res.ok) {
+        // ÉXITO — leer archivo y devolver
+        const filePath = path.join(os.tmpdir(), res.fileName);
+        try {
+          const buf = fs.readFileSync(filePath);
+          fs.unlinkSync(filePath);
+          if (buf.length > 25 * 1024 * 1024) {
+            return { ok: false, error: 'Audio muy grande (>25MB) — video demasiado largo para Whisper' };
+          }
+          const ext = path.extname(res.fileName).slice(1).toLowerCase();
+          const mimeMap = { m4a: 'audio/mp4', mp4: 'video/mp4', webm: 'video/webm', mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', opus: 'audio/opus' };
+          const mimeType = mimeMap[ext] || 'application/octet-stream';
+          return { ok: true, data: buf.toString('base64'), mimeType, ext, size: buf.length, strategy: strat.label };
+        } catch (e) {
+          return { ok: false, error: 'Error leyendo audio: ' + e.message };
+        }
       }
-      tryNextPath();
-    });
+      lastFail = res;
+      // Si el error NO es de cookies/auth, no tiene sentido reintentar con cookies
+      // de otros browsers — el reintento es solo cuando hay señales claras de auth needed.
+      const needsCookies = /cookie|sign[- ]in|log[- ]?in required|authentication|403|429|gate/i.test(res.stderr || '');
+      if (!needsCookies) break;
+      // Si el strategy actual ya intentó cookies y falló porque el browser no está instalado,
+      // probamos el siguiente (sigue loop).
+    }
+
+    // Todas las estrategias fallaron
+    let errMsg;
+    const r = lastFail || {};
+    if (r.timedOut) {
+      errMsg = 'yt-dlp timeout (180s). El video puede ser muy largo o la red está lenta. ';
+      errMsg += 'Última actividad: ' + ((r.stdoutLast || '').trim() || 'sin output').slice(-150);
+      if (r.stderr) errMsg += ' | stderr: ' + r.stderr.trim().slice(-150);
+    } else {
+      const stderrTrim = (r.stderr || '').trim();
+      errMsg = stderrTrim
+        ? 'yt-dlp falló (exit ' + r.code + ', estrategia: ' + (r.label || '?') + '): ' + stderrTrim
+        : 'yt-dlp exit ' + r.code + ' sin output (estrategia: ' + (r.label || '?') + '). Última actividad: ' + ((r.stdoutLast || '').trim() || 'ninguna');
+    }
+    return { ok: false, error: errMsg };
   });
 
   ipcMain.handle('send-to-make-webhook', async (_, payload) => {

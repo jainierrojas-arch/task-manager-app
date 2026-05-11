@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.47': {
+    title: 'Fix Instagram auth en yt-dlp — cookies del browser en cascada (Chrome → Safari/Edge → Firefox)',
+    features: [
+      '🍪 <strong>Instagram tiró "cookies for authentication"</strong>: yt-dlp ahora requiere cookies de sesión para muchos reels de IG. La app prueba en cascada: (1) sin cookies (TikTok/YouTube/Twitter andan sin), (2) cookies de Chrome, (3) Safari (Mac) o Edge (Windows), (4) Firefox, (5) Brave.',
+      '🎯 <strong>Auto-detección inteligente</strong>: si el primer intento falla pero el error NO menciona cookies/auth, no pierde tiempo probando otros browsers — solo cuando hay señales claras (palabras "cookie", "sign in", "authentication", HTTP 403/429).',
+      '⚡ <strong>Requisito</strong>: que estés logueado en Instagram en alguno de esos browsers en la máquina donde corre la app. Por defecto la mayoría de la gente lo está en Chrome o Safari/Edge — debería andar sin tocar nada.',
+      '🩺 <strong>Error final dice qué estrategia falló</strong>: si todo falla, el mensaje incluye qué estrategia fue la última probada para diagnosticar.'
+    ]
+  },
   '3.11.46': {
     title: 'Transcripción vía Node https (fix Windows con firewall corporativo)',
     features: [
