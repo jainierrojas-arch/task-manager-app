@@ -957,13 +957,9 @@ function registerIpcHandlers() {
       });
     }
 
-    // v3.11.49: SOLO browsers que NO requieren el llavero del OS.
-    // - Safari (Mac): cookies en DB local accesible sin keychain.
-    // - Firefox: cookies en su propio DB, sin keychain.
-    // - Edge (Win): mismas cookies que Chrome PERO Windows no pide credencial.
-    // Excluidos en Mac: Chrome y Brave porque ambos disparan prompt del llavero
-    // "Permitir Safe Storage" que es horrible UX. Si el usuario solo usa esos,
-    // que inicie sesión en Safari/Firefox una vez (o lo activamos opt-in luego).
+    // v3.11.50: cascada COMPLETA. Empezamos por los browsers SIN keychain (Safari/Firefox/Edge)
+    // y caemos a Chrome/Brave AL FINAL si no quedó otra. El prompt del llavero
+    // se acepta UNA vez ("Permitir siempre") y queda silencioso para siempre.
     const isWin = process.platform === 'win32';
     const isMac = process.platform === 'darwin';
     const strategies = [
@@ -972,13 +968,18 @@ function registerIpcHandlers() {
     if (isMac) {
       strategies.push({ label: 'cookies de safari', args: ['--cookies-from-browser', 'safari'] });
       strategies.push({ label: 'cookies de firefox', args: ['--cookies-from-browser', 'firefox'] });
+      // Chrome y Brave al final — disparan prompt del llavero (one-time si "Permitir siempre").
+      strategies.push({ label: 'cookies de chrome', args: ['--cookies-from-browser', 'chrome'] });
+      strategies.push({ label: 'cookies de brave', args: ['--cookies-from-browser', 'brave'] });
     } else if (isWin) {
       strategies.push({ label: 'cookies de edge', args: ['--cookies-from-browser', 'edge'] });
       strategies.push({ label: 'cookies de chrome', args: ['--cookies-from-browser', 'chrome'] });
       strategies.push({ label: 'cookies de firefox', args: ['--cookies-from-browser', 'firefox'] });
+      strategies.push({ label: 'cookies de brave', args: ['--cookies-from-browser', 'brave'] });
     } else {
       strategies.push({ label: 'cookies de firefox', args: ['--cookies-from-browser', 'firefox'] });
       strategies.push({ label: 'cookies de chrome', args: ['--cookies-from-browser', 'chrome'] });
+      strategies.push({ label: 'cookies de brave', args: ['--cookies-from-browser', 'brave'] });
     }
 
     let lastFail = null;
@@ -1019,10 +1020,10 @@ function registerIpcHandlers() {
       errMsg += 'Última actividad: ' + ((r.stdoutLast || '').trim() || 'sin output').slice(-150);
       if (r.stderr) errMsg += ' | stderr: ' + r.stderr.trim().slice(-150);
     } else if (looksLikeIgAuth && /instagram/i.test(platformUrl)) {
-      // v3.11.49: error claro y accionable para el caso IG-auth
-      errMsg = 'Instagram requiere cookies de sesión y la app no encontró un browser donde estés logueado en IG. Iniciá sesión en Instagram desde ' +
-        (isMac ? 'Safari o Firefox' : isWin ? 'Edge, Chrome o Firefox' : 'Firefox o Chrome') +
-        ' (visitando instagram.com y poniendo tus credenciales), después reintentá Transcribir. La app va a leer esas cookies automáticamente.';
+      // v3.11.50: error con dos caminos accionables.
+      errMsg = 'Instagram requiere cookies de sesión y no encontré dónde estás logueado. Dos opciones:\n\n' +
+        '1) Iniciá sesión en Instagram desde Safari o Firefox (mac) / Edge o Firefox (win) — la app las usa silenciosamente.\n\n' +
+        '2) Si solo usás Chrome/Brave: cuando aparezca el prompt "Permitir Safe Storage" hacé click en "PERMITIR SIEMPRE" + tu password de login. Es UNA vez por la vida de la app — después queda silencioso para siempre. NO le des "Denegar".';
     } else {
       const stderrTrim = (r.stderr || '').trim();
       errMsg = stderrTrim

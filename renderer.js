@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.50': {
+    title: 'Chrome y Brave de vuelta en la cascada — el prompt del llavero se aprueba UNA vez',
+    features: [
+      '🔑 <strong>Re-habilitados Chrome y Brave en Mac</strong> como último recurso. Si solo usás esos browsers para IG, la app va a poder leer sus cookies, PERO va a aparecer el prompt del llavero "Permitir Safe Storage".',
+      '✅ <strong>INSTRUCCIONES si aparece el prompt</strong>: hacé click en "<strong>PERMITIR SIEMPRE</strong>" + poné tu password de Mac. ES UNA SOLA VEZ — después macOS recuerda y nunca más te lo pregunta. NO le des "Denegar" porque ahí la app no puede leer las cookies y se cae.',
+      '📋 <strong>Cascada actualizada</strong>: (1) sin cookies → (2) Safari → (3) Firefox → (4) Chrome (con prompt una vez) → (5) Brave (con prompt una vez). El error final ahora te explica las dos opciones: usar Safari/Firefox, o aceptar el prompt una vez.',
+      '🪟 <strong>En Windows</strong>: el prompt no aparece (Windows no encripta con credencial del usuario). La cascada Edge → Chrome → Firefox → Brave es silenciosa.'
+    ]
+  },
   '3.11.49': {
     title: 'Stop a los prompts del llavero — solo browsers sin keychain en la cascada',
     features: [
