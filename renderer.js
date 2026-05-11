@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.61': {
+    title: '🎮 Gimbal BT remote pareado a la Mac (workaround real para iPhone PWA)',
+    features: [
+      '💡 <strong>Idea clave</strong>: iOS PWA no puede captar volume keys (Apple lo bloquea). PERO si el remote BT está pareado a la <strong>Mac</strong> en lugar del iPhone, Electron <code>globalShortcut</code> SÍ los captura y reenvía al celular via Firestore. Cero APIs de iOS necesarias.',
+      '🔧 <strong>Cómo configurarlo</strong>:<br>1) En el iPhone: andá a Settings → Bluetooth → tocá tu remote → "Olvidar este dispositivo".<br>2) En la Mac: abrí Settings de Bluetooth → poné el remote en modo pairing → pareálo a la Mac.<br>3) Abrí Task Manager → Depósito → entry con guion → "Grabar desde Celular" → escaneá el QR.<br>4) Apretá VolumeUp/Down en el remote — el botón "⏯" del panel remoto en la PC se va a iluminar y el celular va a empezar/pausar la grabación.',
+      '⚠ <strong>Trade-off honesto</strong>: mientras el modal "Grabar desde Celular" está abierto, las teclas VolumeUp/VolumeDown de la Mac NO ajustan volumen — están reservadas para el gimbal. Al cerrar el modal, vuelven a funcionar normal. También se libera al cerrar la app.',
+      '🎯 <strong>Resultado</strong>: clickeás el remote BT (en tu mano, con el celu en el gimbal lejos) → la Mac escucha → manda comando vía Firestore → celular ejecuta. Latencia 200-400ms. Es la mejor experiencia que se puede lograr sin app nativa.'
+    ]
+  },
   '3.11.60': {
     title: 'Fix grabación auto-iniciada al escanear QR (MediaSession.play falso)',
     features: [

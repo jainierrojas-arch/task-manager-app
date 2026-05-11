@@ -69,6 +69,10 @@ contextBridge.exposeInMainWorld('api', {
   connectInstagram: () => ipcRenderer.invoke('connect-instagram'),
   saveInstagramCookies: (cookies) => ipcRenderer.invoke('save-instagram-cookies', cookies),
   hasInstagramCookiesFile: () => ipcRenderer.invoke('has-instagram-cookies-file'),
+  // v3.11.61: captura de gimbal BT remote pareado a la Mac — VolumeUp/Down disparan toggle
+  registerGimbalShortcuts: () => ipcRenderer.invoke('register-gimbal-shortcuts'),
+  unregisterGimbalShortcuts: () => ipcRenderer.invoke('unregister-gimbal-shortcuts'),
+  onGimbalShortcut: (cb) => ipcRenderer.on('gimbal-shortcut-pressed', () => cb()),
   // Cloudinary unsigned upload config (para subir archivos directos desde la app)
   getCloudinaryConfig: () => ipcRenderer.invoke('get-cloudinary-config'),
   setCloudinaryConfig: (cfg) => ipcRenderer.invoke('set-cloudinary-config', cfg),

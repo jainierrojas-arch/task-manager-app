@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, screen, Menu, MenuItem } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, screen, Menu, MenuItem, globalShortcut } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { autoUpdater } = require('electron-updater');
@@ -831,6 +831,38 @@ function registerIpcHandlers() {
       const p = path.join(app.getPath('userData'), 'instagram-cookies.txt');
       return fs.existsSync(p);
     } catch (_) { return false; }
+  });
+
+  // v3.11.61: captura de gimbal BT remote pareado a la Mac (no al iPhone).
+  // El remote envía VolumeUp/VolumeDown cuando se pulsa. Electron globalShortcut
+  // los intercepta y reenvía a renderer → renderer manda comando al celular
+  // via Firestore → celular ejecuta. Cero dependencia de iOS PWA APIs.
+  let _gimbalRegistered = false;
+  ipcMain.handle('register-gimbal-shortcuts', async () => {
+    if (_gimbalRegistered) return { ok: true, alreadyRegistered: true };
+    function emit() {
+      const wins = BrowserWindow.getAllWindows();
+      wins.forEach(w => { try { w.webContents.send('gimbal-shortcut-pressed'); } catch (_) {} });
+    }
+    const okUp = globalShortcut.register('VolumeUp', emit);
+    const okDown = globalShortcut.register('VolumeDown', emit);
+    // Algunos remotes / teclados envían MediaPlayPause como botón shutter
+    const okMedia = globalShortcut.register('MediaPlayPause', emit);
+    _gimbalRegistered = true;
+    return { ok: true, registered: { volumeUp: okUp, volumeDown: okDown, mediaPlayPause: okMedia } };
+  });
+  ipcMain.handle('unregister-gimbal-shortcuts', async () => {
+    try {
+      globalShortcut.unregister('VolumeUp');
+      globalShortcut.unregister('VolumeDown');
+      globalShortcut.unregister('MediaPlayPause');
+    } catch (e) { console.warn('[gimbal] unregister failed', e.message); }
+    _gimbalRegistered = false;
+    return { ok: true };
+  });
+  // Cleanup al cerrar la app
+  app.on('will-quit', () => {
+    try { globalShortcut.unregisterAll(); } catch (_) {}
   });
 
   // v3.11.46: llamada a Whisper/Groq desde el proceso main (Node https) en vez

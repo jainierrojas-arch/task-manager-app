@@ -2928,6 +2928,15 @@ async function openPhoneRecorderModal() {
   if (resultEl) resultEl.style.display = 'none';
   modal.classList.add('active');
   modal.style.display = 'flex';
+  // v3.11.61: activar captura del gimbal BT remote pareado a la Mac
+  if (window.api && window.api.registerGimbalShortcuts) {
+    window.api.registerGimbalShortcuts().then(r => {
+      if (r && r.registered) {
+        const ok = Object.values(r.registered).some(v => v);
+        console.log('[gimbal] shortcuts registered:', r.registered, '— captura activa:', ok);
+      }
+    }).catch(e => console.warn('[gimbal] register failed', e.message));
+  }
 
   // Cloudinary config (heredado del parent vía window.api)
   let cfg = null;
@@ -3045,6 +3054,11 @@ function closePhoneRecorderModal() {
   }
   if (_phoneRecUnsub) { try { _phoneRecUnsub(); } catch (e) {} _phoneRecUnsub = null; }
   _phoneRecSessionId = null;
+  // v3.11.61: liberar VolumeUp/Down al cerrar para no robarle los volume keys
+  // al sistema cuando ya no usamos el gimbal remote.
+  if (window.api && window.api.unregisterGimbalShortcuts) {
+    window.api.unregisterGimbalShortcuts().catch(() => {});
+  }
 }
 
 async function _attachRecordedVideoToEntry(entryId, videoUrl) {
@@ -3144,6 +3158,20 @@ async function _attachRecordedVideoToEntry(entryId, videoUrl) {
     if (discardBtn) discardBtn.addEventListener('click', () => sendRemoteCommand('discard', discardBtn));
     const doneBtn = document.getElementById('phoneRecDoneBtn');
     if (doneBtn) doneBtn.addEventListener('click', () => sendRemoteCommand('done', doneBtn));
+
+    // v3.11.61: gimbal BT remote pareado a la Mac → VolumeUp/Down → toggle
+    if (window.api && window.api.onGimbalShortcut) {
+      window.api.onGimbalShortcut(() => {
+        console.log('[gimbal] Mac globalShortcut → toggle');
+        sendRemoteCommand('toggle', null);
+        // Flash visual del botón para feedback
+        const btn = document.getElementById('phoneRecToggleBtn');
+        if (btn) {
+          btn.style.background = 'rgba(108,99,255,0.4)';
+          setTimeout(() => { btn.style.background = ''; }, 400);
+        }
+      });
+    }
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', attach);
   else attach();
