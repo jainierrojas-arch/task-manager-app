@@ -1808,16 +1808,20 @@ document.getElementById('confirmAssign').addEventListener('click', async () => {
   // Tomar solo el primer link de cada tipo para las casillas de la tarea.
   // Carruseles tambien se mapean al slot videoLink para que la preview se muestre.
   const links = assigningEntry.links || [];
-  // v3.10.2: si hay un video grabado desde el celular, ese va PRIMERO en el slot
-  // videoLink — es lo que el editor necesita ver, no el reel de IG de referencia.
   const recordedVids = Array.isArray(assigningEntry.recordedVideos) ? assigningEntry.recordedVideos : [];
   const lastRecordedUrl = recordedVids.length > 0 ? recordedVids[recordedVids.length - 1].url : null;
-  let videoLink = lastRecordedUrl
-    || links.find(l => l.type === 'video')?.url
+  // v3.11.54: cambio de prioridad — videoLink ahora prefiere el LINK DE REFERENCIA
+  // (reel de IG / TikTok original) sobre la grabación. La grabación ya queda
+  // en task.recordedVideos como "🎬 Grabación" (chip naranja). videoLink se
+  // renderiza como "🎬 Video de referencia" (chip rojo). El editor ve los dos.
+  let videoLink = links.find(l => l.type === 'video')?.url
     || links.find(l => l.type === 'carrusel')?.url;
   let materialLink = links.find(l => l.type === 'material')?.url
     || links.find(l => l.type === 'recurso')?.url;
-  // Fallback: si no se mapeo nada, usar el primer link de cualquier tipo
+  // Si NO hay link de video pero SÍ grabación: la grabación va también como videoLink
+  // (así el editor tiene preview ya sea por la grabación, ya sea por el reel).
+  if (!videoLink && lastRecordedUrl) videoLink = lastRecordedUrl;
+  // Fallback total: si no se mapeo nada, usar el primer link de cualquier tipo
   if (!videoLink && !materialLink && links.length > 0) {
     videoLink = links[0].url;
   }

@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.54': {
+    title: '"🎬 Video de referencia" al lado de "Grabación" — el editor ve los dos',
+    features: [
+      '🎬 <strong>Dos botones en la tarea</strong>: si la entry venía del Depósito con un reel de IG/TikTok COMO referencia Y se grabó un video con el celu encima, la tarea ahora muestra <strong>"🎬 Grabación"</strong> (naranja) Y <strong>"🎬 Video de referencia"</strong> (rojo) lado a lado. Click en cada uno abre el video correspondiente. Antes solo aparecía "Grabación" porque <code>videoLink</code> era la misma URL.',
+      '🔁 <strong>Flow de asignar arreglado</strong>: cuando asignás una entry con grabación + reel de referencia, ahora <code>task.videoLink</code> es el reel original (no la grabación). La grabación queda solo en <code>task.recordedVideos</code>. Resultado: ambos botones distintos en la tarea.',
+      '🩹 <strong>Backfill automático para tareas viejas</strong>: si una tarea tiene <code>videoLink === grabación</code> (assign flow viejo), la app mira la entry original del depósito y saca el reel de referencia de ahí. No requiere reasignar las tareas existentes.',
+      '✏️ <strong>"+ Video" sigue funcionando</strong>: si querés agregar/editar manualmente el video de referencia desde una tarea, el botón "+ Video" (o ✏️ Video si ya hay uno) abre el modal para pegar el link.'
+    ]
+  },
   '3.11.53': {
     title: 'Transcribir SIN LOGINS — scrapers públicos para IG (snapinsta) y TikTok (tikwm)',
     features: [
@@ -4361,15 +4370,25 @@ function renderPersonalList() {
       linkBadge = `<span class="task-tag" style="background:rgba(153,102,255,0.2);color:#b794ff;cursor:pointer" onclick="openTaskLink('personalTasks','${task.id}')" title="${esc(task.link)}">🔗 Abrir material</span>`;
     }
     let videoBadge = '';
-    // v3.11.39: badge dedicado para grabaciones del celular en tareas personales
     const recVidsP = Array.isArray(task.recordedVideos) ? task.recordedVideos : [];
     const lastRecordedUrlP = recVidsP.length > 0 ? recVidsP[recVidsP.length - 1].url : '';
     if (lastRecordedUrlP) {
       const lbl = recVidsP.length > 1 ? `🎬 Grabación (${recVidsP.length})` : '🎬 Grabación';
       videoBadge += `<span class="task-tag" style="background:rgba(255,128,64,0.22);color:#ff9866;border:1px solid rgba(255,128,64,0.45);cursor:pointer;font-weight:600" onclick="window.api.openExternal('${esc(lastRecordedUrlP)}')" title="Abrir video grabado desde el celular">${lbl}</span>`;
     }
+    // v3.11.54: prefer task.videoLink; fallback a entry.links si videoLink == grabación
+    let referenceUrlP = '';
     if (task.videoLink && task.videoLink !== lastRecordedUrlP) {
-      videoBadge += `<span class="task-tag" style="background:rgba(255,90,90,0.2);color:#ff8a8a;cursor:pointer" onclick="openTaskVideo('personalTasks','${task.id}')" title="${esc(task.videoLink)}">🎬 Video de referencia</span>`;
+      referenceUrlP = task.videoLink;
+    } else if (lastRecordedUrlP && task.depositEntryId && Array.isArray(depositEntries)) {
+      const entry = depositEntries.find(e => e.id === task.depositEntryId);
+      if (entry && Array.isArray(entry.links)) {
+        const ref = entry.links.find(l => l && (l.type === 'video' || l.type === 'carrusel') && l.url && l.url !== lastRecordedUrlP);
+        if (ref) referenceUrlP = ref.url;
+      }
+    }
+    if (referenceUrlP) {
+      videoBadge += `<span class="task-tag" style="background:rgba(255,90,90,0.2);color:#ff8a8a;cursor:pointer" onclick="window.api.openExternal('${esc(referenceUrlP)}')" title="${esc(referenceUrlP)}">🎬 Video de referencia</span>`;
     }
     const linkBtn = task.link
       ? `<button class="btn-add-note" onclick="showLinkModal('personalTasks','${task.id}')" title="Editar link">✏️ Link</button>`
@@ -5054,9 +5073,6 @@ function renderTaskList(container, taskList, mode) {
 
       // Video de referencia badge + edit
       let videoBadge = '';
-      // v3.11.39: si la tarea tiene video grabado desde el celular, mostrar un badge
-      // dedicado "🎬 Grabación" (separado del "Video de referencia" que es el reel de IG).
-      // Click abre el video grabado directo en external. Usuario lo pidió explícitamente.
       const recVideos = Array.isArray(task.recordedVideos) ? task.recordedVideos : [];
       const lastRecordedUrl = recVideos.length > 0 ? recVideos[recVideos.length - 1].url : '';
       const recCount = recVideos.length;
@@ -5064,10 +5080,22 @@ function renderTaskList(container, taskList, mode) {
         const recLabel = recCount > 1 ? `🎬 Grabación (${recCount})` : '🎬 Grabación';
         videoBadge += `<span class="task-tag" style="background:rgba(255,128,64,0.22);color:#ff9866;border:1px solid rgba(255,128,64,0.45);cursor:pointer;font-weight:600" onclick="window.api.openExternal('${esc(lastRecordedUrl)}')" title="Abrir video grabado desde el celular">${recLabel}</span>`;
       }
-      // El "Video de referencia" tradicional (videoLink) solo se muestra si NO coincide con la grabación,
-      // para no duplicar botones cuando el assigner copia recordedUrl → videoLink.
+      // v3.11.54: resolución del "Video de referencia" — preferimos task.videoLink
+      // si difiere de la grabación. Para tareas viejas que tienen videoLink == recording
+      // (assign flow anterior), buscamos el link de referencia en la entry original
+      // del depósito (deposit entry tiene los links del reel/post de IG).
+      let referenceUrl = '';
       if (task.videoLink && task.videoLink !== lastRecordedUrl) {
-        videoBadge += `<span class="task-tag" style="background:rgba(255,90,90,0.2);color:#ff8a8a;cursor:pointer" onclick="openTaskVideo('tasks','${task.id}')" title="${esc(task.videoLink)}">🎬 Video de referencia</span>`;
+        referenceUrl = task.videoLink;
+      } else if (lastRecordedUrl && task.depositEntryId && Array.isArray(depositEntries)) {
+        const entry = depositEntries.find(e => e.id === task.depositEntryId);
+        if (entry && Array.isArray(entry.links)) {
+          const ref = entry.links.find(l => l && (l.type === 'video' || l.type === 'carrusel') && l.url && l.url !== lastRecordedUrl);
+          if (ref) referenceUrl = ref.url;
+        }
+      }
+      if (referenceUrl) {
+        videoBadge += `<span class="task-tag" style="background:rgba(255,90,90,0.2);color:#ff8a8a;cursor:pointer" onclick="window.api.openExternal('${esc(referenceUrl)}')" title="${esc(referenceUrl)}">🎬 Video de referencia</span>`;
       }
       let videoBtn = '';
       if (canAddMeta) {
