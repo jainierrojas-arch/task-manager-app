@@ -732,20 +732,33 @@ async function uploadAndCommit() {
       blobToUpload = segments[0].blob;
       mimeToUpload = segments[0].mime;
     } else {
-      // Multi-clip → ffmpeg concat
+      // Multi-clip → intentar concat client-side
       try {
-        $('uploadPct').textContent = 'Cargando ffmpeg...';
+        $('uploadPct').textContent = '🔄 Cargando ffmpeg (primera vez ~25MB)...';
         const merged = await concatClipsWithFFmpeg(segments, (msg) => {
-          $('uploadPct').textContent = msg;
+          $('uploadPct').textContent = '🔄 ' + msg;
         });
         blobToUpload = merged;
         mimeToUpload = merged.type || segments[0].mime;
         ffmpegUsed = true;
       } catch (concatErr) {
-        console.warn('[upload] ffmpeg concat failed, falling back to upload last clip only:', concatErr);
-        // Fallback: subir solo el último clip (no falla la upload entera)
-        blobToUpload = segments[segments.length - 1].blob;
-        mimeToUpload = segments[segments.length - 1].mime;
+        // FFmpeg falló — intentar naive Blob concat como segundo fallback
+        // (puede funcionar para WebM, raramente para MP4)
+        console.warn('[upload] ffmpeg concat failed:', concatErr);
+        const errMsg = (concatErr && concatErr.message) || String(concatErr);
+        try {
+          $('uploadPct').textContent = '⚠ ffmpeg falló — probando concat simple...';
+          const naive = new Blob(segments.map(s => s.blob), { type: segments[0].mime });
+          blobToUpload = naive;
+          mimeToUpload = naive.type || segments[0].mime;
+          ffmpegUsed = false;
+          showDebug('⚠ ffmpeg falló: ' + errMsg.slice(0, 80) + ' — usando concat simple');
+        } catch (naiveErr) {
+          // Todo falló — subir solo el último clip + mostrar error visible
+          blobToUpload = segments[segments.length - 1].blob;
+          mimeToUpload = segments[segments.length - 1].mime;
+          showDebug('⚠ Concat falló — solo el último clip subido. Error: ' + errMsg.slice(0, 60));
+        }
       }
     }
 
@@ -1084,41 +1097,44 @@ async function saveLocally(btn) {
     return new File([s.blob], `taskmgr-${stamp}${suffix}.${ext}`, { type: mime });
   });
 
-  // 1) Web Share API con MÚLTIPLES archivos (iOS 15+, Android Chrome).
-  //    Esto es lo único que funciona confiablemente en iOS para guardar varios.
-  if (navigator.canShare && navigator.canShare({ files })) {
+  // v3.11.33: en iOS, share múltiple ARCHIVOS en UN share a veces solo guarda
+  // el último cuando el usuario tap "Save Video" desde la share sheet. Solución:
+  // SECUENCIAL — un share por clip, el usuario confirma cada uno y van todos a Fotos.
+  if (btn) { btn.disabled = true; }
+  let savedCount = 0;
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    if (btn) btn.textContent = `⏳ ${i + 1}/${N}...`;
     try {
-      if (btn) { btn.disabled = true; btn.textContent = '⏳ Abriendo...'; }
-      await navigator.share({ files, title: N > 1 ? `${N} clips grabados` : 'Video grabado', text: 'Videos del Task Manager Recorder' });
-      if (btn) { btn.textContent = '✓ Compartido'; setTimeout(() => { btn.textContent = '💾 Guardar'; btn.disabled = false; }, 1800); }
-      return;
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: file.name, text: `Clip ${i + 1} de ${N}` });
+        savedCount++;
+      } else {
+        // Android/Desktop: <a download>
+        const url = URL.createObjectURL(file);
+        const a = document.createElement('a');
+        a.href = url; a.download = file.name; a.style.display = 'none';
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+        savedCount++;
+        await new Promise(r => setTimeout(r, 600));
+      }
     } catch (e) {
-      if (e && e.name !== 'AbortError') console.warn('[saveLocally] share failed', e);
-      if (btn) { btn.disabled = false; btn.textContent = '💾 Guardar'; }
+      // User canceló este clip — preguntar si quiere seguir con los demás
+      if (e && e.name === 'AbortError') {
+        if (i < files.length - 1) {
+          const cont = confirm(`Cancelaste el clip ${i + 1}. ¿Querés seguir con los ${files.length - i - 1} restantes?`);
+          if (!cont) break;
+        }
+      } else {
+        console.warn('[saveLocally] share/download failed for', file.name, e);
+      }
     }
   }
-
-  // 2) Fallback Android/Desktop: <a download> en cascada con delay.
-  try {
-    if (btn) btn.disabled = true;
-    for (let i = 0; i < files.length; i++) {
-      if (btn) btn.textContent = '⏳ ' + (i + 1) + '/' + files.length;
-      const url = URL.createObjectURL(files[i]);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = files[i].name;
-      a.style.display = 'none';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 2000);
-      await new Promise(r => setTimeout(r, 500));
-    }
-    if (btn) { btn.textContent = '✓ ' + N + ' descargado' + (N > 1 ? 's' : ''); setTimeout(() => { btn.textContent = '💾 Guardar'; btn.disabled = false; }, 1800); }
-  } catch (e) {
-    console.error('[saveLocally] download failed', e);
-    alert('No se pudo guardar: ' + e.message);
-    if (btn) { btn.disabled = false; btn.textContent = '💾 Guardar'; }
+  if (btn) {
+    btn.disabled = false;
+    btn.textContent = savedCount === N ? `✓ ${N} guardado${N > 1 ? 's' : ''}` : `${savedCount}/${N} guardados`;
+    setTimeout(() => { btn.textContent = '💾 Guardar'; }, 2200);
   }
 }
 
