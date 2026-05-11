@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.62': {
+    title: 'Guard universal contra auto-start + instrucciones de permiso de Accesibilidad',
+    features: [
+      '🛡 <strong>Guard universal de 5 segundos</strong>: durante los primeros 5s después de cargar el recorder, solo el TAP físico en el botón rojo puede empezar a grabar. MediaSession, volumechange, gimbal shortcut y Firestore commands quedan bloqueados — eso elimina el auto-start fantasma al escanear el QR.',
+      '🗑 <strong>Comando viejo ignorado al cargar</strong>: si el doc de sesión tenía un <code>remoteCommand</code> de antes (modal anterior), ahora se ignora — el listener registra el ts inicial y solo procesa comandos con ts MAYOR a ese.',
+      '🍎 <strong>Volume keys en Mac requieren permiso de Accesibilidad</strong>: macOS bloquea los media keys (VolumeUp/Down) a nivel sistema antes de pasarlos a apps. Para que <code>globalShortcut</code> de Electron los capture, tenés que dar el permiso:<br>1) Configuración del Sistema → Privacidad y Seguridad → <strong>Accesibilidad</strong>.<br>2) Click en + → buscá "<strong>Task Manager</strong>" en /Applications → agregar.<br>3) Activá el toggle al lado del nombre.<br>4) Cerrá y reabrí la app.<br>5) Después del permiso, probá apretar VolumeUp del remote BT pareado a la Mac.',
+      '⚠ <strong>Si aún sin permiso de Accesibilidad no anda</strong>: macOS pone los media keys en una "private API" (IOKit) que Electron no siempre captura. Plan B real: usar el panel de control remoto en la PC con el mouse, o comprar un remote BT con switch Android (manda Enter, no requiere permisos).'
+    ]
+  },
   '3.11.61': {
     title: '🎮 Gimbal BT remote pareado a la Mac (workaround real para iPhone PWA)',
     features: [

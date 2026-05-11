@@ -501,10 +501,26 @@ function startRecording() {
   reportStatus('recording');
 }
 
+// v3.11.62: guard universal contra disparos automáticos al inicio.
+// Los primeros 5 segundos después del page load, recordButtonTap solo acepta
+// disparos de source 'tap' (tap físico en el botón rojo). MediaSession,
+// volumechange, gimbal y firestore commands no pueden auto-arrancar la grabación.
+const _pageLoadTs = Date.now();
+function _isAutoTriggerBlocked(source) {
+  if (source === 'tap') return false; // tap físico siempre permitido
+  const sinceLoad = Date.now() - _pageLoadTs;
+  return sinceLoad < 5000;
+}
+
 // Tap rojo: start / pause / resume según estado.
 // v3.11.55: el teleprompter ahora se sincroniza con la grabación — pausa y
 // reanuda automáticamente cuando se aprieta el botón rojo.
-function recordButtonTap() {
+function recordButtonTap(source) {
+  if (_isAutoTriggerBlocked(source)) {
+    if (typeof showDebug === 'function') showDebug('🚫 ' + source + ' bloqueado (init)');
+    console.log('[recordButtonTap] ignored, source=' + source + ' (init period)');
+    return;
+  }
   if (!mediaRecorder || mediaRecorder.state === 'inactive') {
     startRecording();
     // Auto-start del teleprompter al empezar a grabar
@@ -570,7 +586,7 @@ function discardLastFragment() {
   if (pauseMarks.length === 0 && (!mediaRecorder || mediaRecorder.state === 'inactive')) return;
   if (mediaRecorder && mediaRecorder.state === 'recording') {
     // Pausar primero, después descartar (en el próximo tick)
-    recordButtonTap();
+    recordButtonTap('tap'); // viene de un comando explícito, no automático
     setTimeout(() => discardLastFragment(), 350);
     return;
   }
@@ -819,7 +835,7 @@ function applyLandscapeDefaults() {
 applyLandscapeDefaults();
 window.matchMedia('(orientation: landscape)').addEventListener('change', applyLandscapeDefaults);
 
-$('btnRecord').addEventListener('click', recordButtonTap);
+$('btnRecord').addEventListener('click', () => recordButtonTap('tap'));
 $('btnUndo').addEventListener('click', discardLastFragment);
 $('btnDone').addEventListener('click', finishRecording);
 $('btnPlayPause').addEventListener('click', tpPlayPause);
@@ -828,8 +844,20 @@ $('btnPlayPause').addEventListener('click', tpPlayPause);
 // Esto se registra DESPUÉS de que loadSession() asigna sessionRef. Antes el
 // listener se enganchaba al cargar el script cuando sessionRef todavía era null.
 let _lastRemoteCmdTs = 0;
-function setupRemoteCommandListener() {
+async function setupRemoteCommandListener() {
   if (!sessionRef) { console.warn('[remote] sessionRef null, skipping listener'); return; }
+  // v3.11.62: capturar el ts del remoteCommand actual ANTES de empezar a escuchar,
+  // para ignorar comandos viejos que pudieran haber quedado del modal anterior.
+  try {
+    const initial = await sessionRef.get();
+    if (initial.exists) {
+      const cur = (initial.data() || {}).remoteCommand;
+      if (cur && cur.ts) {
+        _lastRemoteCmdTs = cur.ts;
+        console.log('[remote] ignoring existing cmd at startup, ts=', cur.ts);
+      }
+    }
+  } catch (e) { console.warn('[remote] could not read initial doc:', e.message); }
   sessionRef.onSnapshot((snap) => {
     if (!snap.exists) return;
     const data = snap.data() || {};
@@ -839,7 +867,7 @@ function setupRemoteCommandListener() {
     const action = cmd.action;
     console.log('[remote] cmd received:', action);
     showDebug('📡 Control remoto PC: ' + action);
-    if (action === 'toggle') recordButtonTap();
+    if (action === 'toggle') recordButtonTap('firestore');
     else if (action === 'done') finishRecording();
     else if (action === 'discard') discardLastFragment();
   }, (err) => console.warn('[remote] snapshot error', err.message));
@@ -888,7 +916,7 @@ function setupRemoteCommandListener() {
           return;
         }
         logRemoteEvent('MediaSession.play');
-        recordButtonTap();
+        recordButtonTap('mediaSession');
       });
       navigator.mediaSession.setActionHandler('pause', () => {
         if (Date.now() < _mediaSessionReadyTs) {
@@ -896,7 +924,7 @@ function setupRemoteCommandListener() {
           return;
         }
         logRemoteEvent('MediaSession.pause');
-        recordButtonTap();
+        recordButtonTap('mediaSession');
       });
       navigator.mediaSession.setActionHandler('previoustrack', () => { logRemoteEvent('MediaSession.prev'); discardLastFragment(); });
       navigator.mediaSession.setActionHandler('nexttrack', () => { logRemoteEvent('MediaSession.next'); finishRecording(); });
@@ -981,7 +1009,7 @@ function setupRemoteCommandListener() {
         const cur = _audioEl.volume;
         logRemoteEvent('volumechange → ' + cur.toFixed(2));
         if (Math.abs(cur - _lastVol) > 0.01) {
-          recordButtonTap();
+          recordButtonTap('volumechange');
           _audioEl.volume = 0.5;
           _lastVol = 0.5;
         }
@@ -1016,7 +1044,7 @@ function setupRemoteCommandListener() {
     const triggers = [' ', 'Enter', 'MediaPlayPause', 'AudioVolumeUp', 'AudioVolumeDown', 'VolumeUp', 'VolumeDown', 'MediaPlay', 'MediaPause'];
     if (triggers.includes(k) || c === 'Space' || c === 'Enter') {
       e.preventDefault();
-      recordButtonTap();
+      recordButtonTap('keydown');
     }
   });
 
