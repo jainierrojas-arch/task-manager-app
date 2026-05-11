@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.46': {
+    title: 'Transcripción vía Node https (fix Windows con firewall corporativo)',
+    features: [
+      '🔧 <strong>Llamada a Whisper/Groq ahora corre en el proceso main (Node) en vez del renderer (Chromium XHR)</strong>. En Windows con firewall corporativo, el XHR del iframe se quedaba colgado silenciosamente sin pasar la request. Node usa el stack de red del OS y suele andar donde Chromium falla.',
+      '📦 <strong>Cómo funciona</strong>: el audio se convierte a base64 en el renderer, se manda al main process via IPC, y main hace el POST multipart/form-data con <code>https</code> nativo de Node. El timeout de 150s sigue, los errores son más limpios.',
+      '✅ <strong>Para los chicos en Windows</strong>: Quit + reabrir la app para que cargue el nuevo preload. La transcripción debería funcionar igual que en Mac ahora.'
+    ]
+  },
   '3.11.45': {
     title: 'Modelo Groq cambiado a whisper-large-v3 (estable) + timeout 150s + diagnóstico con tamaño',
     features: [

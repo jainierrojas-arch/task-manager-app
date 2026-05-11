@@ -2388,91 +2388,53 @@ async function transcribeEntry(entryId, btn) {
       else if (contentType.includes('video/webm') || /\.webm(\?|$)/i.test(audioUrl)) filename = 'audio.webm';
       _setTranscriptionStatus('🎤 Enviando a Whisper...');
     }
-    // v3.11.40: routing automático según el provider del API key.
-    // - Keys de OpenAI (sk-...) van a api.openai.com con model "whisper-1".
-    // - Keys de Groq (gsk_...) van a api.groq.com con model "whisper-large-v3-turbo".
-    // Groq es la alternativa para países bloqueados por OpenAI (Venezuela, Cuba,
-    // Irán, etc) — mismo formato de API, gratis con tier generoso.
-    // v3.11.42: trim defensivo — algunos paste copian un espacio o newline al
-    // final que rompe el match con startsWith.
+    // v3.11.42: trim defensivo
     apiKey = (apiKey || '').trim();
     const isGroqKey = apiKey.startsWith('gsk_');
-    const endpoint = isGroqKey
-      ? 'https://api.groq.com/openai/v1/audio/transcriptions'
-      : 'https://api.openai.com/v1/audio/transcriptions';
-    // v3.11.45: cambio a whisper-large-v3 (no turbo). El turbo tiene cola en el
-    // free tier y para videos de >1min se queda procesando 80-180s. La versión
-    // estándar es más confiable aunque un poquito más lenta para audios cortos.
-    const modelName = isGroqKey ? 'whisper-large-v3' : 'whisper-1';
     const providerLabel = isGroqKey ? 'Groq' : 'Whisper';
-    const formData = new FormData();
-    formData.append('file', audioBlob, filename);
-    formData.append('model', modelName);
-    formData.append('language', 'es');
-    // v3.11.39: usar XMLHttpRequest para tener progreso de upload + timeout +
-    // heartbeat. Antes fetch() se quedaba congelado en "Enviando a Whisper..."
-    // sin feedback ni timeout — los chicos de Windows reportaron cuelgues
-    // permanentes con archivos chicos (354KB).
     const sizeKb = Math.round(audioBlob.size / 1024);
-    _setTranscriptionStatus('📤 Subiendo ' + sizeKb + 'KB a ' + providerLabel + '...');
-    const result = await new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', endpoint);
-      xhr.setRequestHeader('Authorization', 'Bearer ' + apiKey);
-      // v3.11.45: timeout 150s — el modelo whisper-large-v3 procesa videos
-      // largos (>5min) en 30-90s típicamente. 150s da margen sin esperar 3min.
-      xhr.timeout = 150000;
-      const startedAt = Date.now();
-      let lastTick = Date.now();
-      let heartbeatTimer = setInterval(() => {
-        const elapsed = Math.round((Date.now() - lastTick) / 1000);
-        const totalElapsed = Math.round((Date.now() - startedAt) / 1000);
-        if (xhr.readyState === 4) { clearInterval(heartbeatTimer); return; }
-        if (elapsed > 5) {
-          let warn = '';
-          if (totalElapsed > 60) warn = ' Audio largo o red lenta — esperá un poco.';
-          if (totalElapsed > 120) warn = ' Casi por timeout (150s).';
-          _setTranscriptionStatus('⏳ ' + providerLabel + ' transcribiendo... ' + elapsed + 's (audio ' + sizeKb + 'KB).' + warn);
-        }
-      }, 2000);
-      xhr.upload.addEventListener('progress', (e) => {
-        if (e.lengthComputable) {
-          const pct = Math.round((e.loaded / e.total) * 100);
-          _setTranscriptionStatus('📤 Subiendo a ' + providerLabel + '... ' + pct + '%');
-          if (pct >= 100) { lastTick = Date.now(); _setTranscriptionStatus('🎤 ' + providerLabel + ' transcribiendo...'); }
-        }
+    _setTranscriptionStatus('📤 Enviando ' + sizeKb + 'KB a ' + providerLabel + ' (via Node)...');
+
+    // v3.11.46: llamada via IPC al main process (Node https) en vez del XHR
+    // del renderer. En Windows con firewall corporativo, Chromium fetch se
+    // cuelga silenciosamente; Node usa el stack OS-nativo y suele funcionar.
+    // Fallback a XHR si la IPC no está expuesta (versión vieja del preload).
+    let transcript = '';
+    if (window.api && typeof window.api.callTranscriptionApi === 'function') {
+      // Convertir blob a base64 para enviar por IPC (Buffer no funciona en renderer)
+      const audioBase64 = await new Promise((res, rej) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const b64 = (reader.result || '').toString().split(',')[1] || '';
+          res(b64);
+        };
+        reader.onerror = () => rej(new Error('No se pudo convertir audio a base64'));
+        reader.readAsDataURL(audioBlob);
       });
-      xhr.upload.addEventListener('error', () => { clearInterval(heartbeatTimer); reject(new Error('Error de red subiendo a ' + providerLabel + '. Revisá conexión / firewall.')); });
-      xhr.ontimeout = () => {
-        clearInterval(heartbeatTimer);
-        const totalSec = Math.round((Date.now() - startedAt) / 1000);
-        reject(new Error(providerLabel + ' tardó >' + totalSec + 's (timeout 150s) — audio era ' + sizeKb + 'KB. Probá con un video más corto o cambiá a key de Deepgram si tu red bloquea Groq.'));
-      };
-      xhr.onerror = () => { clearInterval(heartbeatTimer); reject(new Error('Error de red. ¿Hay firewall/proxy bloqueando ' + providerLabel.toLowerCase() + '.com?')); };
-      xhr.onload = () => {
-        clearInterval(heartbeatTimer);
-        try {
-          const data = JSON.parse(xhr.responseText || '{}');
-          if (xhr.status >= 200 && xhr.status < 300) resolve(data);
-          else {
-            const errMsg = (data.error && data.error.message) ? data.error.message : ('HTTP ' + xhr.status);
-            // v3.11.40: si OpenAI bloqueó por país (403 unsupported_country_region_territory),
-            // mensaje claro con la solución (cambiar a key de Groq).
-            if (xhr.status === 403 && /country|region|territory/i.test(errMsg)) {
-              // v3.11.42: diagnóstico claro — incluir el prefijo de la key
-              // detectado y el endpoint usado para que el usuario sepa POR QUÉ
-              // fue a OpenAI en vez de Groq.
-              const keyPrefix = apiKey.slice(0, 4);
-              reject(new Error('OpenAI bloqueó por país (403). La app usó endpoint: ' + endpoint + '. La key actual empieza con "' + keyPrefix + '" → ' + (isGroqKey ? 'Groq (raro que dé este error)' : 'OpenAI. ⚠️ Tenés que pegar la key de Groq (empieza con gsk_) en Settings → OpenAI API Key. console.groq.com es donde la generás. La que está guardada NO empieza con gsk_.')));
-              return;
-            }
-            reject(new Error(providerLabel + ' API ' + xhr.status + ': ' + errMsg.slice(0, 300)));
-          }
-        } catch (e) { reject(new Error('Respuesta inválida de ' + providerLabel)); }
-      };
-      xhr.send(formData);
-    });
-    const transcript = (result.text || '').trim();
+      const startedAt = Date.now();
+      let heartbeat = setInterval(() => {
+        const elapsed = Math.round((Date.now() - startedAt) / 1000);
+        if (elapsed > 3) _setTranscriptionStatus('⏳ ' + providerLabel + ' transcribiendo... ' + elapsed + 's (audio ' + sizeKb + 'KB, ruta Node).');
+      }, 2000);
+      const ipcRes = await window.api.callTranscriptionApi({
+        apiKey,
+        audioBase64,
+        mimeType: audioBlob.type || 'audio/mpeg',
+        filename,
+        isGroq: isGroqKey
+      });
+      clearInterval(heartbeat);
+      if (!ipcRes || !ipcRes.ok) {
+        const errMsg = (ipcRes && ipcRes.error) || 'Error desconocido';
+        if (ipcRes && ipcRes.status === 403 && /country|region|territory/i.test(errMsg)) {
+          throw new Error('OpenAI bloqueó por país (403). Pegá una key de Groq (gsk_...) en Settings → OpenAI API Key. console.groq.com es gratis.');
+        }
+        throw new Error(providerLabel + ' API: ' + errMsg);
+      }
+      transcript = (ipcRes.text || '').trim();
+    } else {
+      throw new Error('callTranscriptionApi no expuesto. Cerrá y reabrí la app (Quit completo) para que cargue el preload nuevo.');
+    }
     if (!transcript) throw new Error('Transcripción vacía. ¿El video tiene audio?');
     await db.collection('depositEntries').doc(entryId).update({
       transcription: transcript,

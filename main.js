@@ -746,6 +746,72 @@ function registerIpcHandlers() {
     store.set('makeWebhookUrl', clean);
     return { ok: true };
   });
+  // v3.11.46: llamada a Whisper/Groq desde el proceso main (Node https) en vez
+  // del XHR del renderer. En Windows con firewall corporativo, Chromium fetch
+  // se cuelga silenciosamente; Node usa el stack OS-nativo y suele andar.
+  ipcMain.handle('call-transcription-api', async (_, { apiKey, audioBase64, mimeType, filename, isGroq }) => {
+    if (!apiKey || !audioBase64) return { ok: false, error: 'apiKey o audio vacío' };
+    const httpsLib = require('https');
+    const url = require('url');
+    const audioBuf = Buffer.from(audioBase64, 'base64');
+    const endpoint = isGroq
+      ? 'https://api.groq.com/openai/v1/audio/transcriptions'
+      : 'https://api.openai.com/v1/audio/transcriptions';
+    const modelName = isGroq ? 'whisper-large-v3' : 'whisper-1';
+    // Construir multipart/form-data manualmente
+    const boundary = '----TMformbnd' + Date.now() + Math.random().toString(36).slice(2);
+    const parts = [];
+    function pushTextField(name, value) {
+      parts.push(Buffer.from('--' + boundary + '\r\nContent-Disposition: form-data; name="' + name + '"\r\n\r\n' + value + '\r\n'));
+    }
+    function pushFileField(name, fileName, mime, buf) {
+      parts.push(Buffer.from('--' + boundary + '\r\nContent-Disposition: form-data; name="' + name + '"; filename="' + fileName + '"\r\nContent-Type: ' + mime + '\r\n\r\n'));
+      parts.push(buf);
+      parts.push(Buffer.from('\r\n'));
+    }
+    pushTextField('model', modelName);
+    pushTextField('language', 'es');
+    pushFileField('file', filename || 'audio.mp4', mimeType || 'audio/mpeg', audioBuf);
+    parts.push(Buffer.from('--' + boundary + '--\r\n'));
+    const body = Buffer.concat(parts);
+    const parsed = url.parse(endpoint);
+    return await new Promise((resolve) => {
+      const req = httpsLib.request({
+        method: 'POST',
+        hostname: parsed.hostname,
+        port: 443,
+        path: parsed.path,
+        headers: {
+          'Authorization': 'Bearer ' + apiKey,
+          'Content-Type': 'multipart/form-data; boundary=' + boundary,
+          'Content-Length': body.length
+        },
+        timeout: 150000
+      }, (res) => {
+        let chunks = [];
+        res.on('data', (d) => chunks.push(d));
+        res.on('end', () => {
+          const txt = Buffer.concat(chunks).toString('utf-8');
+          try {
+            const data = JSON.parse(txt || '{}');
+            if (res.statusCode >= 200 && res.statusCode < 300) {
+              resolve({ ok: true, text: (data.text || '').trim() });
+            } else {
+              const errMsg = (data.error && data.error.message) || ('HTTP ' + res.statusCode);
+              resolve({ ok: false, status: res.statusCode, error: errMsg.slice(0, 500) });
+            }
+          } catch (e) {
+            resolve({ ok: false, status: res.statusCode, error: 'Respuesta inválida: ' + txt.slice(0, 200) });
+          }
+        });
+      });
+      req.on('timeout', () => { try { req.destroy(); } catch (_) {} resolve({ ok: false, error: 'Timeout 150s — la red está bloqueando o el provider está lento' }); });
+      req.on('error', (e) => { resolve({ ok: false, error: 'Error de red: ' + e.message + ' (' + (e.code || '?') + ')' }); });
+      req.write(body);
+      req.end();
+    });
+  });
+
   // v3.11.38: auto-download de yt-dlp si no está instalado en el sistema.
   // Antes requeríamos `brew install yt-dlp` manualmente — para Windows no hay
   // brew y el equipo no podía transcribir. Ahora la app descarga el binario

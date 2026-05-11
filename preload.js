@@ -63,6 +63,8 @@ contextBridge.exposeInMainWorld('api', {
   sendToMakeWebhook: (payload) => ipcRenderer.invoke('send-to-make-webhook', payload),
   // v3.9.17: descarga audio via yt-dlp local (Cobalt cambió a auth-only)
   extractAudioViaYtDlp: (url) => ipcRenderer.invoke('extract-audio-via-ytdlp', url),
+  // v3.11.46: llamada a Whisper/Groq desde Node (más confiable en Windows con firewalls corporativos)
+  callTranscriptionApi: (payload) => ipcRenderer.invoke('call-transcription-api', payload),
   // Cloudinary unsigned upload config (para subir archivos directos desde la app)
   getCloudinaryConfig: () => ipcRenderer.invoke('get-cloudinary-config'),
   setCloudinaryConfig: (cfg) => ipcRenderer.invoke('set-cloudinary-config', cfg),

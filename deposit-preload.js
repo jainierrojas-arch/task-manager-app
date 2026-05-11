@@ -10,5 +10,8 @@ contextBridge.exposeInMainWorld('api', {
   openScheduleFromEntry: (data) => ipcRenderer.invoke('open-schedule-from-entry', data),
   onSetViewMode: (callback) => ipcRenderer.on('deposit-set-view-mode', (_, payload) => callback(payload)),
   onNavigate: (callback) => ipcRenderer.on('deposit-navigate', (_, payload) => callback(payload)),
-  onThemeChanged: (callback) => ipcRenderer.on('theme-changed', (_, theme) => callback(theme))
+  onThemeChanged: (callback) => ipcRenderer.on('theme-changed', (_, theme) => callback(theme)),
+  // v3.11.46: yt-dlp + transcription también disponibles desde la ventana separada
+  extractAudioViaYtDlp: (url) => ipcRenderer.invoke('extract-audio-via-ytdlp', url),
+  callTranscriptionApi: (payload) => ipcRenderer.invoke('call-transcription-api', payload)
 });
