@@ -983,6 +983,18 @@ function registerIpcHandlers() {
     if (mainWindow) mainWindow.minimize();
   });
 
+  // v3.11.30: maximize/restore toggle
+  ipcMain.handle('maximize-window', () => {
+    if (!mainWindow) return false;
+    if (mainWindow.isMaximized()) {
+      mainWindow.unmaximize();
+      return false;
+    } else {
+      mainWindow.maximize();
+      return true;
+    }
+  });
+
   ipcMain.handle('close-window', () => {
     if (mainWindow) mainWindow.hide();
   });

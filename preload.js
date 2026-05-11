@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('api', {
   // Window controls
   minimizeWindow: () => ipcRenderer.invoke('minimize-window'),
+  maximizeWindow: () => ipcRenderer.invoke('maximize-window'),
   closeWindow: () => ipcRenderer.invoke('close-window'),
   toggleAlwaysOnTop: () => ipcRenderer.invoke('toggle-always-on-top'),
   getAlwaysOnTop: () => ipcRenderer.invoke('get-always-on-top'),

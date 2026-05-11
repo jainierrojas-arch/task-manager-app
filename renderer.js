@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.30': {
+    title: 'Botón maximizar + ventana movible (drag desde la titlebar)',
+    features: [
+      '🟢 <strong>Nuevo botón Maximizar</strong> en la titlebar (al lado de Minimizar y Cerrar). Click → la ventana ocupa toda la pantalla. Click de nuevo → vuelve a su tamaño anterior.',
+      '🖱 <strong>Doble click en la titlebar</strong> también maximiza/restaura (igual que las apps nativas de macOS y Windows).',
+      '📦 <strong>Mover la ventana</strong>: agarrá la franja gris superior (donde dice "TASK MANAGER - EQUIPO") y arrastrá. Esa zona ya tenía la región de drag definida, así que tomá desde ahí — NO desde el área del contenido.',
+      'ℹ <strong>Nota</strong>: cuando la ventana está maximizada, no se puede mover (es estándar en cualquier OS). Doble-click o el botón verde la restaura primero, ahí ya podés moverla.'
+    ]
+  },
   '3.11.29': {
     title: 'Recorder multi-clip: cada clip como video separado + save local con share múltiple',
     features: [
@@ -1448,6 +1457,7 @@ const el = {
   projectListSettings: document.getElementById('projectListSettings'),
   btnPin: document.getElementById('btnPin'),
   btnMinimize: document.getElementById('btnMinimize'),
+  btnMaximize: document.getElementById('btnMaximize'),
   btnClose: document.getElementById('btnClose'),
   personalProjectsChips: document.getElementById('personalProjectsChips'),
   personalHeaderName: document.getElementById('personalHeaderName'),
@@ -8321,7 +8331,16 @@ el.btnPin.addEventListener('click', async () => {
 });
 
 el.btnMinimize.addEventListener('click', () => window.api.minimizeWindow());
+if (el.btnMaximize) el.btnMaximize.addEventListener('click', () => {
+  if (window.api && window.api.maximizeWindow) window.api.maximizeWindow();
+});
 el.btnClose.addEventListener('click', () => window.api.closeWindow());
+// v3.11.30: doble-click en la titlebar = maximizar/restaurar (UX nativa de macOS/Windows)
+document.querySelector('.titlebar')?.addEventListener('dblclick', (e) => {
+  // Solo si el target ES la titlebar (no un botón adentro)
+  if (e.target.closest('.titlebar-btn') || e.target.closest('button')) return;
+  if (window.api && window.api.maximizeWindow) window.api.maximizeWindow();
+});
 
 // Refresh: recarga las 3 ventanas (main, deposito, chat). Util cuando el chat
 // o algun listener se queda colgado y no quieres salir/entrar manualmente.
