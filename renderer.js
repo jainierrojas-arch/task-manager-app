@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.52': {
+    title: 'Honesto sobre el IG block: usá Chrome real (Mac: prompt UNA vez, Win: silencioso)',
+    features: [
+      '🤷 <strong>Revelación técnica</strong>: el botón "Conectar Instagram" de v3.11.51 no funciona como esperaba. IG detecta que la ventana embedded de Electron NO es Chrome real (por fingerprint del navegador) y rechaza las cookies que captura. La única forma fiable es leer las cookies del Chrome REAL instalado en la máquina.',
+      '🍪 <strong>Chrome es ahora la primera estrategia</strong> para Instagram. En Mac dispara el prompt del llavero UNA vez (click "Permitir Siempre" + password de Mac, queda silencioso PARA SIEMPRE). En Windows: cero prompts, totalmente transparente.',
+      '🎥 <strong>TikTok / YouTube no cambian</strong>: la app prueba "sin cookies" primero para esas plataformas (no requieren auth) y solo cae a Chrome si IG es el target.',
+      '📝 <strong>Mensaje de error mejorado</strong>: explica el bloqueo de IG de 2026, el prompt en Mac, y qué hacer si le diste Denegar antes (Acceso a Llaveros → eliminar entrada Chrome Safe Storage → reintentar).',
+      '👻 <strong>UI de "Conectar IG" oculta</strong> (causaba más confusión que ayuda). Si en el futuro encontramos forma de saltar la bot detection, la vuelvo a habilitar.'
+    ]
+  },
   '3.11.51': {
     title: '🔌 Conectar Instagram — un admin logueado, todo el workspace transcribe (cero setup para el equipo / clientes)',
     features: [

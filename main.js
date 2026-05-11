@@ -1044,31 +1044,30 @@ function registerIpcHandlers() {
       });
     }
 
-    // v3.11.51: PRIMERA estrategia: cookies de la app (Instagram conectado desde
-    // Settings). Si existen, ni siquiera tocamos los browsers — silencioso para todos.
-    const appCookiesPath = path.join(app.getPath('userData'), 'instagram-cookies.txt');
-    const hasAppCookies = fs.existsSync(appCookiesPath);
+    // v3.11.52: cascade simplificado. IG bot detection (2026) rechaza cookies
+    // que no provengan del browser donde el usuario realmente se logueó. Solo
+    // `--cookies-from-browser` (Chrome/Edge/etc reales) funciona confiable.
+    // Las cookies de la app (Electron BrowserWindow) son rechazadas por IG.
+    // Orden: para Instagram, browsers que SEGURO funcionan primero. Para no-IG
+    // (TikTok/YouTube), 'sin cookies' va al frente porque la mayoría andan así.
     const isWin = process.platform === 'win32';
     const isMac = process.platform === 'darwin';
+    const isInstagram = /instagram\.com/i.test(platformUrl);
     const strategies = [];
-    if (hasAppCookies) {
-      strategies.push({ label: 'cookies de la app (IG conectado)', args: ['--cookies', appCookiesPath] });
-    }
-    strategies.push({ label: 'sin cookies', args: [] });
-    if (isMac) {
-      strategies.push({ label: 'cookies de safari', args: ['--cookies-from-browser', 'safari'] });
-      strategies.push({ label: 'cookies de firefox', args: ['--cookies-from-browser', 'firefox'] });
+    if (isInstagram) {
+      // IG: chrome primero (más probable que el user tenga IG ahí). Mac dispara
+      // prompt del llavero UNA vez ("Permitir Siempre" + password) y queda
+      // silencioso para siempre. Win no prompts en absoluto.
       strategies.push({ label: 'cookies de chrome', args: ['--cookies-from-browser', 'chrome'] });
+      if (isWin) strategies.push({ label: 'cookies de edge', args: ['--cookies-from-browser', 'edge'] });
       strategies.push({ label: 'cookies de brave', args: ['--cookies-from-browser', 'brave'] });
-    } else if (isWin) {
-      strategies.push({ label: 'cookies de edge', args: ['--cookies-from-browser', 'edge'] });
-      strategies.push({ label: 'cookies de chrome', args: ['--cookies-from-browser', 'chrome'] });
       strategies.push({ label: 'cookies de firefox', args: ['--cookies-from-browser', 'firefox'] });
-      strategies.push({ label: 'cookies de brave', args: ['--cookies-from-browser', 'brave'] });
     } else {
-      strategies.push({ label: 'cookies de firefox', args: ['--cookies-from-browser', 'firefox'] });
+      // TikTok / YouTube / etc — la mayoría no requieren cookies.
+      strategies.push({ label: 'sin cookies', args: [] });
       strategies.push({ label: 'cookies de chrome', args: ['--cookies-from-browser', 'chrome'] });
-      strategies.push({ label: 'cookies de brave', args: ['--cookies-from-browser', 'brave'] });
+      if (isWin) strategies.push({ label: 'cookies de edge', args: ['--cookies-from-browser', 'edge'] });
+      strategies.push({ label: 'cookies de firefox', args: ['--cookies-from-browser', 'firefox'] });
     }
 
     let lastFail = null;
@@ -1109,8 +1108,11 @@ function registerIpcHandlers() {
       errMsg += 'Última actividad: ' + ((r.stdoutLast || '').trim() || 'sin output').slice(-150);
       if (r.stderr) errMsg += ' | stderr: ' + r.stderr.trim().slice(-150);
     } else if (looksLikeIgAuth && /instagram/i.test(platformUrl)) {
-      // v3.11.51: recomendar "Conectar Instagram" en Settings (admin-only, herencia automática del equipo).
-      errMsg = 'Instagram requiere cookies de sesión. La forma profesional de resolverlo (y lo que vas a usar cuando le vendas la app a clientes): Settings → "🔌 Conectar Instagram" → iniciá sesión UNA vez. La app guarda las cookies y las comparte por Firestore con todo el workspace — el equipo ni tiene que hacer nada en sus máquinas.';
+      // v3.11.52: explicación honesta del cambio de IG + qué hacer.
+      errMsg = 'Instagram bloquea descargas anónimas desde 2026. Para que funcione tenés que tener IG logueado en Chrome (o Edge en Windows) en esta máquina.\n\n' +
+        (isMac
+          ? 'En Mac: cuando aparezca el prompt "Permitir Chrome Safe Storage", hacé click en "PERMITIR SIEMPRE" + tu password de Mac. ES UNA SOLA VEZ por la vida de la app — después corre silencioso para siempre. Es seguridad de macOS, no de la app.\n\nSi le diste "Denegar" antes, andá a Acceso a Llaveros → buscar "Chrome Safe Storage" → eliminar la entrada que lo bloquea, y reintenta.'
+          : 'En Windows: la app va a usar las cookies de Chrome o Edge automáticamente, sin prompts.\n\nVerifica que estés logueado en IG desde Chrome/Edge en esta misma máquina.');
     } else {
       const stderrTrim = (r.stderr || '').trim();
       errMsg = stderrTrim

@@ -2774,8 +2774,11 @@
             </div>
           </div>
 
-          <!-- v3.11.51: Conectar Instagram (admin) — comparte cookies con todo el workspace -->
-          <div class="settings-group">
+          <!-- v3.11.52: hidden — la captura de cookies en BrowserWindow embedded NO funciona
+               porque IG detecta que el fingerprint del Chromium incrustado no coincide con
+               Chrome real y rechaza las cookies. Mantenemos el código IPC por si en el futuro
+               se puede saltear esa detección, pero la UI se oculta para no confundir. -->
+          <div class="settings-group" style="display:none">
             <div class="settings-label">🔌 Conectar Instagram (para Transcribir)</div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
               <button class="btn btn-primary btn-small" id="connectInstagramBtn">Conectar Instagram</button>
@@ -2784,10 +2787,6 @@
             <div class="status-indicator" id="instagramConnStatus" style="margin-top:6px">
               <span class="status-dot disconnected"></span>
               <span>No conectado</span>
-            </div>
-            <div class="telegram-instructions">
-              <p><strong>Por qué:</strong> Instagram requiere cookies para descargar audio de reels. La app abre una ventana de IG, te logueas UNA vez, y las cookies se guardan en Firestore para todo el workspace — el equipo no necesita hacer nada en sus máquinas.</p>
-              <p style="margin-top:6px"><strong>Recomendado:</strong> creá una cuenta de IG aparte (no la tuya personal) para usar acá, así no compartís credenciales sensibles con el equipo.</p>
             </div>
           </div>
 
