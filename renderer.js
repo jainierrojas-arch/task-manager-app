@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.37': {
+    title: 'Fix Whisper API key en Windows — no se quedaba guardada por timing del workspace',
+    features: [
+      '🔑 <strong>Bug fix: API key de OpenAI/Whisper "se perdía" entre sesiones en Windows</strong>. La key SÍ se estaba guardando en Firestore — el problema era que al abrir la app, la lectura corría a los 1500ms fijos, pero en Windows el workspace tarda más en cargar. Al disparar la lectura, <code>currentWorkspaceId</code> aún era null → se leía el doc global vacío en lugar de <code>config/openai_{wsId}</code>.',
+      '⏱ <strong>Solución</strong>: ahora la carga espera activamente hasta que el workspace esté listo (hasta 15s) antes de leer la config. También el iframe del depósito (que llama <code>_getOpenaiApiKey</code> para el botón Transcribir) espera lo mismo — por eso el error "Configurá tu API key" aparecía aunque la key estuviera bien guardada.',
+      '🔄 <strong>Cambio de workspace recarga la key</strong>: antes <code>switchWorkspace</code> no reseteaba la UI de OpenAI; ahora sí, igual que Cloudinary e Instagram.',
+      '✅ <strong>Para los chicos</strong>: una vez que actualicen a 3.11.37, la key ya guardada se va a leer correctamente sin tener que volver a pegarla. Si todavía no la guardaron, peguenla UNA vez en Settings → OpenAI API Key y queda sincronizada para todo el workspace (Mac + Windows leen del mismo lugar en Firestore).'
+    ]
+  },
   '3.11.36': {
     title: 'Recorder TikTok-real: UNA sola grabación con pause/resume — adiós a la unión de clips',
     features: [
@@ -7598,6 +7607,10 @@ function switchWorkspace(workspaceId) {
   applyWorkspaceFilter();
   // Notificar a iframes activos del cambio (chat / depósito) para que filtren
   notifyIframesOfWorkspaceChange();
+  // v3.11.37: recargar config scoped al workspace (OpenAI key)
+  if (typeof reloadOpenaiKeyOnWorkspaceChange === 'function') {
+    reloadOpenaiKeyOnWorkspaceChange().catch(() => {});
+  }
   console.log('[workspaces] switched to', workspaceId);
 }
 
@@ -8121,8 +8134,24 @@ function setOpenaiStatus(connected, label) {
   if (text) text.textContent = label;
 }
 
+// v3.11.37: en Windows el workspace tarda más en cargar — esperar hasta que
+// currentWorkspaceId esté seteado antes de leer config/openai_{wsId}. Sin esto,
+// la key se lee del doc global vacío y la UI muestra "No configurado" aunque
+// Firestore la tenga guardada.
+async function _waitForWorkspaceReady(maxMs = 15000) {
+  if (currentWorkspaceId) return true;
+  const start = Date.now();
+  while (!currentWorkspaceId && (Date.now() - start) < maxMs) {
+    await new Promise(r => setTimeout(r, 250));
+  }
+  return !!currentWorkspaceId;
+}
+
 async function loadOpenaiKey() {
   try {
+    setOpenaiStatus(false, 'Cargando...');
+    await _waitForWorkspaceReady();
+    if (!currentWorkspaceId) { setOpenaiStatus(false, 'No hay workspace activo'); return; }
     const snap = await wsConfigRef('openai').get();
     if (!snap.exists) { setOpenaiStatus(false, 'No configurado'); return; }
     const key = (snap.data() || {}).apiKey || '';
@@ -8164,17 +8193,23 @@ async function reloadOpenaiKeyOnWorkspaceChange() {
   await loadOpenaiKey();
 }
 
-// Helper público para que el iframe del depósito acceda a la API key
+// Helper público para que el iframe del depósito acceda a la API key.
+// v3.11.37: esperar workspace ready — en Windows el iframe llamaba antes de
+// que currentWorkspaceId estuviera seteado y devolvía null → modal mostraba
+// "Configurá tu OpenAI API key" aunque Firestore la tuviera guardada.
 window._getOpenaiApiKey = async function() {
   try {
+    await _waitForWorkspaceReady();
+    if (!currentWorkspaceId) return null;
     const snap = await wsConfigRef('openai').get();
     if (!snap.exists) return null;
     return (snap.data() || {}).apiKey || null;
   } catch (e) { return null; }
 };
 
-// Cargar API key cuando hay workspace activo
-setTimeout(() => loadOpenaiKey(), 1500);
+// v3.11.37: cargar la API key apenas el workspace esté listo (en lugar de un
+// setTimeout fijo de 1500ms que en Windows lento se ejecutaba antes de tiempo).
+loadOpenaiKey();
 
 // ===== Botones de upload en el modal Programar =====
 const schedUploadSingleBtn = document.getElementById('schedUploadSingleBtn');
