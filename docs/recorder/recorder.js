@@ -563,10 +563,18 @@ function finishRecording() {
   if (tpPlaying) tpPlayPause();
 }
 
-// Descarta el último fragmento. Visible solo cuando hay fragmento(s) Y NO estamos en recording.
+// Descarta el último fragmento. v3.11.57: si estamos grabando, pausa primero
+// y después descarta. Antes salía silenciosamente cuando se llamaba durante
+// grabación — el control remoto de la PC daba la sensación de que no respondía.
 function discardLastFragment() {
+  if (pauseMarks.length === 0 && (!mediaRecorder || mediaRecorder.state === 'inactive')) return;
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    // Pausar primero, después descartar (en el próximo tick)
+    recordButtonTap();
+    setTimeout(() => discardLastFragment(), 350);
+    return;
+  }
   if (pauseMarks.length === 0) return;
-  if (mediaRecorder && mediaRecorder.state === 'recording') return;
 
   pauseMarks.pop();
   const restoreTo = pauseMarks.length > 0
@@ -869,43 +877,80 @@ function setupRemoteCommandListener() {
   setupRemoteCommandListener();
 })();
 
-// ===== v3.11.56: iOS volume button capture via silent audio loop =====
-// iOS Safari intercepta los volume keys y NO los pasa al web app. Workaround
-// conocido: reproducir un audio silencioso en loop hace que iOS trate los volume
-// keys como "control de volumen del media playing" → la app puede escuchar el
-// evento volumechange. Eso nos da una forma indirecta de detectar el botón.
-// Sólo se activa después de la primera interacción del usuario (gesture-gated).
-(function setupIosVolumeHack() {
-  // Detectar iOS
+// ===== v3.11.57: captura de botones de remote Bluetooth en iPhone =====
+// Tres caminos en paralelo porque iOS varía mucho según versión y modelo:
+//   1) MediaSession API — el remote envía play/pause/next/previous → setActionHandler los captura.
+//      Funciona MUCHO mejor en iOS si el remote tiene botón de Play/Pause (no solo shutter).
+//   2) Silent audio loop + volumechange — el viejo truco para "robar" los volume keys del shutter.
+//   3) Keydown global — para teclados BT que mandan Space/Enter.
+(function setupIosRemoteControl() {
   const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-  if (!isIos) return;
-  let audioEl = null;
-  let lastVolume = -1;
-  let lastVolumeTs = 0;
-  function init() {
-    if (audioEl) return;
-    // Audio WAV silencioso (1 sample mudo) embebido como data URL
-    audioEl = new Audio('data:audio/wav;base64,UklGRpAAAABXQVZFZm10IBAAAAABAAIAQB8AAAB9AAAEABAATElTVBoAAABJTkZPSVNGVA4AAABMYXZmNTguMjkuMTAwAGRhdGFEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=');
-    audioEl.loop = true;
-    audioEl.volume = 0.5; // valor inicial: nos da margen arriba y abajo para detectar
-    audioEl.play().catch(e => console.warn('[ios-vol] play blocked', e.message));
-    lastVolume = audioEl.volume;
-    audioEl.addEventListener('volumechange', () => {
-      const now = Date.now();
-      if (now - lastVolumeTs < 200) return; // debounce
-      lastVolumeTs = now;
-      const cur = audioEl.volume;
-      if (Math.abs(cur - lastVolume) > 0.01) {
-        recordButtonTap();
-        // Reset volume al medio para tener margen en ambas direcciones siempre
-        audioEl.volume = 0.5;
-        lastVolume = 0.5;
-      }
-    });
+
+  // (1) MediaSession — funciona en iOS Safari + PWA standalone con audio playing.
+  function setupMediaSession() {
+    if (!('mediaSession' in navigator)) return;
+    try {
+      navigator.mediaSession.setActionHandler('play', () => recordButtonTap());
+      navigator.mediaSession.setActionHandler('pause', () => recordButtonTap());
+      navigator.mediaSession.setActionHandler('previoustrack', () => discardLastFragment());
+      navigator.mediaSession.setActionHandler('nexttrack', () => finishRecording());
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: 'Task Manager Recorder',
+        artist: 'Grabando con teleprompter',
+        album: 'Control remoto activo'
+      });
+    } catch (e) { console.warn('[mediaSession] setup failed', e.message); }
   }
-  // Necesita user gesture para arrancar (autoplay policy de iOS).
-  document.addEventListener('touchend', init, { once: true });
-  document.addEventListener('click', init, { once: true });
+
+  // (2) Silent audio loop para volumechange. Generamos un WAV de 2 segundos
+  // proper (no data URL chiquito que iOS a veces no loopea).
+  function makeSilentWavUrl(seconds) {
+    const sampleRate = 8000;
+    const numSamples = sampleRate * seconds;
+    const buffer = new ArrayBuffer(44 + numSamples * 2);
+    const view = new DataView(buffer);
+    function ws(off, s) { for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i)); }
+    ws(0, 'RIFF'); view.setUint32(4, 36 + numSamples * 2, true); ws(8, 'WAVE'); ws(12, 'fmt ');
+    view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+    view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true); view.setUint16(34, 16, true); ws(36, 'data');
+    view.setUint32(40, numSamples * 2, true);
+    return URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }));
+  }
+  let _audioEl = null;
+  let _lastVol = -1;
+  let _lastVolTs = 0;
+  function setupSilentAudio() {
+    if (!isIos) return;
+    if (_audioEl) return;
+    try {
+      _audioEl = new Audio(makeSilentWavUrl(2));
+      _audioEl.loop = true;
+      _audioEl.volume = 0.5;
+      _audioEl.play().catch(e => console.warn('[ios-vol] play blocked:', e.message));
+      _lastVol = 0.5;
+      _audioEl.addEventListener('volumechange', () => {
+        const now = Date.now();
+        if (now - _lastVolTs < 250) return;
+        _lastVolTs = now;
+        const cur = _audioEl.volume;
+        if (Math.abs(cur - _lastVol) > 0.01) {
+          recordButtonTap();
+          _audioEl.volume = 0.5;
+          _lastVol = 0.5;
+        }
+      });
+    } catch (e) { console.warn('[ios-vol] setup failed', e.message); }
+  }
+
+  // Necesita gesture (autoplay policy). Engancho tanto touch como click para el primer tap.
+  function onFirstGesture() {
+    setupMediaSession();
+    setupSilentAudio();
+    showDebug('🎮 Control remoto activado');
+  }
+  document.addEventListener('touchend', onFirstGesture, { once: true });
+  document.addEventListener('click', onFirstGesture, { once: true });
 })();
 
 $('btnCancel').addEventListener('click', () => {

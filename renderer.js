@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.57': {
+    title: 'Discard auto-pausa + feedback inmediato PC + MediaSession para iPhone remotes',
+    features: [
+      '✂️ <strong>Descartar último ahora funciona en cualquier estado</strong>: si tocás "Descartar" mientras está grabando, la app pausa primero y después descarta el fragmento. Antes daba la sensación de no responder porque el guard interno bloqueaba la acción mid-recording.',
+      '⚡ <strong>Feedback inmediato en los botones de la PC</strong>: cuando hacés click ahora aparece "⏳ Enviando..." durante 800ms. Sabés al instante que el click registró aunque el round-trip a Firestore tarde unos cientos de milisegundos. Adiós a los double/triple clicks por incertidumbre.',
+      '🎮 <strong>MediaSession API para Bluetooth remotes en iPhone</strong>: si tu shutter remote tiene botón Play/Pause (no solo el del shutter shutter), iOS Safari lo pasa via MediaSession y ahora la app lo captura. Mucho más confiable que el truco del volumechange (que iOS tiende a bloquear en PWA standalone).',
+      '🔊 <strong>Audio silencioso mejorado</strong>: usamos un WAV de 2 segundos generado en runtime en lugar del data URL chiquito de antes. Loop más fiable, captura de volumechange más consistente cuando funciona.',
+      '🩹 <strong>Tip para gimbals</strong>: muchos remote BT tienen switch iOS/Android. En iOS mode envían VolumeUp (a veces no llegan). Si tu remote tiene Android mode (manda Enter/Space) o un botón Play/Pause separado, esos son los más confiables. Probá ambos modos.'
+    ]
+  },
   '3.11.56': {
     title: 'Fix: control remoto PC ahora SÍ controla el celu + truco para volume keys en iPhone',
     features: [

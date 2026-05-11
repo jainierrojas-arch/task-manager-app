@@ -3113,21 +3113,37 @@ async function _attachRecordedVideoToEntry(entryId, videoUrl) {
       openPhoneRecorderModal();
     });
 
-    // v3.11.55: control remoto desde la PC — manda comandos al celu vía Firestore
-    async function sendRemoteCommand(action) {
+    // v3.11.55+v3.11.57: control remoto desde la PC.
+    // Feedback visual inmediato (flash) para que el usuario sepa que el click registró,
+    // aunque el round-trip a Firestore tarde 200-500ms.
+    async function sendRemoteCommand(action, btn) {
       if (!_phoneRecSessionId) return;
+      if (btn) {
+        const orig = btn.textContent;
+        btn.style.opacity = '0.6';
+        btn.disabled = true;
+        btn.textContent = '⏳ Enviando...';
+        setTimeout(() => {
+          btn.style.opacity = '';
+          btn.disabled = false;
+          btn.textContent = orig;
+        }, 800);
+      }
       try {
         await db.collection('recordingSessions').doc(_phoneRecSessionId).update({
           remoteCommand: { action, ts: Date.now() }
         });
-      } catch (e) { console.warn('[remote] send failed', e.message); }
+      } catch (e) {
+        console.warn('[remote] send failed', e.message);
+        if (btn) btn.textContent = '⚠ Error';
+      }
     }
     const toggleBtn = document.getElementById('phoneRecToggleBtn');
-    if (toggleBtn) toggleBtn.addEventListener('click', () => sendRemoteCommand('toggle'));
+    if (toggleBtn) toggleBtn.addEventListener('click', () => sendRemoteCommand('toggle', toggleBtn));
     const discardBtn = document.getElementById('phoneRecDiscardBtn');
-    if (discardBtn) discardBtn.addEventListener('click', () => sendRemoteCommand('discard'));
+    if (discardBtn) discardBtn.addEventListener('click', () => sendRemoteCommand('discard', discardBtn));
     const doneBtn = document.getElementById('phoneRecDoneBtn');
-    if (doneBtn) doneBtn.addEventListener('click', () => sendRemoteCommand('done'));
+    if (doneBtn) doneBtn.addEventListener('click', () => sendRemoteCommand('done', doneBtn));
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', attach);
   else attach();
