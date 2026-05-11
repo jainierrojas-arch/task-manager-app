@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.58': {
+    title: 'Debug overlay del control remoto — descubrí qué manda tu gimbal',
+    features: [
+      '🔍 <strong>Modo debug en el recorder</strong>: triple-tap rápido en la pantalla del recorder abre un overlay verde con TODO lo que la app está detectando del remote (keydown, volumechange, MediaSession actions). Apretás el remote y vas a ver al instante si llega algo, qué evento es y qué key code envía. Triple-tap de nuevo lo cierra.',
+      '🛡 <strong>Watchdog del audio silencioso</strong>: cada 2 segundos chequea que el audio que captura los volume keys siga playing. Si iOS lo pausó (ocurre cuando MediaRecorder arranca con audio capture), lo reinicia. Antes podía ser que el truco funcionara al principio y se cayera mid-grabación.',
+      '🎯 <strong>Cómo usarlo en tu caso</strong>: instalá la PWA nueva → entrá al recorder → triple-tap en la pantalla → ves el debug. Apretá el botón del remote del gimbal. Mirá qué aparece en el log. Si dice algo (volumechange, keydown, MediaSession.play, lo que sea) → mandame screenshot y vemos si lo podemos rutear al record button. Si NO aparece nada → iOS te lo está bloqueando 100%.',
+      '⚠ <strong>Honestidad técnica</strong>: en iOS 16+ Apple bloquea cada vez más el truco del volumechange en PWA standalone. Si tu remote SOLO manda volume keys, puede que no haya forma. Si tiene Play/Pause separado (botón pequeño además del shutter), ESO sí funciona vía MediaSession. Muchos remotes BT tienen switch iOS/Android — el modo Android manda Enter/Space y es lo más confiable.'
+    ]
+  },
   '3.11.57': {
     title: 'Discard auto-pausa + feedback inmediato PC + MediaSession para iPhone remotes',
     features: [

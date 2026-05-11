@@ -824,29 +824,6 @@ $('btnUndo').addEventListener('click', discardLastFragment);
 $('btnDone').addEventListener('click', finishRecording);
 $('btnPlayPause').addEventListener('click', tpPlayPause);
 
-// ===== v3.11.55: control por teclado / Bluetooth shutter remote =====
-// Muchos gimbals y selfie sticks emiten Space, Enter o VolumeUp como botón
-// shutter. La PWA escucha esos keys y dispara el record button para que
-// puedas controlar grabar/pausar desde el remoto bluetooth en tu mano.
-// Nota: iOS Safari intercepta volume keys a nivel sistema y NO los pasa al
-// web app — en iPhone solo va a andar el botón "shutter" del remote si emite
-// Enter o Space (algunos remotes tienen esa opción). En Android casi todos
-// funcionan.
-document.addEventListener('keydown', (e) => {
-  // Solo cuando estamos en pantalla de grabación o preview
-  if (!$('screenRecord').classList.contains('active')) return;
-  // Ignorar si el foco está en un input/textarea (no robar typing)
-  const tag = (e.target && e.target.tagName) || '';
-  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-  const k = e.key || '';
-  const c = e.code || '';
-  const triggers = [' ', 'Enter', 'MediaPlayPause', 'AudioVolumeUp', 'AudioVolumeDown', 'VolumeUp', 'VolumeDown', 'MediaPlay', 'MediaPause'];
-  if (triggers.includes(k) || c === 'Space' || c === 'Enter') {
-    e.preventDefault();
-    recordButtonTap();
-  }
-});
-
 // ===== v3.11.56: control remoto desde la PC vía Firestore =====
 // Esto se registra DESPUÉS de que loadSession() asigna sessionRef. Antes el
 // listener se enganchaba al cargar el script cuando sessionRef todavía era null.
@@ -877,33 +854,45 @@ function setupRemoteCommandListener() {
   setupRemoteCommandListener();
 })();
 
-// ===== v3.11.57: captura de botones de remote Bluetooth en iPhone =====
-// Tres caminos en paralelo porque iOS varía mucho según versión y modelo:
-//   1) MediaSession API — el remote envía play/pause/next/previous → setActionHandler los captura.
-//      Funciona MUCHO mejor en iOS si el remote tiene botón de Play/Pause (no solo shutter).
-//   2) Silent audio loop + volumechange — el viejo truco para "robar" los volume keys del shutter.
-//   3) Keydown global — para teclados BT que mandan Space/Enter.
+// ===== v3.11.58: captura de remote BT en iPhone con debug overlay + watchdog =====
+// El debug overlay (touch sobre la cara del teleprompter) muestra cada evento detectado
+// para poder diagnosticar exactamente qué manda el remote. El watchdog reintenta
+// reproducir el audio silencioso si iOS lo pausa (típicamente cuando arranca el
+// MediaRecorder con audio capture activo).
 (function setupIosRemoteControl() {
   const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  window._remoteDebugEvents = [];
+  function logRemoteEvent(label) {
+    const stamp = new Date().toLocaleTimeString();
+    window._remoteDebugEvents.unshift(stamp + ' — ' + label);
+    window._remoteDebugEvents = window._remoteDebugEvents.slice(0, 12);
+    const overlay = document.getElementById('remoteDebugOverlay');
+    if (overlay && overlay.style.display !== 'none') {
+      overlay.innerHTML = window._remoteDebugEvents.map(e => '<div>' + e + '</div>').join('');
+    }
+    showDebug('🎮 ' + label);
+  }
 
-  // (1) MediaSession — funciona en iOS Safari + PWA standalone con audio playing.
+  // (1) MediaSession — algunos remotes mandan Play/Pause y eso pasa por acá.
   function setupMediaSession() {
     if (!('mediaSession' in navigator)) return;
     try {
-      navigator.mediaSession.setActionHandler('play', () => recordButtonTap());
-      navigator.mediaSession.setActionHandler('pause', () => recordButtonTap());
-      navigator.mediaSession.setActionHandler('previoustrack', () => discardLastFragment());
-      navigator.mediaSession.setActionHandler('nexttrack', () => finishRecording());
-      navigator.mediaSession.metadata = new MediaMetadata({
-        title: 'Task Manager Recorder',
-        artist: 'Grabando con teleprompter',
-        album: 'Control remoto activo'
-      });
+      navigator.mediaSession.setActionHandler('play', () => { logRemoteEvent('MediaSession.play'); recordButtonTap(); });
+      navigator.mediaSession.setActionHandler('pause', () => { logRemoteEvent('MediaSession.pause'); recordButtonTap(); });
+      navigator.mediaSession.setActionHandler('previoustrack', () => { logRemoteEvent('MediaSession.prev'); discardLastFragment(); });
+      navigator.mediaSession.setActionHandler('nexttrack', () => { logRemoteEvent('MediaSession.next'); finishRecording(); });
+      navigator.mediaSession.playbackState = 'playing';
+      try {
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: 'Task Manager Recorder',
+          artist: 'Control remoto activo',
+          album: 'Grabando con teleprompter'
+        });
+      } catch (_) {}
     } catch (e) { console.warn('[mediaSession] setup failed', e.message); }
   }
 
-  // (2) Silent audio loop para volumechange. Generamos un WAV de 2 segundos
-  // proper (no data URL chiquito que iOS a veces no loopea).
+  // (2) Silent audio loop para que iOS rute los volume keys a nosotros.
   function makeSilentWavUrl(seconds) {
     const sampleRate = 8000;
     const numSamples = sampleRate * seconds;
@@ -918,15 +907,25 @@ function setupRemoteCommandListener() {
     return URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }));
   }
   let _audioEl = null;
+  let _audioUrl = null;
   let _lastVol = -1;
   let _lastVolTs = 0;
+  function ensureSilentAudioPlaying() {
+    if (!_audioEl) return;
+    if (_audioEl.paused || _audioEl.ended || _audioEl.readyState < 2) {
+      _audioEl.play().catch(e => console.warn('[ios-vol] resume blocked', e.message));
+    }
+  }
   function setupSilentAudio() {
-    if (!isIos) return;
-    if (_audioEl) return;
+    if (_audioEl) { ensureSilentAudioPlaying(); return; }
     try {
-      _audioEl = new Audio(makeSilentWavUrl(2));
+      _audioUrl = makeSilentWavUrl(5);
+      _audioEl = new Audio(_audioUrl);
       _audioEl.loop = true;
+      _audioEl.preload = 'auto';
+      _audioEl.muted = false; // tiene que ser unmuted para que iOS lo cuente como media
       _audioEl.volume = 0.5;
+      _audioEl.setAttribute('playsinline', '');
       _audioEl.play().catch(e => console.warn('[ios-vol] play blocked:', e.message));
       _lastVol = 0.5;
       _audioEl.addEventListener('volumechange', () => {
@@ -934,23 +933,65 @@ function setupRemoteCommandListener() {
         if (now - _lastVolTs < 250) return;
         _lastVolTs = now;
         const cur = _audioEl.volume;
+        logRemoteEvent('volumechange → ' + cur.toFixed(2));
         if (Math.abs(cur - _lastVol) > 0.01) {
           recordButtonTap();
           _audioEl.volume = 0.5;
           _lastVol = 0.5;
         }
       });
+      _audioEl.addEventListener('pause', () => logRemoteEvent('audio.pause (iOS lo paró)'));
+      _audioEl.addEventListener('play', () => logRemoteEvent('audio.play'));
+      // Watchdog: cada 2s checkear que está playing
+      setInterval(ensureSilentAudioPlaying, 2000);
     } catch (e) { console.warn('[ios-vol] setup failed', e.message); }
   }
 
-  // Necesita gesture (autoplay policy). Engancho tanto touch como click para el primer tap.
+  // (3) Keydown global — captura teclas BT (Enter/Space/etc) y media keys del sistema.
+  document.addEventListener('keydown', (e) => {
+    if (!$('screenRecord').classList.contains('active')) return;
+    const tag = (e.target && e.target.tagName) || '';
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    const k = e.key || '';
+    const c = e.code || '';
+    logRemoteEvent('keydown: key="' + k + '" code="' + c + '"');
+    const triggers = [' ', 'Enter', 'MediaPlayPause', 'AudioVolumeUp', 'AudioVolumeDown', 'VolumeUp', 'VolumeDown', 'MediaPlay', 'MediaPause'];
+    if (triggers.includes(k) || c === 'Space' || c === 'Enter') {
+      e.preventDefault();
+      recordButtonTap();
+    }
+  });
+
   function onFirstGesture() {
     setupMediaSession();
     setupSilentAudio();
-    showDebug('🎮 Control remoto activado');
+    showDebug('🎮 Control remoto activado — apretá tu remote');
   }
   document.addEventListener('touchend', onFirstGesture, { once: true });
   document.addEventListener('click', onFirstGesture, { once: true });
+
+  // (4) Debug overlay: triple-tap en la pantalla activa/desactiva el monitor de eventos.
+  let _tripleTapCount = 0;
+  let _tripleTapTs = 0;
+  document.addEventListener('touchend', (e) => {
+    const now = Date.now();
+    if (now - _tripleTapTs > 800) _tripleTapCount = 0;
+    _tripleTapCount++;
+    _tripleTapTs = now;
+    if (_tripleTapCount >= 3) {
+      _tripleTapCount = 0;
+      let overlay = document.getElementById('remoteDebugOverlay');
+      if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'remoteDebugOverlay';
+        overlay.style.cssText = 'position:fixed;top:50%;left:8px;right:8px;transform:translateY(-50%);background:rgba(0,0,0,0.85);color:#0f0;font-family:monospace;font-size:11px;padding:10px;border-radius:8px;z-index:9999;max-height:60vh;overflow-y:auto;border:1px solid #0f0';
+        overlay.innerHTML = '<div style="color:#fff;margin-bottom:6px;font-weight:bold">🎮 Debug remoto (triple-tap para cerrar)</div>';
+        document.body.appendChild(overlay);
+      } else {
+        overlay.style.display = overlay.style.display === 'none' ? 'block' : 'none';
+      }
+    }
+  });
 })();
 
 $('btnCancel').addEventListener('click', () => {
