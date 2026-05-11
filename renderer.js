@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.42': {
+    title: 'Trim defensivo en la API key + diagnóstico en el error 403 de OpenAI',
+    features: [
+      '🔍 <strong>Diagnóstico claro en el error 403</strong>: cuando OpenAI bloquea por país, el error ahora dice EXACTAMENTE qué endpoint usó y con qué prefijo de key. Si la key NO empieza con <code>gsk_</code>, te dice "la actual NO es de Groq" → significa que pegaste mal o que pegaste la de OpenAI.',
+      '✂️ <strong>Trim defensivo</strong> de la API key al cargar y al usar — algunos paste copian un espacio o newline al final que rompía <code>startsWith("gsk_")</code> y ruteaba a OpenAI aunque la key fuera de Groq.',
+      '🏷 <strong>Status en Settings dice "Configurado (Groq)" o "Configurado (OpenAI)"</strong>: revisalo antes de probar Transcribir — si dice OpenAI y querés Groq, pegá la key correcta (<code>gsk_...</code> de console.groq.com).'
+    ]
+  },
   '3.11.41': {
     title: 'yt-dlp: timeout 180s + mensajes de error mucho más útiles',
     features: [
@@ -8212,7 +8220,8 @@ async function loadOpenaiKey() {
     if (!currentWorkspaceId) { setOpenaiStatus(false, 'No hay workspace activo'); return; }
     const snap = await wsConfigRef('openai').get();
     if (!snap.exists) { setOpenaiStatus(false, 'No configurado'); return; }
-    const key = (snap.data() || {}).apiKey || '';
+    const rawKey = (snap.data() || {}).apiKey || '';
+    const key = rawKey.trim(); // v3.11.42: trim defensivo
     if (key && openaiApiKeyInput) {
       openaiApiKeyInput.value = key.slice(0, 7) + '...' + key.slice(-4); // máscara
       openaiApiKeyInput.dataset.realKey = key;
@@ -8265,13 +8274,16 @@ async function reloadOpenaiKeyOnWorkspaceChange() {
 // v3.11.37: esperar workspace ready — en Windows el iframe llamaba antes de
 // que currentWorkspaceId estuviera seteado y devolvía null → modal mostraba
 // "Configurá tu OpenAI API key" aunque Firestore la tuviera guardada.
+// v3.11.42: trim defensivo — keys pegadas con espacios/newlines rompían
+// startsWith('gsk_') y ruteaban a OpenAI por error.
 window._getOpenaiApiKey = async function() {
   try {
     await _waitForWorkspaceReady();
     if (!currentWorkspaceId) return null;
     const snap = await wsConfigRef('openai').get();
     if (!snap.exists) return null;
-    return (snap.data() || {}).apiKey || null;
+    const raw = (snap.data() || {}).apiKey || null;
+    return raw ? raw.trim() : null;
   } catch (e) { return null; }
 };
 

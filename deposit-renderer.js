@@ -2390,6 +2390,9 @@ async function transcribeEntry(entryId, btn) {
     // - Keys de Groq (gsk_...) van a api.groq.com con model "whisper-large-v3-turbo".
     // Groq es la alternativa para países bloqueados por OpenAI (Venezuela, Cuba,
     // Irán, etc) — mismo formato de API, gratis con tier generoso.
+    // v3.11.42: trim defensivo — algunos paste copian un espacio o newline al
+    // final que rompe el match con startsWith.
+    apiKey = (apiKey || '').trim();
     const isGroqKey = apiKey.startsWith('gsk_');
     const endpoint = isGroqKey
       ? 'https://api.groq.com/openai/v1/audio/transcriptions'
@@ -2437,7 +2440,11 @@ async function transcribeEntry(entryId, btn) {
             // v3.11.40: si OpenAI bloqueó por país (403 unsupported_country_region_territory),
             // mensaje claro con la solución (cambiar a key de Groq).
             if (xhr.status === 403 && /country|region|territory/i.test(errMsg)) {
-              reject(new Error('OpenAI bloqueó la request por país (403). Solución: pegá una API key de Groq (https://console.groq.com — gratis, sin bloqueo geográfico). Empieza con gsk_. La app detecta y cambia el endpoint sola.'));
+              // v3.11.42: diagnóstico claro — incluir el prefijo de la key
+              // detectado y el endpoint usado para que el usuario sepa POR QUÉ
+              // fue a OpenAI en vez de Groq.
+              const keyPrefix = apiKey.slice(0, 4);
+              reject(new Error('OpenAI bloqueó por país (403). La app usó endpoint: ' + endpoint + '. La key actual empieza con "' + keyPrefix + '" → ' + (isGroqKey ? 'Groq (raro que dé este error)' : 'OpenAI. ⚠️ Tenés que pegar la key de Groq (empieza con gsk_) en Settings → OpenAI API Key. console.groq.com es donde la generás. La que está guardada NO empieza con gsk_.')));
               return;
             }
             reject(new Error(providerLabel + ' API ' + xhr.status + ': ' + errMsg.slice(0, 300)));
