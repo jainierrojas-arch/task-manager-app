@@ -75,6 +75,13 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.43': {
+    title: 'Transcripción timeout 90s + heartbeat con nombre real del provider',
+    features: [
+      '⏱ <strong>Timeout de Whisper/Groq bajado a 90s</strong> (antes 3min). Si no responde en 90s probablemente la red está bloqueando o algo va muy mal — mejor fallar rápido con error claro en vez de quedar en silencio.',
+      '🏷 <strong>Heartbeat dice el provider real</strong>: antes hardcodeaba "Whisper" en el contador aunque usaras Groq. Ahora dice "⏳ Procesando en Groq... (12s)" para que sepas qué endpoint está pegando. Si pasa de 60s, el mensaje advierte "probablemente la red está bloqueando".'
+    ]
+  },
   '3.11.42': {
     title: 'Trim defensivo en la API key + diagnóstico en el error 403 de OpenAI',
     features: [

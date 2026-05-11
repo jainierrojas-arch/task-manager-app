@@ -2413,12 +2413,15 @@ async function transcribeEntry(entryId, btn) {
       const xhr = new XMLHttpRequest();
       xhr.open('POST', endpoint);
       xhr.setRequestHeader('Authorization', 'Bearer ' + apiKey);
-      xhr.timeout = 180000; // 3 min — Whisper procesa rápido pero el upload puede ser lento
+      // v3.11.43: timeout 90s (antes 180s) — Groq responde en <30s típicamente,
+      // si tarda más es que algo está mal (red bloqueada, rate limit silencioso,
+      // etc) y mejor fallar rápido con error claro.
+      xhr.timeout = 90000;
       let lastTick = Date.now();
       let heartbeatTimer = setInterval(() => {
         const elapsed = Math.round((Date.now() - lastTick) / 1000);
         if (xhr.readyState === 4) { clearInterval(heartbeatTimer); return; }
-        if (elapsed > 5) _setTranscriptionStatus('⏳ Procesando en Whisper... (' + elapsed + 's)');
+        if (elapsed > 5) _setTranscriptionStatus('⏳ Procesando en ' + providerLabel + '... (' + elapsed + 's). Si pasa de 60s probablemente la red está bloqueando.');
       }, 2000);
       xhr.upload.addEventListener('progress', (e) => {
         if (e.lengthComputable) {
