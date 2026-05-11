@@ -746,29 +746,96 @@ function registerIpcHandlers() {
     store.set('makeWebhookUrl', clean);
     return { ok: true };
   });
-  // POST al webhook de Make con el payload del post a programar
-  // v3.9.17: usa yt-dlp (instalado localmente) para descargar el audio de cualquier
-  // plataforma soportada. Cobalt cambió a auth-only en 2024, así que esto es lo
-  // más confiable. Requisito: usuario debe tener yt-dlp instalado (brew install yt-dlp).
+  // v3.11.38: auto-download de yt-dlp si no está instalado en el sistema.
+  // Antes requeríamos `brew install yt-dlp` manualmente — para Windows no hay
+  // brew y el equipo no podía transcribir. Ahora la app descarga el binario
+  // oficial de yt-dlp GitHub releases (~12MB win / ~30MB mac) a userData/
+  // la primera vez y queda cacheado.
+  async function ensureYtDlpBundled() {
+    const httpsLib = require('https');
+    const userDataDir = app.getPath('userData');
+    const isWin = process.platform === 'win32';
+    const isMac = process.platform === 'darwin';
+    const binName = isWin ? 'yt-dlp.exe' : 'yt-dlp';
+    const binPath = path.join(userDataDir, binName);
+    if (fs.existsSync(binPath)) {
+      try { const st = fs.statSync(binPath); if (st.size > 100000) return binPath; } catch (_) {}
+    }
+    // Descargar de GitHub releases — URL por plataforma
+    const downloadUrl = isWin
+      ? 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe'
+      : isMac
+        ? 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos'
+        : 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux';
+    console.log('[yt-dlp] Descargando binario:', downloadUrl);
+    // Avisar al renderer (para que muestre status)
+    try {
+      const wins = BrowserWindow.getAllWindows();
+      wins.forEach(w => { try { w.webContents.send('ytdlp-download-start'); } catch (_) {} });
+    } catch (_) {}
+    await new Promise((resolve, reject) => {
+      const tmpPath = binPath + '.tmp';
+      const file = fs.createWriteStream(tmpPath);
+      function get(url, redirectsLeft) {
+        httpsLib.get(url, (res) => {
+          // Seguir redirect (GitHub releases redirige a CDN)
+          if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+            if (redirectsLeft <= 0) return reject(new Error('Demasiados redirects'));
+            res.resume();
+            return get(res.headers.location, redirectsLeft - 1);
+          }
+          if (res.statusCode !== 200) {
+            return reject(new Error('HTTP ' + res.statusCode + ' bajando yt-dlp'));
+          }
+          res.pipe(file);
+          file.on('finish', () => file.close(() => {
+            try { fs.renameSync(tmpPath, binPath); } catch (e) { return reject(e); }
+            // Permisos +x en Mac/Linux
+            if (!isWin) { try { fs.chmodSync(binPath, 0o755); } catch (_) {} }
+            resolve();
+          }));
+        }).on('error', (e) => {
+          try { fs.unlinkSync(tmpPath); } catch (_) {}
+          reject(e);
+        });
+      }
+      get(downloadUrl, 5);
+    });
+    console.log('[yt-dlp] Descargado en:', binPath);
+    return binPath;
+  }
+
+  // v3.9.17 + v3.11.38: usa yt-dlp para descargar el audio de cualquier plataforma
+  // soportada. Auto-bootstrap si no está instalado en el sistema.
   ipcMain.handle('extract-audio-via-ytdlp', async (_, platformUrl) => {
     if (!platformUrl) return { ok: false, error: 'URL vacía' };
-    const fs = require('fs');
-    const path = require('path');
     const os = require('os');
     const { spawn } = require('child_process');
     const tempBasePath = path.join(os.tmpdir(), `tm-transcribe-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
     const tempPath = tempBasePath + '.%(ext)s';
+
+    // Si no hay nada en el sistema, auto-bootstrap descarga el binario oficial.
+    // Esto ocurre la primera vez en cualquier máquina (incluido Windows sin brew).
+    let bundledPath = null;
+    try { bundledPath = await ensureYtDlpBundled(); }
+    catch (bootErr) {
+      console.warn('[yt-dlp] auto-bootstrap falló:', bootErr.message);
+    }
+
     return new Promise((resolve) => {
-      // Buscar yt-dlp en PATHs comunes (brew, manual install, sistema, Windows)
+      // Buscar yt-dlp: primero el bundleado (siempre presente tras bootstrap),
+      // luego PATHs comunes del sistema como fallback.
       const home = os.homedir();
-      const ytdlpPaths = [
+      const ytdlpPaths = [];
+      if (bundledPath && fs.existsSync(bundledPath)) ytdlpPaths.push(bundledPath);
+      ytdlpPaths.push(
         path.join(home, '.local/bin/yt-dlp'),
         '/opt/homebrew/bin/yt-dlp',
         '/usr/local/bin/yt-dlp',
         path.join(home, 'bin/yt-dlp'),
         'yt-dlp',
         'yt-dlp.exe'
-      ];
+      );
       let proc = null;
       let pathIndex = 0;
       function tryNextPath() {

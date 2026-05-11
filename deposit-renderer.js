@@ -2274,7 +2274,13 @@ async function extractAudioBlob(platformUrl) {
   const result = await window.api.extractAudioViaYtDlp(platformUrl);
   if (!result || !result.ok) {
     if (result && result.errorCode === 'NOT_INSTALLED') {
-      throw new Error('yt-dlp no está instalado. Instalalo con:\n\n  brew install yt-dlp\n\n(en Terminal). Después reintenta.');
+      // v3.11.38: la app intenta auto-descargar yt-dlp. Si llegamos acá es porque
+      // la descarga también falló (sin internet, firewall, etc). Mensaje OS-aware.
+      const isWin = /windows/i.test(navigator.userAgent) || /win64|win32/i.test(navigator.platform || '');
+      const installCmd = isWin
+        ? 'Probá con: winget install yt-dlp.yt-dlp (en PowerShell)\nO descargá yt-dlp.exe de github.com/yt-dlp/yt-dlp/releases'
+        : 'Probá con: brew install yt-dlp (en Terminal)';
+      throw new Error('No se pudo descargar yt-dlp automáticamente. ' + installCmd + '\n\nRevisá tu conexión y reintenta.');
     }
     throw new Error(result && result.error ? result.error : 'Extracción falló');
   }
@@ -2352,7 +2358,9 @@ async function transcribeEntry(entryId, btn) {
     // para descargar el audio directamente. yt-dlp maneja la extracción.
     if (isProtectedPlatformUrl(videoLink.url)) {
       const platform = videoLink.url.match(/(instagram|tiktok|youtube|youtu|facebook|twitter|x\.com|vimeo)/i)[0];
-      _setTranscriptionStatus('🔄 Descargando audio con yt-dlp (' + platform + ')... Tarda 10-30s.');
+      // v3.11.38: la primera vez en esta máquina, la app descarga yt-dlp (~12MB win / 30MB mac)
+      // antes de extraer — puede tardar 30-60s. Después queda cacheado y < 10s.
+      _setTranscriptionStatus('🔄 Descargando audio con yt-dlp (' + platform + ')... Primera vez puede tardar hasta 60s, después es rápido.');
       const result = await extractAudioBlob(videoLink.url);
       audioBlob = result.blob;
       filename = 'audio.' + result.ext;

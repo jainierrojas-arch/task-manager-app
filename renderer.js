@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.38': {
+    title: 'Transcribir ya funciona en Windows — yt-dlp se auto-descarga, sin instalación manual',
+    features: [
+      '🪟 <strong>Fix para Windows: Transcribir tiraba "yt-dlp no está instalado. brew install..."</strong>. Brew es macOS-only, los chicos en Windows no podían usar la transcripción de Instagram/TikTok/YouTube.',
+      '⬇ <strong>Solución: auto-bootstrap de yt-dlp</strong>. La app ahora baja el binario oficial de GitHub Releases (~12MB en Windows, ~30MB en Mac) la primera vez que apretás Transcribir, y lo cachea en el directorio de la app. Cero instalación manual.',
+      '⏱ <strong>Primera vez tarda 30-60s</strong> (descarga + extracción de audio). Después queda cacheado y va en <10s.',
+      '🔁 <strong>Fallback ordenado</strong>: si el sistema ya tiene yt-dlp instalado (Mac via brew, Windows via winget/scoop), la app lo usa directo. Sino baja la versión bundled.',
+      '⚠ <strong>Error message OS-aware</strong>: si la descarga falla por firewall/red, ahora muestra el comando correcto para cada OS (winget para Windows, brew para Mac).'
+    ]
+  },
   '3.11.37': {
     title: 'Fix Whisper API key en Windows — no se quedaba guardada por timing del workspace',
     features: [
