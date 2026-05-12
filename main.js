@@ -999,6 +999,14 @@ function registerIpcHandlers() {
   // Estrategia: intentamos Cloudflare 1.1.1.1 → si falla, Google 8.8.8.8 →
   // si falla, dns.lookup del sistema como último recurso.
   const _dohCache = new Map(); // hostname → { ip, expires }
+  // v3.11.74: FIX TLS — el SNI tiene que ser el hostname del DNS server, no el IP.
+  // Sin esto, el certificado TLS de Cloudflare/Google no matcheaba y la conexión fallaba
+  // silenciosamente → caíamos a dns.lookup del sistema → ENOTFOUND.
+  const DOH_SERVERS = {
+    '1.1.1.1': 'cloudflare-dns.com',
+    '8.8.8.8': 'dns.google',
+    '9.9.9.9': 'dns.quad9.net'
+  };
   function dohResolveOnce(dohHost, hostname) {
     return new Promise((resolve, reject) => {
       const https = require('https');
@@ -1007,7 +1015,8 @@ function registerIpcHandlers() {
         port: 443,
         path: '/dns-query?name=' + encodeURIComponent(hostname) + '&type=A',
         method: 'GET',
-        headers: { 'Accept': 'application/dns-json', 'User-Agent': 'TaskManager' },
+        servername: DOH_SERVERS[dohHost] || dohHost, // FIX TLS SNI
+        headers: { 'Accept': 'application/dns-json', 'User-Agent': 'TaskManager', 'Host': DOH_SERVERS[dohHost] || dohHost },
         timeout: 4000
       }, (res) => {
         const chunks = [];
@@ -1033,15 +1042,17 @@ function registerIpcHandlers() {
     if (cached && cached.expires > Date.now()) {
       return callback(null, cached.ip, 4);
     }
-    // Primero Cloudflare, luego Google, luego dns.lookup del sistema
+    // v3.11.74: cascada de 3 servidores DoH. Si todos fallan, dns.lookup del sistema.
     dohResolveOnce('1.1.1.1', hostname)
-      .catch(() => dohResolveOnce('8.8.8.8', hostname))
+      .catch(e => { console.log('[doh] cloudflare failed:', e.message); return dohResolveOnce('8.8.8.8', hostname); })
+      .catch(e => { console.log('[doh] google failed:', e.message); return dohResolveOnce('9.9.9.9', hostname); })
       .then(ip => {
+        console.log('[doh] resolved', hostname, '→', ip);
         _dohCache.set(hostname, { ip, expires: Date.now() + 5 * 60 * 1000 });
         callback(null, ip, 4);
       })
-      .catch(() => {
-        // Último recurso: DNS del sistema
+      .catch(e => {
+        console.warn('[doh] all DoH failed, falling back to system DNS:', e.message);
         require('dns').lookup(hostname, options, callback);
       });
   }

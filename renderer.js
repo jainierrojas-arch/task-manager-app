@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.74': {
+    title: 'FIX CRÍTICO: DoH no funcionaba en realidad (TLS SNI roto) — ahora SÍ',
+    features: [
+      '🐛 <strong>Bug grande encontrado y arreglado</strong>: el DoH (DNS over HTTPS) que agregué en v3.11.71 estaba conectando al IP 1.1.1.1 sin setear el SNI del TLS handshake. El cert de Cloudflare es para <code>cloudflare-dns.com</code>, no para la IP — así que el TLS fallaba silenciosamente y caíamos al DNS del sistema bloqueado. Por eso los chicos en Venezuela seguían viendo ENOTFOUND aunque estuvieran en v3.11.73.',
+      '✅ <strong>Fix</strong>: agregué <code>servername</code> explícito en las requests al resolver DoH. Ahora el TLS handshake es correcto. Cloudflare devuelve los IPs reales y la app puede conectarse a snapinsta, fastdl, etc.',
+      '🛡 <strong>3 servidores DoH en cascada</strong>: si Cloudflare 1.1.1.1 está bloqueado en la red, intenta Google 8.8.8.8, después Quad9 9.9.9.9. Solo si los tres fallan, cae al DNS del sistema.',
+      '🩺 <strong>Más logging</strong>: si por algún motivo todos los DoH fallan, queda registrado en la consola del DevTools para diagnosticar.',
+      '🎯 <strong>Resultado esperado</strong>: una vez que los chicos en Venezuela actualicen a v3.11.74, NO necesitan cambiar DNS ni configurar nada. La app resuelve los hostnames bloqueados por su cuenta.'
+    ]
+  },
   '3.11.73': {
     title: 'Diagnóstico ahora flagea OpenAI como ⚠ amarillo (bloquea VE/CU/IR)',
     features: [
