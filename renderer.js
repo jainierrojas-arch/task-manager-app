@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.83': {
+    title: 'Webhook ahora via Cloudflare Pages Functions (auto-deploy desde GitHub)',
+    features: [
+      '🚀 <strong>Cloudflare Pages Functions en lugar de Worker manual</strong>: como ya tenías tu repo conectado a CF Pages, ahora los endpoints del webhook viven en <code>/functions/manychat/</code> del repo. Cada vez que pusheás a main, CF Pages re-deploya automáticamente. Cero copy/paste manual.',
+      '📂 <strong>Reestructura</strong>: Firebase Functions movido de <code>functions/</code> → <code>firebase-functions/</code> (firebase.json actualizado). <code>functions/</code> queda libre para CF Pages.',
+      '🔌 <strong>URLs nuevas</strong> (tu domain de Pages):<br>• <code>GET /</code> — health check<br>• <code>POST /manychat/inbound?biz=BIZ_ID&ws=WS_ID</code> — recibe DMs<br>• <code>POST /manychat/outbound</code> — envía respuesta a ManyChat'
+    ]
+  },
   '3.11.82': {
     title: '📲 Fase 3a — Instagram DMs reales via ManyChat → Cloudflare Worker → App',
     features: [
