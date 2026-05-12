@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.72': {
+    title: '🩺 Panel de Diagnóstico — cualquier user ve qué le falla en su instalación',
+    features: [
+      '🎯 <strong>Solución para "a uno le funciona y al otro no"</strong>: en Settings hay un botón "🩺 Ejecutar diagnóstico" que corre 6 tests automáticos y muestra exactamente qué está roto en tu instalación específica. Compartís un screenshot del resultado y sabemos al toque qué arreglar.',
+      '📋 <strong>Lo que revisa</strong>:<br>1) Versión de la app (local vs última en GitHub)<br>2) Internet<br>3) API key de transcripción (configurada? Groq o OpenAI?)<br>4) Cloudinary (cloud name + upload preset)<br>5) Workspace activo<br>6) Firebase/Firestore (conexión a la BD)',
+      '🛠 <strong>Cada test failed tiene un "fix" sugerido</strong>: si la versión está vieja → "Quit completo y reabrir". Si falta API key → "Settings → OpenAI API Key". Si no hay Cloudinary → "Configurar Cloudinary". Cero adivinanzas.',
+      '👥 <strong>Para nuevos miembros del equipo / clientes</strong>: si algo no anda, decíles "Settings → Diagnóstico" y se autoresuelve la mayoría de los problemas comunes sin tener que preguntar.'
+    ]
+  },
   '3.11.71': {
     title: '🌐 DNS-over-HTTPS interno — la app bypasea los bloqueos DNS de ISP automáticamente',
     features: [
@@ -9775,5 +9784,132 @@ if (proModeBtn) {
     } catch (e) {
       console.error('[ProMode] error:', e);
     }
+  });
+}
+
+// ===== v3.11.72: Panel de Diagnóstico =====
+// Cualquier user lo ejecuta y ve exactamente qué falla en su instalación.
+async function runFullDiagnostics(resultEl) {
+  resultEl.innerHTML = '<div style="color:#888">⏳ Ejecutando tests...</div>';
+  const tests = [];
+  const log = (test) => {
+    tests.push(test);
+    renderDiagnostics(resultEl, tests);
+  };
+
+  // Test 1: Versión de la app
+  let localVer = '?';
+  try { localVer = await window.api.getAppVersion(); } catch (e) {}
+  let latestVer = null;
+  try {
+    const latest = await checkLatestRelease();
+    if (latest && latest.version) latestVer = latest.version;
+  } catch (e) {}
+  const versionOk = latestVer ? compareSemver(localVer, latestVer) >= 0 : true;
+  log({
+    name: 'Versión de la app',
+    ok: versionOk,
+    detail: `Local: v${localVer}` + (latestVer ? ` · Última: v${latestVer}` : ''),
+    fix: versionOk ? null : 'Quit completo (Cmd+Q / cerrar X) y reabrir la app. El auto-update se instala al cerrar.'
+  });
+
+  // Test 2: Internet
+  log({
+    name: 'Internet',
+    ok: navigator.onLine,
+    detail: navigator.onLine ? 'Conectado' : 'Sin conexión',
+    fix: navigator.onLine ? null : 'Revisá tu conexión a internet'
+  });
+
+  // Test 3: API key transcripción
+  let keyState = { ok: false, provider: 'sin configurar' };
+  try {
+    await _waitForWorkspaceReady();
+    if (currentWorkspaceId) {
+      const snap = await wsConfigRef('openai').get();
+      if (snap.exists) {
+        const key = ((snap.data() || {}).apiKey || '').trim();
+        if (key.startsWith('gsk_')) keyState = { ok: true, provider: 'Groq', preview: key.slice(0, 8) + '...' };
+        else if (key.startsWith('sk-')) keyState = { ok: true, provider: 'OpenAI', preview: key.slice(0, 7) + '...' };
+        else if (key) keyState = { ok: false, provider: 'formato inválido' };
+      }
+    }
+  } catch (e) {}
+  log({
+    name: 'API key transcripción',
+    ok: keyState.ok,
+    detail: keyState.ok ? `${keyState.provider} (${keyState.preview})` : keyState.provider,
+    fix: keyState.ok ? null : 'Settings → OpenAI API Key → pegá una key de Groq (gsk_...) — console.groq.com es gratis'
+  });
+
+  // Test 4: Cloudinary
+  let cloudOk = false;
+  try {
+    const cfg = await window.api.getCloudinaryConfig();
+    cloudOk = !!(cfg && cfg.cloudName && cfg.uploadPreset);
+  } catch (e) {}
+  log({
+    name: 'Cloudinary (uploads de video)',
+    ok: cloudOk,
+    detail: cloudOk ? 'Configurado' : 'No configurado',
+    fix: cloudOk ? null : 'Settings → Cloudinary → cloud name + upload preset'
+  });
+
+  // Test 5: Workspace
+  log({
+    name: 'Workspace activo',
+    ok: !!currentWorkspaceId,
+    detail: currentWorkspaceId ? currentWorkspaceId.slice(0, 12) + '...' : 'sin workspace',
+    fix: currentWorkspaceId ? null : 'Click en el selector de workspace arriba a la izquierda'
+  });
+
+  // Test 6: Firebase / Firestore
+  let fbOk = false;
+  try {
+    if (db) {
+      await db.collection('users').limit(1).get();
+      fbOk = true;
+    }
+  } catch (e) {}
+  log({
+    name: 'Firebase / Firestore',
+    ok: fbOk,
+    detail: fbOk ? 'Conectado' : 'Sin acceso',
+    fix: fbOk ? null : 'Verificar conexión a internet y permisos de Firestore'
+  });
+
+  // Final
+  return tests;
+}
+
+function renderDiagnostics(el, tests) {
+  const total = tests.length;
+  const passed = tests.filter(t => t.ok).length;
+  const headerColor = passed === total ? '#4ecdc4' : '#ff9866';
+  el.innerHTML = `
+    <div style="font-weight:700;color:${headerColor};margin-bottom:10px">${passed}/${total} OK</div>
+    ${tests.map(t => `
+      <div style="display:flex;flex-direction:column;gap:2px;padding:8px;border-radius:6px;background:${t.ok ? 'rgba(78,205,196,0.08)' : 'rgba(255,107,107,0.1)'};border:1px solid ${t.ok ? 'rgba(78,205,196,0.3)' : 'rgba(255,107,107,0.3)'};margin-bottom:6px">
+        <div style="display:flex;align-items:center;gap:6px"><span style="font-size:14px">${t.ok ? '✓' : '✗'}</span><strong>${t.name}</strong></div>
+        <div style="font-size:11px;color:var(--text-secondary)">${t.detail}</div>
+        ${t.fix ? `<div style="font-size:11px;color:#ff9866;margin-top:4px">→ ${t.fix}</div>` : ''}
+      </div>
+    `).join('')}
+  `;
+}
+
+const _runDiagBtn = document.getElementById('runDiagnosticsBtn');
+const _diagResultEl = document.getElementById('diagnosticsResult');
+if (_runDiagBtn && _diagResultEl) {
+  _runDiagBtn.addEventListener('click', async () => {
+    _runDiagBtn.disabled = true;
+    _runDiagBtn.textContent = '⏳ Ejecutando...';
+    try {
+      await runFullDiagnostics(_diagResultEl);
+    } catch (e) {
+      _diagResultEl.innerHTML = '<div style="color:#ff6b6b">Error: ' + e.message + '</div>';
+    }
+    _runDiagBtn.disabled = false;
+    _runDiagBtn.textContent = 'Ejecutar diagnóstico de nuevo';
   });
 }

@@ -2779,6 +2779,16 @@
                prompts del llavero eran mala UX. Ahora la app usa scrapers públicos
                (snapinsta para IG, tikwm para TikTok) que funcionan sin auth ni setup. -->
 
+          <!-- v3.11.72: Diagnóstico — cualquier user lo ejecuta y ve qué le falla -->
+          <div class="settings-group">
+            <div class="settings-label">🩺 Diagnóstico</div>
+            <button class="btn btn-primary btn-small" id="runDiagnosticsBtn" style="width:100%;padding:10px;font-weight:700">Ejecutar diagnóstico</button>
+            <div id="diagnosticsResult" style="margin-top:10px;font-size:12px"></div>
+            <div class="telegram-instructions">
+              <p>Si algo no funciona (transcripción falla, scrapers, etc.), pegale "Ejecutar diagnóstico". Muestra exactamente qué de tu instalación está roto y cómo arreglarlo. Mucho más rápido que adivinar.</p>
+            </div>
+          </div>
+
           <div class="settings-group">
             <div class="settings-label">Tema de la interfaz</div>
             <div style="display:flex;gap:8px;flex-wrap:wrap">
