@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.77': {
+    title: '👥 Botón "Miembros" en cada workspace — agregá al equipo sin invitaciones',
+    features: [
+      '🎯 <strong>Nueva acción</strong>: en el selector de workspaces, cada workspace ahora tiene un botón <strong>👥</strong> (junto a renombrar ✎ y eliminar ✕). Click → modal con la lista de miembros actuales + dropdown para agregar cualquiera del equipo.',
+      '⚡ <strong>Cómo agregar a los chicos al workspace correcto</strong>:<br>1) Click en el selector de workspace arriba a la izquierda<br>2) Cada workspace tiene tres botones a la derecha: 👥 ✎ ✕<br>3) Click 👥 sobre el workspace donde tenés el contenido (ej. "Agencia")<br>4) En el dropdown "Agregar miembro", elegí a cada miembro del equipo y click "Agregar"<br>5) Listo. Ellos abren su app, click en el selector de workspace, eligen "Agencia" y ven todo.',
+      '🗑 <strong>Quitar miembros</strong>: también podés sacar a alguien del workspace con el botón "Quitar" al lado del nombre. Excepto al dueño del workspace (vos).',
+      '🚫 <strong>Limitación</strong>: solo el dueño del workspace o un admin puede gestionar miembros. Si no ves el botón 👥, no tenés permisos sobre ese workspace.'
+    ]
+  },
   '3.11.76': {
     title: 'Fix dropdown migración cuando los workspaces todavía no cargaron',
     features: [
@@ -7876,6 +7885,10 @@ function renderWorkspaceSwitcher() {
     const initial = (w.emoji || (w.name || 'W').charAt(0)).toUpperCase();
     const color = w.color || '#6c63ff';
     const canManage = isAdmin || w.ownerId === currentUser.uid;
+    // v3.11.77: nuevo botón 👥 para gestionar miembros del workspace
+    const membersBtn = canManage
+      ? `<button class="ws-action-btn" data-ws-members="${esc(w.id)}" title="Gestionar miembros del workspace">👥</button>`
+      : '';
     const editBtn = canManage
       ? `<button class="ws-action-btn" data-ws-rename="${esc(w.id)}" title="Renombrar workspace">✎</button>`
       : '';
@@ -7889,7 +7902,7 @@ function renderWorkspaceSwitcher() {
           <span class="ws-name-text" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(w.name || 'Workspace')}</span>
           ${isActive ? '<span class="ws-check">✓</span>' : ''}
         </button>
-        <div class="ws-actions" style="display:flex;gap:2px">${editBtn}${delBtn}</div>
+        <div class="ws-actions" style="display:flex;gap:2px">${membersBtn}${editBtn}${delBtn}</div>
       </div>`;
   }).join('');
   listEl.querySelectorAll('[data-ws-id]').forEach(item => {
@@ -7900,6 +7913,109 @@ function renderWorkspaceSwitcher() {
   });
   listEl.querySelectorAll('[data-ws-delete]').forEach(btn => {
     btn.addEventListener('click', (e) => { e.stopPropagation(); deleteWorkspace(btn.dataset.wsDelete); });
+  });
+  listEl.querySelectorAll('[data-ws-members]').forEach(btn => {
+    btn.addEventListener('click', (e) => { e.stopPropagation(); openWorkspaceMembersModal(btn.dataset.wsMembers); });
+  });
+}
+
+// v3.11.77: gestión de miembros del workspace — el admin agrega/quita usuarios
+async function openWorkspaceMembersModal(workspaceId) {
+  closeWorkspaceDropdown();
+  const w = workspaces.find(x => x.id === workspaceId);
+  if (!w) return;
+  // Cargar lista actual de usuarios
+  let allUsers = [];
+  try {
+    const snap = await db.collection('users').get();
+    allUsers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (e) {
+    alert('No se pudo cargar la lista de usuarios: ' + e.message);
+    return;
+  }
+  const currentMembers = Array.isArray(w.members) ? w.members.slice() : [];
+  const ownerId = w.ownerId || null;
+
+  function render() {
+    const memberRows = currentMembers.map(uid => {
+      const u = allUsers.find(x => x.id === uid);
+      const name = (u && (u.name || u.email)) || uid.slice(0, 10) + '...';
+      const isOwner = uid === ownerId;
+      return `
+        <div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg-card);border-radius:6px;border:1px solid var(--border);margin-bottom:4px">
+          <div style="flex:1;font-size:13px">${esc(name)}${isOwner ? ' <span style="color:#4ecdc4;font-size:10px">(dueño)</span>' : ''}</div>
+          ${isOwner ? '' : `<button data-remove-uid="${esc(uid)}" style="background:transparent;color:#ff6b6b;border:1px solid rgba(255,107,107,0.3);padding:4px 8px;border-radius:6px;font-size:11px;cursor:pointer">Quitar</button>`}
+        </div>
+      `;
+    }).join('') || '<div style="color:#888;text-align:center;padding:12px">Sin miembros</div>';
+
+    const nonMembers = allUsers.filter(u => !currentMembers.includes(u.id));
+    const addOptions = nonMembers.map(u => `<option value="${esc(u.id)}">${esc(u.name || u.email)} (${esc(u.email || '')})</option>`).join('');
+    return `
+      <div style="font-size:13px;color:var(--text-secondary);margin-bottom:8px">Workspace: <strong style="color:var(--text-primary)">${esc(w.name)}</strong></div>
+      <div style="font-size:11px;color:var(--text-secondary);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600">Miembros actuales (${currentMembers.length})</div>
+      <div style="max-height:200px;overflow-y:auto;margin-bottom:12px">${memberRows}</div>
+      ${nonMembers.length > 0 ? `
+      <div style="font-size:11px;color:var(--text-secondary);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600">Agregar miembro</div>
+      <div style="display:flex;gap:6px">
+        <select id="_addMemberSelect" style="flex:1;padding:8px;border-radius:6px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border)">${addOptions}</select>
+        <button id="_addMemberBtn" style="background:var(--accent,#4ecdc4);color:#0a0c10;border:0;padding:8px 14px;border-radius:6px;font-weight:700;cursor:pointer">Agregar</button>
+      </div>
+      ` : '<div style="font-size:12px;color:#888;text-align:center;padding:8px">Todos los usuarios ya son miembros 🎉</div>'}
+    `;
+  }
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.innerHTML = `
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:20px;min-width:360px;max-width:90vw;max-height:80vh;overflow-y:auto">
+      <div style="font-size:15px;font-weight:700;margin-bottom:14px;color:var(--text-primary)">👥 Gestionar miembros</div>
+      <div id="_membersBody">${render()}</div>
+      <div style="display:flex;justify-content:flex-end;margin-top:14px">
+        <button id="_membersClose" style="background:transparent;color:var(--text-primary);border:1px solid var(--border);padding:8px 14px;border-radius:6px;cursor:pointer;font-weight:600">Cerrar</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  function rerenderBody() {
+    const body = overlay.querySelector('#_membersBody');
+    if (body) body.innerHTML = render();
+    wireup();
+  }
+  function wireup() {
+    overlay.querySelectorAll('[data-remove-uid]').forEach(b => {
+      b.addEventListener('click', async () => {
+        const uid = b.getAttribute('data-remove-uid');
+        const idx = currentMembers.indexOf(uid);
+        if (idx >= 0) currentMembers.splice(idx, 1);
+        try {
+          await db.collection('workspaces').doc(workspaceId).update({ members: currentMembers });
+        } catch (e) { alert('Error: ' + e.message); }
+        rerenderBody();
+      });
+    });
+    const addBtn = overlay.querySelector('#_addMemberBtn');
+    const addSel = overlay.querySelector('#_addMemberSelect');
+    if (addBtn && addSel) {
+      addBtn.addEventListener('click', async () => {
+        const uid = addSel.value;
+        if (!uid || currentMembers.includes(uid)) return;
+        currentMembers.push(uid);
+        try {
+          await db.collection('workspaces').doc(workspaceId).update({ members: currentMembers });
+        } catch (e) { alert('Error: ' + e.message); }
+        rerenderBody();
+      });
+    }
+  }
+  wireup();
+
+  overlay.querySelector('#_membersClose').addEventListener('click', () => {
+    document.body.removeChild(overlay);
+  });
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) document.body.removeChild(overlay);
   });
 }
 
