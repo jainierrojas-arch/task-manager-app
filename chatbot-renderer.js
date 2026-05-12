@@ -225,33 +225,47 @@ async function autoRespondToLead(leadId, businessId, manychatContactId) {
   });
 
   // Enviar a ManyChat → Instagram via nuestro endpoint outbound
-  if (manychatContactId && config.manychatApiKey) {
+  // v3.11.86: diagnóstico SIEMPRE visible en el chat
+  const sysMsg = async (text) => {
     try {
-      const outRes = await fetch('https://task-manager-app-czv.pages.dev/manychat/outbound', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          manychatApiKey: config.manychatApiKey,
-          contactId: manychatContactId,
-          text: botText
-        })
+      await db.collection('chatbotMessages').add({
+        leadId, businessId, workspaceId: WS_ID,
+        text, fromLead: false, system: true,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
       });
-      const outJson = await outRes.json().catch(() => ({}));
-      if (!outRes.ok) {
-        console.error('[auto-respond] ManyChat send failed:', outRes.status, outJson);
-        // Guardar el error como mensaje system
-        await db.collection('chatbotMessages').add({
-          leadId, businessId, workspaceId: WS_ID,
-          text: '⚠ ManyChat respondió ' + outRes.status + ': ' + JSON.stringify(outJson).slice(0, 200),
-          fromLead: false, system: true,
-          timestamp: firebase.firestore.FieldValue.serverTimestamp()
-        });
-      }
-    } catch (e) {
-      console.error('[auto-respond] outbound call failed:', e);
+    } catch (_) {}
+  };
+  if (!manychatContactId) {
+    await sysMsg('⚠ Sin manychatContactId en el webhook — la respuesta no llegó a Instagram. Revisá que en ManyChat el External Request mande contact.id = {{user.id}}.');
+    return;
+  }
+  if (!config.manychatApiKey) {
+    await sysMsg('⚠ Falta ManyChat API Key en ⚙ Configurar bot — la respuesta no llegó a Instagram. Pegá la API Key de ManyChat (Settings → API) y guardá.');
+    return;
+  }
+  try {
+    const outRes = await fetch('https://task-manager-app-czv.pages.dev/manychat/outbound', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        manychatApiKey: config.manychatApiKey,
+        contactId: manychatContactId,
+        text: botText
+      })
+    });
+    const outJson = await outRes.json().catch(() => ({}));
+    if (!outRes.ok || outJson.ok === false) {
+      console.error('[auto-respond] ManyChat send failed:', outRes.status, outJson);
+      const mcStatus = (outJson && outJson.response && outJson.response.status) || outJson.status || outRes.status;
+      const mcMsg = (outJson && outJson.response && outJson.response.message) || JSON.stringify(outJson).slice(0, 200);
+      await sysMsg('⚠ ManyChat rechazó el envío (HTTP ' + mcStatus + '): ' + mcMsg);
+    } else {
+      // éxito — opcional: lo dejamos sin mensaje system para no ensuciar
+      console.log('[auto-respond] enviado a ManyChat OK', outJson);
     }
-  } else {
-    console.warn('[auto-respond] sin manychatContactId o sin manychatApiKey — respuesta queda solo en la app, no llega a IG');
+  } catch (e) {
+    console.error('[auto-respond] outbound call failed:', e);
+    await sysMsg('⚠ Error de red llamando outbound: ' + (e.message || e));
   }
 }
 

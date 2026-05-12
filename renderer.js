@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.86': {
+    title: '🩹 Bot IA — debug visible + retry sin message_tag (fix "el bot no llega a IG")',
+    features: [
+      '🔍 <strong>Errores visibles en el chat</strong>: si falta <code>manychatContactId</code> (porque el External Request de ManyChat no manda <code>contact.id = {{user.id}}</code>) o falta la <code>ManyChat API Key</code>, ahora aparece un mensaje ⚠ system EN la conversación del lead, no solo en consola. Sabés al toque qué arreglar.',
+      '🔄 <strong>Retry inteligente del outbound</strong>: el endpoint <code>/manychat/outbound</code> primero intenta sin <code>message_tag</code> (correcto dentro de ventana de 24h en IG). Si ManyChat rechaza por "fuera de ventana" o similar, reintenta con <code>HUMAN_AGENT</code> (tag válido para Instagram). Si igual falla, devuelve el detalle exacto del error.',
+      '📋 <strong>Cómo arreglar tu flow de ManyChat</strong>:<br>1) ELIMINÁ el bloque "Enviar mensaje" fijo ("Hola en qué puedo ayudarte?") — el bot lo va a responder solo.<br>2) Cambiá el trigger a "Default reply" o sin keyword para que dispare con CUALQUIER DM, no solo con palabras específicas.<br>3) Dejá SOLO el bloque "Realizar solicitud externa" apuntando al webhook.<br>4) En el External Request asegurate de mandar <code>contact: { id: {{user.id}}, ig_username: {{user.ig_username}}, first_name: {{user.first_name}} }</code> + <code>last_input_text: {{last_input_text}}</code>.',
+      '🎯 <strong>Próximo test</strong>: después de actualizar y reiniciar la app, mandate un DM al IG conectado. Si algo falla vas a ver el mensaje ⚠ en la conversación del lead con la causa exacta.'
+    ]
+  },
   '3.11.85': {
     title: '🎯 Fase 3b — el bot responde solo a DMs de Instagram (loop cerrado)',
     features: [
