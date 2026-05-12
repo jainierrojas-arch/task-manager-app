@@ -164,11 +164,41 @@ function renderBusinesses() {
         <div class="cb-biz-name">${esc(b.name)}</div>
         <div class="cb-biz-stats">${b._leadCount || 0} leads · ${b._agendados || 0} citas</div>
       </div>
+      <button class="cb-biz-url-btn" data-biz-copy-url="${esc(b.id)}" title="Copiar URL del webhook para ManyChat" style="background:transparent;border:0;color:var(--text-secondary);cursor:pointer;font-size:14px;padding:4px 6px;border-radius:6px">📋</button>
     </div>
   `).join('');
   el.querySelectorAll('[data-biz-id]').forEach(item => {
-    item.addEventListener('click', () => selectBusiness(item.dataset.bizId));
+    item.addEventListener('click', (e) => {
+      // No clickear si fue en el botón de copiar
+      if (e.target.closest('[data-biz-copy-url]')) return;
+      selectBusiness(item.dataset.bizId);
+    });
   });
+  el.querySelectorAll('[data-biz-copy-url]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      copyWebhookUrl(btn.dataset.bizCopyUrl, btn);
+    });
+  });
+}
+
+// v3.11.84: copia la URL del webhook para ManyChat (con businessId + workspaceId).
+function copyWebhookUrl(businessId, btn) {
+  const baseUrl = 'https://task-manager-app-czv.pages.dev/manychat/inbound';
+  const url = `${baseUrl}?biz=${encodeURIComponent(businessId)}&ws=${encodeURIComponent(WS_ID || '')}`;
+  try {
+    navigator.clipboard.writeText(url);
+    if (btn) {
+      const orig = btn.textContent;
+      btn.textContent = '✓';
+      btn.style.color = '#4ecdc4';
+      setTimeout(() => { btn.textContent = orig; btn.style.color = ''; }, 1200);
+    }
+    // Mostrar también un alert con la URL para confirmar
+    console.log('[chatbot] webhook URL copiada:', url);
+  } catch (e) {
+    alert('URL del webhook (copiala manualmente):\n\n' + url);
+  }
 }
 
 function selectBusiness(bizId) {
@@ -624,6 +654,7 @@ async function loadConfig() {
       if (d.knowledgeBase) document.getElementById('cbConfigKnowledge').value = d.knowledgeBase;
       if (d.calendlyLink) document.getElementById('cbConfigCalendly').value = d.calendlyLink;
       if (d.model) document.getElementById('cbConfigModel').value = d.model;
+      if (d.manychatApiKey) document.getElementById('cbConfigManyChatKey').value = d.manychatApiKey;
     }
   } catch (e) { console.warn('[chatbot] config load failed:', e.message); }
 }
@@ -634,9 +665,10 @@ async function saveConfig() {
   const knowledgeBase = document.getElementById('cbConfigKnowledge').value.trim();
   const calendlyLink = document.getElementById('cbConfigCalendly').value.trim();
   const model = document.getElementById('cbConfigModel').value;
+  const manychatApiKey = document.getElementById('cbConfigManyChatKey').value.trim();
   try {
     await db.collection('chatbotConfig').doc(WS_ID).set({
-      systemPrompt, knowledgeBase, calendlyLink, model,
+      systemPrompt, knowledgeBase, calendlyLink, model, manychatApiKey,
       workspaceId: WS_ID,
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     }, { merge: true });

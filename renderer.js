@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.84': {
+    title: 'Botón "📋 Copy URL ManyChat" en cada negocio + campo ManyChat API Key',
+    features: [
+      '📋 <strong>Botón copiar URL del webhook</strong>: en la columna de Negocios del Bot IA, cada negocio tiene un ícono 📋. Click → copia al portapapeles la URL exacta para pegar en ManyChat (con businessId y workspaceId ya rellenados).',
+      '🔑 <strong>Campo ManyChat API Key</strong> en Configurar bot. Lo vamos a usar en Fase 3b para que la app envíe la respuesta del bot de vuelta a Instagram via ManyChat API.',
+      '✅ <strong>Próximo paso</strong>: copiar la URL desde el negocio + pegar en ManyChat → External Request. Después probar mandando un DM real a tu IG.'
+    ]
+  },
   '3.11.83': {
     title: 'Webhook ahora via Cloudflare Pages Functions (auto-deploy desde GitHub)',
     features: [
