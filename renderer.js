@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.67': {
+    title: 'Logging visible al apretar el botón rojo — diagnóstico del "tap pero no graba"',
+    features: [
+      '🩺 <strong>Mensajes visibles al tap</strong>: cuando el chico aprieta el botón rojo, ahora aparece un toast en pantalla con:<br>• <code>🔴 Tap red button</code> al click<br>• <code>✓ Grabando</code> si arrancó OK<br>• <code>❌ Sin audio — permisos de micrófono denegados?</code> si no hay mic<br>• <code>❌ Canvas no encontrado</code> si el canvas no existe<br>• <code>❌ MediaRecorder: ...</code> si la API falla<br>Con eso vemos exactamente dónde falla.',
+      '🎙 <strong>Auto-reintento de mic</strong>: si el audio track no está vivo al apretar el botón, la app reintenta pedir permisos. Bug común en Android cuando el browser revoca el mic mid-sesión.',
+      '🛡 <strong>Library screen escondida al cargar con session</strong>: por las dudas, el init() del recorder ahora explícitamente oculta la pantalla library para que no haya conflicto con la pantalla de grabación.',
+      '📲 <strong>Para diagnosticar</strong>: que el chico reinstale la PWA (v31167), escanee QR, intente grabar, y mande screenshot del mensaje rojo/amarillo que aparezca. Ahí sabemos qué arreglar.'
+    ]
+  },
   '3.11.66': {
     title: 'Thumbnails de TikTok ahora se ven (vía tikwm) + recordatorio para chicos en Windows',
     features: [

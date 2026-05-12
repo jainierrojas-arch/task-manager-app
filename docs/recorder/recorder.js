@@ -468,6 +468,9 @@ function showDebug(text) {
 }
 
 async function init() {
+  // v3.11.67: asegurar que la pantalla library queda oculta al cargar con session ID
+  const libScreen = document.getElementById('screenLibrary');
+  if (libScreen) { libScreen.style.display = 'none'; libScreen.classList.remove('active'); }
   show('screenLoading');
   $('loadingText').textContent = 'Conectando sesión...';
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -590,7 +593,28 @@ function renderRecordRing() {
 // Crea una NUEVA MediaRecorder y empieza a grabar. Resetea TODO el estado de sesión.
 function startRecording() {
   const canvas = $('captureCanvas');
-  if (!canvas || !audioTrack) return;
+  // v3.11.67: logging defensivo para diagnosticar "tap pero no graba"
+  if (!canvas) {
+    showDebug('❌ Canvas no encontrado');
+    console.error('[startRecording] canvas missing');
+    return;
+  }
+  if (!audioTrack) {
+    showDebug('❌ Sin audio — permisos de micrófono denegados?');
+    console.error('[startRecording] audioTrack missing');
+    // Intentar pedir audio de nuevo
+    ensureAudio().then(() => {
+      showDebug('✓ Audio re-adquirido, reintenta');
+    }).catch(e => {
+      showDebug('❌ Audio fallido: ' + e.message);
+    });
+    return;
+  }
+  if (audioTrack.readyState !== 'live') {
+    showDebug('⚠ Audio track no live (' + audioTrack.readyState + ') — re-adquiriendo');
+    ensureAudio().catch(() => {});
+    return;
+  }
   recordedChunks = [];
   pauseMarks = [];
   recAccumActiveMs = 0;
@@ -621,9 +645,12 @@ function startRecording() {
     mediaRecorder = new MediaRecorder(combined, mime ? { mimeType: mime, videoBitsPerSecond: 10_000_000 } : { videoBitsPerSecond: 10_000_000 });
   } catch (e) {
     console.error('[rec] new MediaRecorder failed', e);
+    if (typeof showDebug === 'function') showDebug('❌ MediaRecorder: ' + e.message);
     alert('No se pudo iniciar la grabación: ' + e.message);
     return;
   }
+  // v3.11.67: log visible que MediaRecorder se creó OK
+  if (typeof showDebug === 'function') showDebug('✓ Grabando — mime=' + (mime || 'default'));
   mediaRecorder.ondataavailable = (ev) => {
     if (ev.data && ev.data.size > 0) recordedChunks.push(ev.data);
   };
@@ -1023,7 +1050,12 @@ function applyLandscapeDefaults() {
 applyLandscapeDefaults();
 window.matchMedia('(orientation: landscape)').addEventListener('change', applyLandscapeDefaults);
 
-$('btnRecord').addEventListener('click', () => recordButtonTap('tap'));
+$('btnRecord').addEventListener('click', () => {
+  // v3.11.67: log visible para diagnosticar "tap pero no pasa nada"
+  if (typeof showDebug === 'function') showDebug('🔴 Tap red button');
+  console.log('[btnRecord] click, state=', mediaRecorder && mediaRecorder.state);
+  recordButtonTap('tap');
+});
 $('btnUndo').addEventListener('click', discardLastFragment);
 $('btnDone').addEventListener('click', finishRecording);
 $('btnPlayPause').addEventListener('click', tpPlayPause);
