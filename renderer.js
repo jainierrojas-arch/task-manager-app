@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.80': {
+    title: 'Fix Bot IA — modal nativo + Firestore rules para chatbot',
+    features: [
+      '🩹 <strong>Fix "No me crea negocio"</strong>: el botón usaba <code>prompt()</code> del browser, que Electron bloquea dentro de iframes por seguridad. Reemplazado por un modal inline propio (mismo estilo que el resto de la app).',
+      '🔐 <strong>Firestore rules agregadas</strong> para las 6 colecciones del chatbot (chatbotBusinesses, chatbotLeads, chatbotMessages, chatbotConfig, chatbotKnowledgeBase, chatbotAppointments). <strong>IMPORTANTE</strong>: tenés que aplicar las nuevas rules manualmente en Firebase Console (te paso los pasos abajo).',
+      '✅ <strong>Resultado</strong>: ahora podés crear negocios y leads desde el botón, los datos se guardan en Firestore correctamente. Volvé a probar después de aplicar las rules.'
+    ]
+  },
   '3.11.79': {
     title: '🧠 Botón "Bot IA" agregado en la sidebar (no en los tabs arriba)',
     features: [

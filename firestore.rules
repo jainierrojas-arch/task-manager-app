@@ -109,5 +109,12 @@ service cloud.firestore {
     match /ideas/{id}                      { allow read, write: if isSignedIn(); }
     match /notifications/{id}              { allow read, write: if isSignedIn(); }
     match /config/{id}                     { allow read, write: if isSignedIn(); }
+    // v3.11.80: Bot IA — colecciones del chatbot
+    match /chatbotBusinesses/{id}          { allow read, write: if isSignedIn(); }
+    match /chatbotLeads/{id}               { allow read, write: if isSignedIn(); }
+    match /chatbotMessages/{id}            { allow read, write: if isSignedIn(); }
+    match /chatbotConfig/{id}              { allow read, write: if isSignedIn(); }
+    match /chatbotKnowledgeBase/{id}       { allow read, write: if isSignedIn(); }
+    match /chatbotAppointments/{id}        { allow read, write: if isSignedIn(); }
   }
 }

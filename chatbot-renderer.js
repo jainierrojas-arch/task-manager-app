@@ -110,20 +110,65 @@ function selectBusiness(bizId) {
   document.getElementById('cbProfile').innerHTML = '<div class="cb-empty">Sin info del lead.</div>';
 }
 
+// v3.11.80: modal inline para inputs (Electron iframe puede bloquear prompt())
+function showInlineModal(title, fields) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
+    const fieldsHtml = fields.map((f, i) => `
+      <div style="margin-bottom: 12px">
+        <label style="display:block;font-size:11px;color:var(--text-secondary);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.3px;font-weight:600">${esc(f.label)}</label>
+        <input type="text" data-field="${i}" placeholder="${esc(f.placeholder || '')}" value="${esc(f.defaultValue || '')}" style="width:100%;padding:10px 12px;background:var(--bg-app);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);font-size:14px;box-sizing:border-box">
+      </div>
+    `).join('');
+    overlay.innerHTML = `
+      <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:20px;min-width:340px;max-width:90vw">
+        <div style="font-size:16px;font-weight:700;margin-bottom:14px">${esc(title)}</div>
+        ${fieldsHtml}
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+          <button id="_modalCancel" style="padding:8px 14px;background:transparent;color:var(--text-primary);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-weight:600">Cancelar</button>
+          <button id="_modalOk" style="padding:8px 14px;background:var(--accent);color:#fff;border:0;border-radius:6px;cursor:pointer;font-weight:700">Crear</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const firstInput = overlay.querySelector('input[data-field]');
+    if (firstInput) setTimeout(() => firstInput.focus(), 50);
+    function close(result) {
+      try { document.body.removeChild(overlay); } catch (e) {}
+      resolve(result);
+    }
+    overlay.querySelector('#_modalCancel').addEventListener('click', () => close(null));
+    overlay.querySelector('#_modalOk').addEventListener('click', () => {
+      const values = fields.map((_, i) => overlay.querySelector(`[data-field="${i}"]`).value.trim());
+      close(values);
+    });
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(null); });
+    overlay.querySelectorAll('input').forEach(inp => {
+      inp.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') overlay.querySelector('#_modalOk').click();
+        if (e.key === 'Escape') close(null);
+      });
+    });
+  });
+}
+
 async function addBusiness() {
-  const name = prompt('Nombre del negocio bot:\n(Ej: "Monetízalo", "Mi Agencia", "Cliente X")');
-  if (!name || !name.trim()) return;
-  const emoji = prompt('Emoji para el negocio (1 caracter):', '✨') || '✨';
+  const values = await showInlineModal('Nuevo negocio bot', [
+    { label: 'Nombre del negocio', placeholder: 'Ej: Monetízalo, Mi Agencia, Cliente X' },
+    { label: 'Emoji', placeholder: '✨', defaultValue: '✨' }
+  ]);
+  if (!values || !values[0]) return;
   try {
     const data = {
-      name: name.trim(),
-      emoji: emoji.trim().slice(0, 2),
+      name: values[0],
+      emoji: (values[1] || '✨').slice(0, 2),
       workspaceId: WS_ID,
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       createdBy: currentUser ? currentUser.uid : null
     };
     await db.collection('chatbotBusinesses').add(data);
-  } catch (e) { alert('Error: ' + e.message); }
+  } catch (e) { alert('Error al crear negocio: ' + e.message); }
 }
 
 // ===== LEADS =====
@@ -232,14 +277,17 @@ function renderProfile(lead) {
 
 async function addLead() {
   if (!selectedBusinessId) { alert('Elegí un negocio primero (o creá uno)'); return; }
-  const handle = prompt('Handle del lead (sin @):\n(Ej: maria_coach, jorge_digital)');
-  if (!handle || !handle.trim()) return;
+  const values = await showInlineModal('Simular lead nuevo', [
+    { label: 'Handle de Instagram (sin @)', placeholder: 'Ej: maria_coach, jorge_digital' }
+  ]);
+  if (!values || !values[0]) return;
+  const handle = values[0];
   try {
     const data = {
       businessId: selectedBusinessId,
       workspaceId: WS_ID,
-      handle: '@' + handle.trim().replace(/^@/, ''),
-      displayName: handle.trim(),
+      handle: '@' + handle.replace(/^@/, ''),
+      displayName: handle,
       funnelStage: 'bienvenida',
       score: 0,
       canal: 'instagram',
@@ -249,7 +297,7 @@ async function addLead() {
     };
     const ref = await db.collection('chatbotLeads').add(data);
     selectLead(ref.id);
-  } catch (e) { alert('Error: ' + e.message); }
+  } catch (e) { alert('Error al crear lead: ' + e.message); }
 }
 
 async function updateLeadStage(stage) {
