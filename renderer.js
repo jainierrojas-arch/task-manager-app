@@ -75,6 +75,13 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.87': {
+    title: '🩹 Fix scroll en ⚙ Configurar bot (no se llegaba al botón Guardar)',
+    features: [
+      '📜 <strong>Scroll vertical activado</strong> en la sección Configurar bot del Bot IA. Antes con el campo "ManyChat API Key" agregado en 3.11.84 quedaba el botón "💾 Guardar config" tapado y no se podía scrollear para llegarle.',
+      '➕ <strong>Padding extra abajo</strong> para que el botón Guardar quede cómodo de tocar.'
+    ]
+  },
   '3.11.86': {
     title: '🩹 Bot IA — debug visible + retry sin message_tag (fix "el bot no llega a IG")',
     features: [
