@@ -109,11 +109,34 @@ service cloud.firestore {
     match /ideas/{id}                      { allow read, write: if isSignedIn(); }
     match /notifications/{id}              { allow read, write: if isSignedIn(); }
     match /config/{id}                     { allow read, write: if isSignedIn(); }
-    // v3.11.80: Bot IA — colecciones del chatbot
-    match /chatbotBusinesses/{id}          { allow read, write: if isSignedIn(); }
-    match /chatbotLeads/{id}               { allow read, write: if isSignedIn(); }
-    match /chatbotMessages/{id}            { allow read, write: if isSignedIn(); }
-    match /chatbotConfig/{id}              { allow read, write: if isSignedIn(); }
+    // v3.11.80 + v3.11.89: Bot IA — colecciones del chatbot.
+    // Para que el CF Pages Function (/manychat/inbound) pueda escribir leads y
+    // mensajes sin auth, permitimos create público en chatbotLeads/Messages,
+    // y read público en chatbotBusinesses/Config (para que el webhook lea
+    // system prompt + KB). Las apps autenticadas tienen control total.
+    match /chatbotBusinesses/{id} {
+      allow read: if true;          // CF function lee nombre del negocio
+      allow write: if isSignedIn();
+    }
+    match /chatbotLeads/{id} {
+      allow read: if isSignedIn();
+      allow create: if true;        // CF function crea lead nuevo en DM
+      allow update: if isSignedIn() || (
+        // CF function actualiza solo lastMessageAt/Preview/contactId
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['lastMessageAt', 'lastMessagePreview', 'manychatContactId'])
+      );
+      allow delete: if isSignedIn();
+    }
+    match /chatbotMessages/{id} {
+      allow read: if isSignedIn();
+      allow create: if true;        // CF function escribe user msg + bot msg
+      allow update, delete: if isSignedIn();
+    }
+    match /chatbotConfig/{id} {
+      allow read: if true;          // CF function lee system prompt + KB
+      allow write: if isSignedIn();
+    }
     match /chatbotKnowledgeBase/{id}       { allow read, write: if isSignedIn(); }
     match /chatbotAppointments/{id}        { allow read, write: if isSignedIn(); }
     // v3.11.82: webhookInbox — Cloudflare Worker escribe acá (sin auth) DMs nuevos de IG.
