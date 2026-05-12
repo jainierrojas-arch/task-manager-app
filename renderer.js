@@ -75,6 +75,13 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.76': {
+    title: 'Fix dropdown migración cuando los workspaces todavía no cargaron',
+    features: [
+      '🩹 <strong>Bug fix</strong>: el dropdown de migrar workspaces se poblaba a los 1500ms del page load. Si Firebase tarda más en cargar la lista (network lento, primera vez), solo aparecía 1 workspace y no se podía elegir destino. Ahora reintenta cada 2s hasta tener 2+ workspaces visibles, y también se re-puebla al abrir Settings.',
+      '💡 <strong>Alternativa más simple (recomendada antes de migrar)</strong>: si el equipo está en otro workspace, invitalos al tuyo en lugar de migrar contenido. Cambiá al workspace correcto → menú workspace → invitar miembros → ellos aceptan → se cambian al workspace tuyo → ya ven todo. Sin migración.'
+    ]
+  },
   '3.11.75': {
     title: '🔀 Migrar contenido entre workspaces — consolidar al equipo en uno solo',
     features: [
@@ -10000,9 +10007,24 @@ const migrateSourceSel = document.getElementById('migrateSourceWs');
 const migrateTargetSel = document.getElementById('migrateTargetWs');
 const migrateResultEl = document.getElementById('migrateWsResult');
 if (migrateBtn && migrateSourceSel && migrateTargetSel && migrateResultEl) {
-  // Poblar dropdowns cuando carguen workspaces
-  setTimeout(populateMigrateWsDropdowns, 1500);
-  setTimeout(populateMigrateWsDropdowns, 3000);
+  // v3.11.76: poblar dropdowns reactivamente — cuando cargan los workspaces,
+  // cuando se hace click en migración, y con polling cada 2s mientras hay
+  // menos de 2 workspaces visibles (en caso de network lento).
+  let _migrateRetryCount = 0;
+  function ensureMigrateDropdownsPopulated() {
+    populateMigrateWsDropdowns();
+    if ((workspaces || []).length < 2 && _migrateRetryCount < 10) {
+      _migrateRetryCount++;
+      setTimeout(ensureMigrateDropdownsPopulated, 2000);
+    }
+  }
+  setTimeout(ensureMigrateDropdownsPopulated, 1500);
+  // Re-poblar cada vez que el panel de Settings se hace visible
+  document.addEventListener('click', (e) => {
+    if (e.target && e.target.closest && e.target.closest('[data-tab="settings"]')) {
+      setTimeout(populateMigrateWsDropdowns, 200);
+    }
+  });
   migrateBtn.addEventListener('click', async () => {
     const sourceId = migrateSourceSel.value;
     const targetId = migrateTargetSel.value;
