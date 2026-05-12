@@ -75,6 +75,17 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.78': {
+    title: '🤖 Bot IA — Fase 1: dashboard chatbot estilo Monetízalo OS',
+    features: [
+      '🎬 <strong>Nuevo tab "Bot IA"</strong> en la sidebar (al lado de Config). Layout estilo Monetízalo OS: 4 columnas — Negocios | Leads | Chat | Profile.',
+      '💬 <strong>Conversaciones</strong>: creás "negocios bot" (ej. "Mi Agencia", "Cliente X"), dentro de cada uno simulás leads de Instagram con sus mensajes. Cada lead tiene funnel stage (Bienvenida → Calificación → Propuesta → Agendado), score 0-100%, y profile editable.',
+      '🎯 <strong>Acciones por lead</strong>: 📅 Forzar agendado · ▶ Siguiente etapa · ↶ Reset · 🗑 Eliminar. Funnel checkmarks visuales que se llenan a medida que el lead avanza.',
+      '⚙ <strong>Configurar bot</strong>: tercera pestaña dentro del Bot IA con tres campos editables y guardables — system prompt, link de Calendly, modelo IA a usar (Groq Llama 3.3 70B / Llama 3.1 8B / Claude Haiku).',
+      '⚠ <strong>Fase 1 honesta</strong>: solo el dashboard + leads/mensajes manuales. Sin IA real todavía (los mensajes "bot" son placeholders). <strong>Fase 2</strong> (próxima): el bot responde solo usando Groq/Claude. <strong>Fase 3</strong>: webhook real de Instagram para que los DMs vivos lleguen acá.',
+      '📊 <strong>Datos en Firestore</strong>: <code>chatbotBusinesses</code>, <code>chatbotLeads</code>, <code>chatbotMessages</code>, <code>chatbotConfig</code> — todos scoped al workspace activo.'
+    ]
+  },
   '3.11.77': {
     title: '👥 Botón "Miembros" en cada workspace — agregá al equipo sin invitaciones',
     features: [
@@ -7732,6 +7743,13 @@ document.querySelectorAll('.nav-tab').forEach(tab => {
       const ifr = document.getElementById('referencesTabIframe');
       if (ifr && ifr.dataset.loaded !== '1') {
         ifr.src = buildIframeSrc('deposit.html?category=referencias');
+        ifr.dataset.loaded = '1';
+      }
+    }
+    if (currentTab === 'chatbot') {
+      const ifr = document.getElementById('chatbotTabIframe');
+      if (ifr && ifr.dataset.loaded !== '1') {
+        ifr.src = buildIframeSrc('chatbot.html');
         ifr.dataset.loaded = '1';
       }
     }

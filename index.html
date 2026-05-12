@@ -1102,10 +1102,10 @@
     .manychat-shell webview { flex: 1; min-height: 0; }
 
     /* Tabs embebidos con iframe full-height (v3.11.3) */
-    #tabDeposit.active, #tabReferences.active, #tabChat.active {
+    #tabDeposit.active, #tabReferences.active, #tabChat.active, #tabChatbot.active {
       display: block !important;
     }
-    #tabDeposit.active iframe, #tabReferences.active iframe, #tabChat.active iframe {
+    #tabDeposit.active iframe, #tabReferences.active iframe, #tabChat.active iframe, #tabChatbot.active iframe {
       width: 100%;
       height: 100%;
       min-height: calc(100vh - 100px);
@@ -2321,6 +2321,9 @@
       <div class="nav-tab" data-tab="manychat" style="display:none">
         &#129302; ManyChat
       </div>
+      <div class="nav-tab" data-tab="chatbot">
+        &#129302; Bot IA
+      </div>
       <div class="nav-tab" data-tab="settings">
         &#9881; Config
       </div>
@@ -2580,6 +2583,14 @@
         <div class="manychat-shell" id="manychatShell">
           <!-- webview se crea dinámicamente al activar la pestaña la primera vez -->
         </div>
+      </div>
+
+      <!-- Bot IA (v3.11.78): chatbot conversaciones estilo Monetízalo OS -->
+      <div class="tab-content" id="tabChatbot" style="padding:0;height:100%">
+        <iframe id="chatbotTabIframe"
+                src="about:blank"
+                style="width:100%;height:100%;border:0;display:block;background:var(--bg-app)"
+                allow="autoplay"></iframe>
       </div>
 
       <!-- Settings -->

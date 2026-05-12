@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bot IA — Task Manager</title>
+  <style>
+    /* CSS vars sincronizadas con index.html — tema oscuro default */
+    :root {
+      --bg-app: #0f1115;
+      --bg-card: #1a1d24;
+      --text-primary: #f5f7fa;
+      --text-secondary: #9aa3b2;
+      --border: rgba(255, 255, 255, 0.08);
+      --accent: #6c63ff;
+    }
+    body { margin: 0; padding: 0; background: var(--bg-app); color: var(--text-primary); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; height: 100vh; overflow: hidden; }
+    .cb-app { display: flex; flex-direction: column; height: 100vh; }
+    .cb-header { padding: 14px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+    .cb-title { font-size: 18px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
+    .cb-subtabs { display: flex; gap: 2px; }
+    .cb-subtab { padding: 8px 14px; background: transparent; color: var(--text-secondary); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 600; font-family: inherit; transition: all 0.15s; }
+    .cb-subtab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .cb-subtab:hover:not(.active) { background: var(--bg-card); }
+    .cb-main { flex: 1; display: grid; grid-template-columns: 220px 320px 1fr 280px; min-height: 0; }
+    .cb-businesses { background: var(--bg-card); border-right: 1px solid var(--border); padding: 12px; overflow-y: auto; }
+    .cb-section-title { font-size: 10px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+    .cb-biz-item { padding: 10px 12px; background: var(--bg-app); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 6px; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: all 0.15s; }
+    .cb-biz-item:hover { border-color: var(--accent); }
+    .cb-biz-item.active { border-color: var(--accent); background: rgba(108, 99, 255, 0.08); }
+    .cb-biz-emoji { font-size: 18px; }
+    .cb-biz-info { flex: 1; min-width: 0; }
+    .cb-biz-name { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .cb-biz-stats { font-size: 10px; color: var(--text-secondary); margin-top: 2px; }
+    .cb-leads { background: var(--bg-app); border-right: 1px solid var(--border); padding: 12px; overflow-y: auto; }
+    .cb-lead-item { padding: 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 6px; cursor: pointer; transition: all 0.15s; }
+    .cb-lead-item:hover { border-color: var(--accent); }
+    .cb-lead-item.active { border-color: var(--accent); background: rgba(108, 99, 255, 0.06); }
+    .cb-lead-head { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+    .cb-lead-handle { font-size: 13px; font-weight: 700; }
+    .cb-stage-badge { font-size: 9px; padding: 2px 7px; border-radius: 999px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; }
+    .cb-stage-bienvenida { background: rgba(108, 99, 255, 0.15); color: #6c63ff; }
+    .cb-stage-calificacion { background: rgba(255, 152, 102, 0.15); color: #ff9866; }
+    .cb-stage-propuesta { background: rgba(255, 90, 90, 0.15); color: #ff5a5a; }
+    .cb-stage-agendado { background: rgba(78, 205, 196, 0.15); color: #4ecdc4; }
+    .cb-stage-cerrado { background: rgba(180, 180, 180, 0.15); color: #888; }
+    .cb-stage-perdido { background: rgba(120, 120, 120, 0.1); color: #666; }
+    .cb-lead-preview { font-size: 11px; color: var(--text-secondary); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .cb-chat { display: flex; flex-direction: column; background: var(--bg-app); min-width: 0; }
+    .cb-chat-header { padding: 14px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
+    .cb-chat-handle { font-size: 15px; font-weight: 700; flex: 1; }
+    .cb-chat-score-dots { display: flex; gap: 3px; }
+    .cb-score-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border); }
+    .cb-score-dot.filled { background: #ffd700; }
+    .cb-messages { flex: 1; padding: 16px 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+    .cb-msg { max-width: 70%; padding: 10px 14px; border-radius: 12px; font-size: 13px; line-height: 1.4; }
+    .cb-msg.from-lead { background: var(--bg-card); align-self: flex-start; border: 1px solid var(--border); }
+    .cb-msg.from-bot { background: rgba(255, 215, 0, 0.15); color: #ffd700; align-self: flex-end; border: 1px solid rgba(255, 215, 0, 0.3); }
+    .cb-msg.system { background: rgba(108, 99, 255, 0.1); color: #b794ff; align-self: center; font-size: 11px; font-style: italic; padding: 6px 12px; border-radius: 999px; }
+    .cb-input-bar { padding: 14px 20px; border-top: 1px solid var(--border); display: flex; gap: 8px; }
+    .cb-input-bar input { flex: 1; padding: 10px 14px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 24px; color: var(--text-primary); font-size: 13px; font-family: inherit; }
+    .cb-input-bar input:focus { outline: none; border-color: var(--accent); }
+    .cb-send-btn { padding: 10px 16px; background: var(--accent); color: #fff; border: 0; border-radius: 999px; cursor: pointer; font-weight: 700; font-family: inherit; }
+    .cb-profile { background: var(--bg-card); border-left: 1px solid var(--border); padding: 16px; overflow-y: auto; }
+    .cb-profile-block { background: var(--bg-app); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 10px; }
+    .cb-profile-block h4 { font-size: 10px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin: 0 0 8px; }
+    .cb-profile-row { display: flex; justify-content: space-between; align-items: center; font-size: 13px; margin: 4px 0; }
+    .cb-score-bar { height: 6px; background: var(--border); border-radius: 999px; margin-top: 6px; overflow: hidden; }
+    .cb-score-fill { height: 100%; background: linear-gradient(90deg, #ff9866, #ffd700, #4ecdc4); transition: width 0.3s; }
+    .cb-action-btn { width: 100%; padding: 8px; background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 600; font-family: inherit; margin-bottom: 6px; }
+    .cb-action-btn:hover { border-color: var(--accent); }
+    .cb-action-btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .cb-funnel-step { display: flex; align-items: center; gap: 6px; font-size: 11px; padding: 4px 0; }
+    .cb-funnel-check { width: 14px; height: 14px; display: inline-flex; align-items: center; justify-content: center; font-size: 9px; color: #4ecdc4; }
+    .cb-funnel-step.done { color: var(--text-primary); }
+    .cb-funnel-step:not(.done) { color: var(--text-secondary); }
+    .cb-empty { display: flex; align-items: center; justify-content: center; color: var(--text-secondary); font-size: 13px; padding: 40px 20px; text-align: center; }
+    .cb-add-btn { width: 100%; padding: 8px; background: transparent; color: var(--accent); border: 1px dashed var(--accent); border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 700; font-family: inherit; margin-bottom: 8px; }
+    .cb-add-btn:hover { background: rgba(108, 99, 255, 0.08); }
+  </style>
+</head>
+<body>
+  <div class="cb-app">
+    <div class="cb-header">
+      <div class="cb-title">🤖 Bot IA <span style="font-size: 11px; color: var(--text-secondary); font-weight: 500">Conversaciones del chatbot</span></div>
+      <div class="cb-subtabs">
+        <button class="cb-subtab active" data-cb-tab="conversaciones">💬 Conversaciones</button>
+        <button class="cb-subtab" data-cb-tab="analitica">📊 Analítica</button>
+        <button class="cb-subtab" data-cb-tab="config">⚙ Configurar bot</button>
+      </div>
+    </div>
+
+    <!-- Conversaciones (default) -->
+    <div class="cb-main" id="cbView-conversaciones">
+      <div class="cb-businesses">
+        <div class="cb-section-title">NEGOCIOS</div>
+        <button class="cb-add-btn" id="cbAddBusiness">+ Negocio bot</button>
+        <div id="cbBusinessList"></div>
+      </div>
+      <div class="cb-leads">
+        <div class="cb-section-title">LEADS</div>
+        <button class="cb-add-btn" id="cbAddLead">+ Simular lead</button>
+        <div id="cbLeadsList"></div>
+      </div>
+      <div class="cb-chat">
+        <div class="cb-chat-header">
+          <div class="cb-chat-handle" id="cbChatHandle">Seleccioná un lead</div>
+          <div class="cb-chat-score-dots" id="cbChatScoreDots"></div>
+        </div>
+        <div class="cb-messages" id="cbMessages">
+          <div class="cb-empty">Sin lead seleccionado.<br>Tocá uno de la lista o creá uno nuevo con "Simular lead".</div>
+        </div>
+        <div class="cb-input-bar" id="cbInputBar" style="display: none">
+          <input type="text" id="cbInputMsg" placeholder="Escribí como el lead para probar el bot...">
+          <button class="cb-send-btn" id="cbSendBtn">Enviar</button>
+        </div>
+      </div>
+      <div class="cb-profile" id="cbProfile">
+        <div class="cb-empty">Sin info del lead.</div>
+      </div>
+    </div>
+
+    <!-- Analítica -->
+    <div class="cb-main" id="cbView-analitica" style="display: none">
+      <div style="grid-column: 1 / -1; padding: 40px; text-align: center; color: var(--text-secondary)">
+        📊 Analítica próximamente — total leads, conversion rate por funnel, tasa de agendamiento, etc.
+      </div>
+    </div>
+
+    <!-- Configurar bot -->
+    <div class="cb-main" id="cbView-config" style="display: none">
+      <div style="grid-column: 1 / -1; padding: 40px; max-width: 800px; margin: 0 auto">
+        <h2 style="font-size: 20px; margin-top: 0">⚙ Configurar bot</h2>
+        <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 14px">
+          <h4 style="margin-top: 0; font-size: 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px">System prompt</h4>
+          <textarea id="cbConfigPrompt" rows="8" style="width: 100%; padding: 10px; background: var(--bg-app); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); font-family: 'SF Mono', monospace; font-size: 12px; resize: vertical">Sos el chatbot de [nombre del negocio]. Tu objetivo es calificar leads de Instagram DMs y agendarles una llamada de descubrimiento.
+
+Funnel:
+1. Bienvenida — saludá y preguntá si tienen un proyecto / negocio digital
+2. Calificación — descubrí cuál es su dolor principal (no facturan, no tienen sistema, etc)
+3. Propuesta — describí brevemente cómo los podrías ayudar
+4. Agendar — mandales el link de Calendly: [TU_LINK]
+
+Hablá natural, en español, con tono cercano pero profesional. Frases cortas. Una pregunta a la vez.</textarea>
+        </div>
+        <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 14px">
+          <h4 style="margin-top: 0; font-size: 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px">Link de Calendly</h4>
+          <input type="text" id="cbConfigCalendly" placeholder="https://calendly.com/tu-cuenta/llamada" style="width: 100%; padding: 10px; background: var(--bg-app); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); font-size: 13px">
+        </div>
+        <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 14px">
+          <h4 style="margin-top: 0; font-size: 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px">Modelo IA</h4>
+          <select id="cbConfigModel" style="width: 100%; padding: 10px; background: var(--bg-app); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); font-size: 13px">
+            <option value="groq-llama-3.3-70b">Groq Llama 3.3 70B (rápido, gratis)</option>
+            <option value="groq-llama-3.1-8b">Groq Llama 3.1 8B (más rápido)</option>
+            <option value="claude-haiku">Claude Haiku 4.5 (mejor razonamiento, pago)</option>
+          </select>
+        </div>
+        <div style="display: flex; gap: 8px">
+          <button class="cb-action-btn primary" id="cbConfigSave" style="flex: 1">💾 Guardar config</button>
+        </div>
+        <div style="margin-top: 20px; padding: 14px; background: rgba(255, 152, 102, 0.08); border: 1px solid rgba(255, 152, 102, 0.3); border-radius: 8px; font-size: 12px; color: var(--text-secondary)">
+          <strong style="color: #ff9866">⚠ Fase 1 (esta versión)</strong>: solo el dashboard + leads/mensajes manuales. La IA real (que conecta a Groq y responde sola) llega en Fase 2. La integración con Instagram (que los DMs reales llegan acá) en Fase 3.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script>
+    firebase.initializeApp({
+      apiKey: "AIzaSyDiLAvhCsJOtHYOtH8x7P8aN3NB6fhvaf0",
+      authDomain: "app-de-tareas-e4209.firebaseapp.com",
+      projectId: "app-de-tareas-e4209",
+      storageBucket: "app-de-tareas-e4209.firebasestorage.app",
+      messagingSenderId: "1189986545334",
+      appId: "1:1189986545334:web:0b5d29b7affa2fecc0d017"
+    });
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+  </script>
+  <script src="chatbot-renderer.js"></script>
+</body>
+</html>
