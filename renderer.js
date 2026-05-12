@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.79': {
+    title: '🧠 Botón "Bot IA" agregado en la sidebar (no en los tabs arriba)',
+    features: [
+      '🩹 <strong>Fix UI</strong>: la v3.11.78 puso el botón "Bot IA" en la barra de tabs arriba, pero la app usa una sidebar de íconos a la izquierda (donde están Chat, ManyChat, Meet, etc.). Ahora el botón aparece en la sidebar justo después de ManyChat.',
+      '🧠 <strong>Para encontrarlo</strong>: sidebar izquierda → ícono 🧠 con label "Bot IA". Click → entra a la interfaz estilo Monetízalo OS.',
+      '🛣 <strong>Roadmap completo</strong> después de Fase 1 (esta):<br>• Fase 2: el bot responde con IA real (Groq/Claude) + base de conocimiento del negocio (RAG)<br>• Fase 3: integración con Google Calendar — el bot ve disponibilidad real y agenda<br>• Fase 4: webhook Instagram Graph API para que los DMs reales lleguen automáticamente'
+    ]
+  },
   '3.11.78': {
     title: '🤖 Bot IA — Fase 1: dashboard chatbot estilo Monetízalo OS',
     features: [
