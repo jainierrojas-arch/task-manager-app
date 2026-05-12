@@ -379,41 +379,166 @@ function renderMessages() {
   el.scrollTop = el.scrollHeight;
 }
 
+// v3.11.81: Fase 2 — el bot responde con IA real (Groq) usando system prompt +
+// base de conocimiento + historial de la conversación. La API key viene de la
+// config de workspace (config/openai_{wsId}) que ya tenés configurada.
+async function getWorkspaceApiKey() {
+  if (!WS_ID) return null;
+  try {
+    const snap = await db.collection('config').doc('openai_' + WS_ID).get();
+    if (!snap.exists) return null;
+    const raw = (snap.data() || {}).apiKey || null;
+    return raw ? raw.trim() : null;
+  } catch (e) { return null; }
+}
+
+async function generateBotResponse() {
+  if (!selectedLeadId || !selectedBusinessId) throw new Error('Sin lead o negocio activo');
+  // 1. API key
+  const apiKey = await getWorkspaceApiKey();
+  if (!apiKey) throw new Error('Configurá una API key en Settings → OpenAI API Key (pegá tu key de Groq que empieza con gsk_)');
+
+  // 2. Config del bot (system prompt, KB, modelo)
+  let config = {};
+  try {
+    const cfgSnap = await db.collection('chatbotConfig').doc(WS_ID).get();
+    if (cfgSnap.exists) config = cfgSnap.data();
+  } catch (e) {}
+
+  const systemPrompt = (config.systemPrompt || '').trim();
+  const knowledgeBase = (config.knowledgeBase || '').trim();
+  const calendlyLink = (config.calendlyLink || '').trim();
+  const model = config.model || 'llama-3.3-70b-versatile';
+
+  // 3. Lead context
+  const lead = leads.find(l => l.id === selectedLeadId) || {};
+  const business = businesses.find(b => b.id === selectedBusinessId) || {};
+
+  // 4. Build system message: prompt + KB + context
+  let fullSystem = systemPrompt || `Sos un chatbot de Instagram de ${business.name || 'el negocio'}. Tu objetivo es calificar leads y agendar llamadas.`;
+  if (knowledgeBase) {
+    fullSystem += '\n\n===== BASE DE CONOCIMIENTO DEL NEGOCIO =====\n' + knowledgeBase;
+  }
+  if (calendlyLink) {
+    fullSystem += '\n\nLINK DE CALENDLY PARA AGENDAR: ' + calendlyLink;
+  }
+  fullSystem += '\n\n===== CONTEXTO DEL LEAD ACTUAL =====\n' +
+    `Handle: ${lead.handle || 'desconocido'}\n` +
+    `Etapa del funnel: ${FUNNEL_LABELS[lead.funnelStage || 'bienvenida']}\n` +
+    `Score: ${lead.score || 0}/100\n` +
+    `Canal: ${lead.canal || 'instagram'}\n\n` +
+    'IMPORTANTE: respondé en español natural y cercano (Argentina/Latam), frases cortas, una pregunta por vez. Sin emojis excesivos (máx 1-2 por mensaje). Sin saludarte de nuevo si ya hubo intercambio. Sin dar info externa al negocio. Si no sabés algo: "Te lo paso al instante con un humano".';
+
+  // 5. Build messages: system + historial reciente (últimos 12)
+  const recent = messages.slice(-12);
+  const apiMessages = [
+    { role: 'system', content: fullSystem },
+    ...recent.map(m => ({
+      role: m.fromLead ? 'user' : 'assistant',
+      content: m.text || ''
+    })).filter(m => m.content)
+  ];
+
+  // 6. Llamar a Groq
+  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer ' + apiKey,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model,
+      messages: apiMessages,
+      temperature: 0.7,
+      max_tokens: 350
+    })
+  });
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    throw new Error(`Groq API ${res.status}: ${errText.slice(0, 200)}`);
+  }
+  const data = await res.json();
+  const responseText = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
+  return responseText.trim();
+}
+
 async function sendMessage() {
   if (!selectedLeadId) return;
   const input = document.getElementById('cbInputMsg');
   const text = (input.value || '').trim();
   if (!text) return;
   input.value = '';
+
+  // 1. Guardar el mensaje del lead
   try {
     await db.collection('chatbotMessages').add({
       leadId: selectedLeadId,
       businessId: selectedBusinessId,
       workspaceId: WS_ID,
       text,
-      fromLead: true, // simulamos un mensaje DEL lead
+      fromLead: true,
       timestamp: firebase.firestore.FieldValue.serverTimestamp()
     });
     await db.collection('chatbotLeads').doc(selectedLeadId).update({
       lastMessageAt: firebase.firestore.FieldValue.serverTimestamp(),
       lastMessagePreview: text.slice(0, 80)
     });
-    // FASE 2: acá llamaremos a Groq/Claude para generar la respuesta del bot.
-    // Por ahora simulamos: si el lead manda algo, el "bot" responde con un placeholder.
-    setTimeout(async () => {
-      try {
-        await db.collection('chatbotMessages').add({
-          leadId: selectedLeadId,
-          businessId: selectedBusinessId,
-          workspaceId: WS_ID,
-          text: '(IA real en Fase 2 — por ahora respuestas manuales)',
-          fromLead: false,
-          system: true,
-          timestamp: firebase.firestore.FieldValue.serverTimestamp()
-        });
-      } catch (e) {}
-    }, 600);
-  } catch (e) { alert('Error: ' + e.message); }
+  } catch (e) { alert('Error guardando mensaje: ' + e.message); return; }
+
+  // 2. Mostrar indicador "escribiendo..."
+  showTypingIndicator();
+
+  // 3. Generar respuesta con Groq
+  try {
+    const botText = await generateBotResponse();
+    hideTypingIndicator();
+    if (botText) {
+      await db.collection('chatbotMessages').add({
+        leadId: selectedLeadId,
+        businessId: selectedBusinessId,
+        workspaceId: WS_ID,
+        text: botText,
+        fromLead: false,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      await db.collection('chatbotLeads').doc(selectedLeadId).update({
+        lastMessageAt: firebase.firestore.FieldValue.serverTimestamp(),
+        lastMessagePreview: botText.slice(0, 80)
+      });
+    }
+  } catch (e) {
+    hideTypingIndicator();
+    // Guardar el error como mensaje del sistema para que sea visible
+    try {
+      await db.collection('chatbotMessages').add({
+        leadId: selectedLeadId,
+        businessId: selectedBusinessId,
+        workspaceId: WS_ID,
+        text: '⚠ Error del bot: ' + e.message,
+        fromLead: false,
+        system: true,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    } catch (_) {}
+  }
+}
+
+function showTypingIndicator() {
+  const el = document.getElementById('cbMessages');
+  if (!el) return;
+  if (document.getElementById('_typingIndicator')) return;
+  const div = document.createElement('div');
+  div.id = '_typingIndicator';
+  div.className = 'cb-msg from-bot';
+  div.style.opacity = '0.6';
+  div.style.fontStyle = 'italic';
+  div.textContent = '✏️ escribiendo...';
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+}
+function hideTypingIndicator() {
+  const ind = document.getElementById('_typingIndicator');
+  if (ind && ind.parentNode) ind.parentNode.removeChild(ind);
 }
 
 // ===== CONFIG =====
@@ -424,6 +549,7 @@ async function loadConfig() {
     if (snap.exists) {
       const d = snap.data();
       if (d.systemPrompt) document.getElementById('cbConfigPrompt').value = d.systemPrompt;
+      if (d.knowledgeBase) document.getElementById('cbConfigKnowledge').value = d.knowledgeBase;
       if (d.calendlyLink) document.getElementById('cbConfigCalendly').value = d.calendlyLink;
       if (d.model) document.getElementById('cbConfigModel').value = d.model;
     }
@@ -433,11 +559,12 @@ async function loadConfig() {
 async function saveConfig() {
   if (!WS_ID) { alert('Sin workspace activo'); return; }
   const systemPrompt = document.getElementById('cbConfigPrompt').value.trim();
+  const knowledgeBase = document.getElementById('cbConfigKnowledge').value.trim();
   const calendlyLink = document.getElementById('cbConfigCalendly').value.trim();
   const model = document.getElementById('cbConfigModel').value;
   try {
     await db.collection('chatbotConfig').doc(WS_ID).set({
-      systemPrompt, calendlyLink, model,
+      systemPrompt, knowledgeBase, calendlyLink, model,
       workspaceId: WS_ID,
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     }, { merge: true });

@@ -144,16 +144,33 @@ Funnel:
 Hablá natural, en español, con tono cercano pero profesional. Frases cortas. Una pregunta a la vez.</textarea>
         </div>
         <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 14px">
+          <h4 style="margin-top: 0; font-size: 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px">📚 Base de conocimiento del negocio</h4>
+          <p style="font-size: 11px; color: var(--text-secondary); margin: 0 0 8px">Pegá toda la info que el bot debería saber: servicios, precios, FAQs, casos de éxito, link de Calendly, horarios, dirección, etc. El bot la usa como contexto en cada respuesta. Mientras más detalle, más útiles las respuestas.</p>
+          <textarea id="cbConfigKnowledge" rows="10" placeholder="Ej:
+NEGOCIO: Monetízalo — Consultoría de monetización digital
+SERVICIOS:
+- Mentoría 1-on-1 (4 sesiones, $497 USD)
+- Sistema completo de ventas (3 meses, $1997 USD)
+HORARIOS: Lunes a Viernes 9am-6pm Argentina
+FAQs:
+- ¿Cuándo veo resultados? — Primera factura entre semana 4 y 8
+- ¿Tengo que tener seguidores? — No, pero ayuda tener al menos 500
+LINK CALENDLY: https://calendly.com/monetizalo/llamada
+CASOS DE ÉXITO: María (coach) facturó $5K USD en 60 días, Juan (consultor) pasó de $0 a $3K/mes" style="width: 100%; padding: 10px; background: var(--bg-app); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); font-family: 'SF Mono', monospace; font-size: 12px; resize: vertical"></textarea>
+        </div>
+
+        <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 14px">
           <h4 style="margin-top: 0; font-size: 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px">Link de Calendly</h4>
           <input type="text" id="cbConfigCalendly" placeholder="https://calendly.com/tu-cuenta/llamada" style="width: 100%; padding: 10px; background: var(--bg-app); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); font-size: 13px">
         </div>
         <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 14px">
           <h4 style="margin-top: 0; font-size: 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px">Modelo IA</h4>
           <select id="cbConfigModel" style="width: 100%; padding: 10px; background: var(--bg-app); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); font-size: 13px">
-            <option value="groq-llama-3.3-70b">Groq Llama 3.3 70B (rápido, gratis)</option>
-            <option value="groq-llama-3.1-8b">Groq Llama 3.1 8B (más rápido)</option>
-            <option value="claude-haiku">Claude Haiku 4.5 (mejor razonamiento, pago)</option>
+            <option value="llama-3.3-70b-versatile">Groq Llama 3.3 70B (balanceado, gratis)</option>
+            <option value="llama-3.1-8b-instant">Groq Llama 3.1 8B (más rápido)</option>
+            <option value="mixtral-8x7b-32768">Groq Mixtral 8x7B (contexto largo)</option>
           </select>
+          <p style="font-size: 11px; color: var(--text-secondary); margin: 8px 0 0">Usa tu API key de Groq de Settings → OpenAI API Key (la <code>gsk_...</code>). Gratis con tier generoso.</p>
         </div>
         <div style="display: flex; gap: 8px">
           <button class="cb-action-btn primary" id="cbConfigSave" style="flex: 1">💾 Guardar config</button>

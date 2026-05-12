@@ -75,6 +75,17 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.81': {
+    title: '🧠 Fase 2 — el bot responde solo con IA real (Groq) usando base de conocimiento',
+    features: [
+      '🤖 <strong>Bot conectado a Groq</strong>: cuando escribís un mensaje simulando ser el lead, el bot responde solo usando la misma key de Groq que ya tenés configurada. Modelo default: Llama 3.3 70B (rápido, gratis).',
+      '📚 <strong>Base de conocimiento del negocio</strong>: nueva sección en "⚙ Configurar bot" donde pegás toda la info del negocio (servicios, precios, FAQs, casos de éxito, horarios, link de Calendly). El bot la usa como contexto en cada respuesta.',
+      '⚙ <strong>System prompt + KB + contexto del lead</strong>: el bot recibe en cada turno: tu system prompt, la base de conocimiento, el handle/etapa/score del lead actual, y los últimos 12 mensajes de la conversación. Eso le da memoria de la charla y conocimiento del negocio.',
+      '✏️ <strong>Indicador "escribiendo..."</strong> mientras el bot piensa. Latencia típica con Llama 3.3 70B: 1-3 segundos.',
+      '🎯 <strong>Cómo probarlo</strong>: 1) Ir a "⚙ Configurar bot" → llenar Base de conocimiento → Guardar. 2) Volver a Conversaciones, crear lead. 3) Escribí "Hola, vi tu reel" → vas a recibir respuesta real del bot adaptada a tu negocio.',
+      '⚠ <strong>Próxima Fase 3</strong>: integrar Google Calendar para que el bot consulte disponibilidad real y agende citas cuando el lead lo pida.'
+    ]
+  },
   '3.11.80': {
     title: 'Fix Bot IA — modal nativo + Firestore rules para chatbot',
     features: [
