@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.69': {
+    title: 'Mensaje de error mejorado — muestra qué scraper falló para diagnosticar',
+    features: [
+      '🩺 <strong>Error message claro</strong>: el viejo mensaje "Instagram bloquea descargas anónimas desde 2026..." daba la falsa impresión de que la app estaba en versión vieja. Ahora dice explícitamente "Todos los métodos fallaron" y enumera qué dijo cada scraper individualmente (snapinsta, fastdl, saveig) + el error de yt-dlp como último recurso.',
+      '⚡ <strong>Pista de qué hacer</strong>: el mensaje sugiere reintentar en 1-2 minutos (los scrapers públicos a veces tienen rate limit transitorio) o que la URL sea de cuenta privada.',
+      '📲 <strong>Si después de v3.11.69 aún ven el error</strong>: significa que efectivamente los 3 scrapers están temporalmente caídos para esa URL. Mandame screenshot del nuevo error con el detalle de cada uno y agrego un cuarto scraper de respaldo.'
+    ]
+  },
   '3.11.68': {
     title: 'Fix Chrome DPAPI en Windows + cascada de 3 scrapers IG (snapinsta → fastdl → saveig)',
     features: [

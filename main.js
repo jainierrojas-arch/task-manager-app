@@ -1368,11 +1368,13 @@ function registerIpcHandlers() {
       errMsg += 'Última actividad: ' + ((r.stdoutLast || '').trim() || 'sin output').slice(-150);
       if (r.stderr) errMsg += ' | stderr: ' + r.stderr.trim().slice(-150);
     } else if (looksLikeIgAuth && /instagram/i.test(platformUrl)) {
-      // v3.11.52: explicación honesta del cambio de IG + qué hacer.
-      errMsg = 'Instagram bloquea descargas anónimas desde 2026. Para que funcione tenés que tener IG logueado en Chrome (o Edge en Windows) en esta máquina.\n\n' +
-        (isMac
-          ? 'En Mac: cuando aparezca el prompt "Permitir Chrome Safe Storage", hacé click en "PERMITIR SIEMPRE" + tu password de Mac. ES UNA SOLA VEZ por la vida de la app — después corre silencioso para siempre. Es seguridad de macOS, no de la app.\n\nSi le diste "Denegar" antes, andá a Acceso a Llaveros → buscar "Chrome Safe Storage" → eliminar la entrada que lo bloquea, y reintenta.'
-          : 'En Windows: la app va a usar las cookies de Chrome o Edge automáticamente, sin prompts.\n\nVerifica que estés logueado en IG desde Chrome/Edge en esta misma máquina.');
+      // v3.11.69: error final más útil — incluye qué scrapers fueron probados
+      // antes y mensaje claro sin sugerir "versión vieja".
+      const scraperErrTxt = (scraperRes && scraperRes.error) ? scraperRes.error : 'desconocido';
+      errMsg = 'No se pudo descargar el video. Todos los métodos fallaron:\n\n' +
+        '1) Scrapers públicos (snapinsta, fastdl, saveig): ' + scraperErrTxt.slice(-200) + '\n\n' +
+        '2) yt-dlp con cookies (' + (r.label || '?') + '): ' + ((r.stderr || '').slice(-150).trim() || 'sin detalles') + '\n\n' +
+        'Causas posibles: la URL es de cuenta privada, los scrapers están temporalmente caídos, o tu red bloquea sus servidores. Reintentá en 1-2 minutos.';
     } else {
       const stderrTrim = (r.stderr || '').trim();
       errMsg = stderrTrim
