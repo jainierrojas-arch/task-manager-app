@@ -82,15 +82,22 @@ async function processInboxDoc(docSnap) {
     .where('handle', '==', handle)
     .limit(1).get();
   let leadId;
+  let manychatContactId = d.manychatContactId || null;
   if (!leadsSnap.empty) {
     leadId = leadsSnap.docs[0].id;
+    // Update manychatContactId si vino uno nuevo
+    if (manychatContactId && !leadsSnap.docs[0].data().manychatContactId) {
+      await leadsSnap.docs[0].ref.update({ manychatContactId });
+    } else if (leadsSnap.docs[0].data().manychatContactId) {
+      manychatContactId = leadsSnap.docs[0].data().manychatContactId;
+    }
   } else {
     const newLead = await db.collection('chatbotLeads').add({
       businessId,
       workspaceId: WS_ID,
       handle,
       displayName: d.displayName || handle.replace(/^@/, ''),
-      manychatContactId: d.manychatContactId || null,
+      manychatContactId,
       funnelStage: 'bienvenida',
       score: 0,
       canal: 'instagram',
@@ -117,9 +124,135 @@ async function processInboxDoc(docSnap) {
   // Marcar como procesado
   await docSnap.ref.update({ processed: true, processedAt: firebase.firestore.FieldValue.serverTimestamp(), leadId });
 
-  // Si este lead está seleccionado actualmente, generar respuesta automática
-  // (si no, el bot va a estar idle hasta que el user lo seleccione)
-  // TODO Fase 3b: auto-responder siempre, enviar de vuelta a ManyChat via Worker outbound endpoint
+  // v3.11.85 Fase 3b: auto-responder con Groq + enviar a ManyChat → Instagram
+  try {
+    await autoRespondToLead(leadId, businessId, manychatContactId);
+  } catch (e) {
+    console.error('[chatbot] auto-respond failed:', e);
+    // Loguear el error como mensaje system para que sea visible en la app
+    try {
+      await db.collection('chatbotMessages').add({
+        leadId, businessId, workspaceId: WS_ID,
+        text: '⚠ Error en auto-respuesta: ' + e.message,
+        fromLead: false,
+        system: true,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    } catch (_) {}
+  }
+}
+
+// v3.11.85: genera respuesta del bot vía Groq y la envía de vuelta a ManyChat.
+// Versión "context-free" que recibe los IDs en lugar de depender de globals
+// (porque corre desde el listener del webhook inbox, no desde la UI activa).
+async function autoRespondToLead(leadId, businessId, manychatContactId) {
+  const apiKey = await getWorkspaceApiKey();
+  if (!apiKey) {
+    console.warn('[auto-respond] sin Groq API key — saltando auto-respuesta');
+    return;
+  }
+
+  // Cargar lead + business + config + últimos 12 mensajes
+  const [leadSnap, bizSnap, cfgSnap, msgsSnap] = await Promise.all([
+    db.collection('chatbotLeads').doc(leadId).get(),
+    db.collection('chatbotBusinesses').doc(businessId).get(),
+    db.collection('chatbotConfig').doc(WS_ID || '_').get(),
+    db.collection('chatbotMessages').where('leadId', '==', leadId).get()
+  ]);
+
+  const lead = leadSnap.exists ? leadSnap.data() : {};
+  const business = bizSnap.exists ? bizSnap.data() : {};
+  const config = cfgSnap.exists ? cfgSnap.data() : {};
+  const recentMessages = msgsSnap.docs.map(d => d.data())
+    .sort((a, b) => {
+      const at = (a.timestamp && a.timestamp.toMillis) ? a.timestamp.toMillis() : 0;
+      const bt = (b.timestamp && b.timestamp.toMillis) ? b.timestamp.toMillis() : 0;
+      return at - bt;
+    })
+    .slice(-12);
+
+  // Construir system message
+  let fullSystem = (config.systemPrompt || '').trim() ||
+    `Sos un chatbot de Instagram de ${business.name || 'el negocio'}. Tu objetivo es calificar leads y agendar llamadas.`;
+  if (config.knowledgeBase) fullSystem += '\n\n===== BASE DE CONOCIMIENTO DEL NEGOCIO =====\n' + config.knowledgeBase;
+  if (config.calendlyLink) fullSystem += '\n\nLINK DE CALENDLY PARA AGENDAR: ' + config.calendlyLink;
+  fullSystem += '\n\n===== CONTEXTO DEL LEAD =====\n' +
+    `Handle: ${lead.handle || '?'}\n` +
+    `Etapa: ${FUNNEL_LABELS[lead.funnelStage || 'bienvenida']}\n` +
+    `Score: ${lead.score || 0}/100\n\n` +
+    'Respondé en español natural, frases cortas, una pregunta por vez. Sin emojis excesivos. Sin saludar de nuevo si ya hubo intercambio.';
+
+  const apiMessages = [
+    { role: 'system', content: fullSystem },
+    ...recentMessages.map(m => ({
+      role: m.fromLead ? 'user' : 'assistant',
+      content: m.text || ''
+    })).filter(m => m.content && !m.content.startsWith('⚠'))
+  ];
+
+  // Llamar a Groq
+  const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: config.model || 'llama-3.3-70b-versatile',
+      messages: apiMessages,
+      temperature: 0.7,
+      max_tokens: 300
+    })
+  });
+  if (!groqRes.ok) {
+    const errText = await groqRes.text().catch(() => '');
+    throw new Error('Groq ' + groqRes.status + ': ' + errText.slice(0, 200));
+  }
+  const data = await groqRes.json();
+  const botText = ((data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '').trim();
+  if (!botText) {
+    console.warn('[auto-respond] respuesta vacía de Groq');
+    return;
+  }
+
+  // Guardar el mensaje del bot en Firestore (la app lo muestra)
+  await db.collection('chatbotMessages').add({
+    leadId, businessId, workspaceId: WS_ID,
+    text: botText,
+    fromLead: false,
+    timestamp: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  await db.collection('chatbotLeads').doc(leadId).update({
+    lastMessageAt: firebase.firestore.FieldValue.serverTimestamp(),
+    lastMessagePreview: botText.slice(0, 80)
+  });
+
+  // Enviar a ManyChat → Instagram via nuestro endpoint outbound
+  if (manychatContactId && config.manychatApiKey) {
+    try {
+      const outRes = await fetch('https://task-manager-app-czv.pages.dev/manychat/outbound', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          manychatApiKey: config.manychatApiKey,
+          contactId: manychatContactId,
+          text: botText
+        })
+      });
+      const outJson = await outRes.json().catch(() => ({}));
+      if (!outRes.ok) {
+        console.error('[auto-respond] ManyChat send failed:', outRes.status, outJson);
+        // Guardar el error como mensaje system
+        await db.collection('chatbotMessages').add({
+          leadId, businessId, workspaceId: WS_ID,
+          text: '⚠ ManyChat respondió ' + outRes.status + ': ' + JSON.stringify(outJson).slice(0, 200),
+          fromLead: false, system: true,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      }
+    } catch (e) {
+      console.error('[auto-respond] outbound call failed:', e);
+    }
+  } else {
+    console.warn('[auto-respond] sin manychatContactId o sin manychatApiKey — respuesta queda solo en la app, no llega a IG');
+  }
 }
 
 function setupSubtabs() {

@@ -75,6 +75,17 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.85': {
+    title: '🎯 Fase 3b — el bot responde solo a DMs de Instagram (loop cerrado)',
+    features: [
+      '🔁 <strong>Loop completo Instagram ⇄ App</strong>: cuando llega un DM via ManyChat → CF Function → Firestore, la app ahora detecta el lead nuevo y dispara <code>autoRespondToLead()</code> automáticamente. El bot piensa con Groq usando system prompt + base de conocimiento + últimos 12 mensajes, guarda la respuesta en Firestore (la ves al toque en la UI) y la manda de vuelta a ManyChat → Instagram.',
+      '📡 <strong>Outbound endpoint usado</strong>: <code>POST /manychat/outbound</code> en tu CF Pages con <code>{ manychatApiKey, contactId, text }</code>. El contactId lo guardamos cuando el inbound webhook crea el lead (campo <code>manychatContactId</code>).',
+      '🔑 <strong>Requisitos</strong>: tener llenos (1) Groq API Key del workspace, (2) ManyChat API Key en "⚙ Configurar bot", (3) Base de conocimiento del negocio. Si falta alguno, el bot loguea un mensaje system visible en la conversación para que sepas qué arreglar.',
+      '⚠ <strong>Errores visibles en la conversación</strong>: si Groq o ManyChat fallan, se guarda el error como mensaje system en el chat (no quedan invisibles en consola).',
+      '🎯 <strong>Cómo probarlo</strong>: mandá un DM real a tu IG conectado a ManyChat. En 2-5 segundos vas a ver la respuesta llegar al lead en Instagram + aparecer en la app en tiempo real.',
+      '🛣 <strong>Próxima Fase 4</strong>: Google Calendar para que el bot consulte disponibilidad real y agende citas (hoy usa solo el link de Calendly).'
+    ]
+  },
   '3.11.84': {
     title: 'Botón "📋 Copy URL ManyChat" en cada negocio + campo ManyChat API Key',
     features: [
