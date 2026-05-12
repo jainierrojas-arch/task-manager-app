@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.73': {
+    title: 'Diagnóstico ahora flagea OpenAI como ⚠ amarillo (bloquea VE/CU/IR)',
+    features: [
+      '⚠ <strong>OpenAI flageado como warning</strong>: el diagnóstico antes mostraba OpenAI configurada como ✓ verde, pero OpenAI bloquea Venezuela, Cuba e Irán por país. Ahora muestra ⚠ amarillo con explicación clara — si el equipo está en alguno de esos países, hay que reemplazar por una key de Groq.',
+      '🎨 <strong>Header con conteo + estado</strong>: si hay warnings (no errores), el header dice "6/6 OK · pero con avisos ⚠" en naranja. Si hay errores reales, dice "X/6 OK · revisá los ✗" en rojo. Si todo perfecto, verde.',
+      '🩺 <strong>Caso de uso real</strong>: el chico en Venezuela tenía OpenAI configurada → diagnóstico se veía 6/6 ✓ pero la transcripción fallaba. Ahora ese caso aparece como ⚠ con la solución exacta: pegar Groq.'
+    ]
+  },
   '3.11.72': {
     title: '🩺 Panel de Diagnóstico — cualquier user ve qué le falla en su instalación',
     features: [
@@ -9835,11 +9843,18 @@ async function runFullDiagnostics(resultEl) {
       }
     }
   } catch (e) {}
+  // v3.11.73: flag OpenAI como warning porque bloquea VE/CU/IR. Groq sin bloqueo = ✓ verde.
+  const isOpenAiKey = keyState.ok && keyState.provider === 'OpenAI';
   log({
     name: 'API key transcripción',
-    ok: keyState.ok,
+    ok: keyState.ok && !isOpenAiKey,
+    warning: isOpenAiKey,
     detail: keyState.ok ? `${keyState.provider} (${keyState.preview})` : keyState.provider,
-    fix: keyState.ok ? null : 'Settings → OpenAI API Key → pegá una key de Groq (gsk_...) — console.groq.com es gratis'
+    fix: !keyState.ok
+      ? 'Settings → OpenAI API Key → pegá una key de Groq (gsk_...) — console.groq.com es gratis'
+      : (isOpenAiKey
+          ? '⚠ OpenAI bloquea Venezuela / Cuba / Irán por país. Si tu equipo está en alguno de esos países, reemplazala por una key de Groq (console.groq.com es gratis). Si todos están en USA/Europa, podés ignorar este aviso.'
+          : null)
   });
 
   // Test 4: Cloudinary
@@ -9885,16 +9900,25 @@ async function runFullDiagnostics(resultEl) {
 function renderDiagnostics(el, tests) {
   const total = tests.length;
   const passed = tests.filter(t => t.ok).length;
-  const headerColor = passed === total ? '#4ecdc4' : '#ff9866';
+  const hasWarnings = tests.some(t => t.warning);
+  let headerColor = '#4ecdc4', headerTxt = `${passed}/${total} OK`;
+  if (passed < total) { headerColor = '#ff6b6b'; headerTxt = `${passed}/${total} OK · revisá los ✗`; }
+  else if (hasWarnings) { headerColor = '#ff9866'; headerTxt = `${passed}/${total} OK · pero con avisos ⚠`; }
   el.innerHTML = `
-    <div style="font-weight:700;color:${headerColor};margin-bottom:10px">${passed}/${total} OK</div>
-    ${tests.map(t => `
-      <div style="display:flex;flex-direction:column;gap:2px;padding:8px;border-radius:6px;background:${t.ok ? 'rgba(78,205,196,0.08)' : 'rgba(255,107,107,0.1)'};border:1px solid ${t.ok ? 'rgba(78,205,196,0.3)' : 'rgba(255,107,107,0.3)'};margin-bottom:6px">
-        <div style="display:flex;align-items:center;gap:6px"><span style="font-size:14px">${t.ok ? '✓' : '✗'}</span><strong>${t.name}</strong></div>
+    <div style="font-weight:700;color:${headerColor};margin-bottom:10px">${headerTxt}</div>
+    ${tests.map(t => {
+      let bg, border, icon;
+      if (t.ok) { bg = 'rgba(78,205,196,0.08)'; border = 'rgba(78,205,196,0.3)'; icon = '✓'; }
+      else if (t.warning) { bg = 'rgba(255,152,102,0.08)'; border = 'rgba(255,152,102,0.4)'; icon = '⚠'; }
+      else { bg = 'rgba(255,107,107,0.1)'; border = 'rgba(255,107,107,0.3)'; icon = '✗'; }
+      return `
+      <div style="display:flex;flex-direction:column;gap:2px;padding:8px;border-radius:6px;background:${bg};border:1px solid ${border};margin-bottom:6px">
+        <div style="display:flex;align-items:center;gap:6px"><span style="font-size:14px">${icon}</span><strong>${t.name}</strong></div>
         <div style="font-size:11px;color:var(--text-secondary)">${t.detail}</div>
         ${t.fix ? `<div style="font-size:11px;color:#ff9866;margin-top:4px">→ ${t.fix}</div>` : ''}
       </div>
-    `).join('')}
+    `;
+    }).join('')}
   `;
 }
 
