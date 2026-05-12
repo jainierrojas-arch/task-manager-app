@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.71': {
+    title: '🌐 DNS-over-HTTPS interno — la app bypasea los bloqueos DNS de ISP automáticamente',
+    features: [
+      '🎯 <strong>Fix definitivo y cero-configuración</strong>: la app ahora resuelve DNS por su cuenta usando Cloudflare 1.1.1.1 (vía DoH). Bypasea los bloqueos de DNS del ISP (Venezuela, Cuba, Irán, etc.) sin que el usuario tenga que cambiar nada en su Windows. Si Cloudflare falla, prueba Google 8.8.8.8. Si ambos fallan, fallback al DNS del sistema.',
+      '⚡ <strong>Cache de 5 minutos</strong>: cada hostname resuelto se cachea para evitar latencia adicional. Las llamadas siguen siendo rápidas.',
+      '🔗 <strong>Activo en TODAS las llamadas HTTP de la app</strong>: scrapers IG (snapinsta/fastdl/snapsave/igram/saveig), scraper TikTok (tikwm), Whisper/Groq API, fetcher de OG images (Microlink/tikwm). Si cualquier ISP bloquea cualquiera de esos dominios, la app lo resuelve sola.',
+      '✅ <strong>Para el equipo en Venezuela</strong>: hacé Quit + reabrir. Ya no necesitas tocar el DNS de Windows. La app se encarga internamente.'
+    ]
+  },
   '3.11.70': {
     title: '5 scrapers en cascada + detección DNS bloqueado por ISP venezolano',
     features: [

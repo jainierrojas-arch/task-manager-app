@@ -905,7 +905,8 @@ function registerIpcHandlers() {
           'Content-Type': 'multipart/form-data; boundary=' + boundary,
           'Content-Length': body.length
         },
-        timeout: 150000
+        timeout: 150000,
+        lookup: dohLookup // v3.11.71: DoH bypass para ISP que bloquean api.openai.com / api.groq.com
       }, (res) => {
         let chunks = [];
         res.on('data', (d) => chunks.push(d));
@@ -990,10 +991,62 @@ function registerIpcHandlers() {
     return binPath;
   }
 
-  // v3.11.53: helpers para scrapers públicos (snapinsta / tikwm).
-  // Ninguno requiere auth: el usuario / el equipo / los clientes no hacen nada.
-  // El scraper hace el trabajo en su server, devuelve URL directa al video,
-  // bajamos esa URL desde nuestra app y la mandamos a Whisper.
+  // v3.11.71: DNS-over-HTTPS resolver para bypasear bloqueos de ISP.
+  // Algunos ISPs (especialmente en Venezuela / Cuba / Irán) bloquean dominios
+  // de scrapers a nivel DNS. Cloudflare 1.1.1.1 expone un endpoint DoH al que
+  // se llega vía IP directa (no requiere DNS del ISP), así obtenemos el IP
+  // real del scraper aunque el ISP lo tenga bloqueado.
+  // Estrategia: intentamos Cloudflare 1.1.1.1 → si falla, Google 8.8.8.8 →
+  // si falla, dns.lookup del sistema como último recurso.
+  const _dohCache = new Map(); // hostname → { ip, expires }
+  function dohResolveOnce(dohHost, hostname) {
+    return new Promise((resolve, reject) => {
+      const https = require('https');
+      const req = https.request({
+        host: dohHost,
+        port: 443,
+        path: '/dns-query?name=' + encodeURIComponent(hostname) + '&type=A',
+        method: 'GET',
+        headers: { 'Accept': 'application/dns-json', 'User-Agent': 'TaskManager' },
+        timeout: 4000
+      }, (res) => {
+        const chunks = [];
+        res.on('data', d => chunks.push(d));
+        res.on('end', () => {
+          try {
+            const json = JSON.parse(Buffer.concat(chunks).toString('utf-8'));
+            const a = json.Answer && json.Answer.find(x => x.type === 1);
+            if (a && a.data) return resolve(a.data);
+            reject(new Error('no A record'));
+          } catch (e) { reject(e); }
+        });
+      });
+      req.on('error', reject);
+      req.on('timeout', () => { try { req.destroy(); } catch (_) {} reject(new Error('timeout')); });
+      req.end();
+    });
+  }
+  function dohLookup(hostname, options, callback) {
+    if (typeof options === 'function') { callback = options; options = {}; }
+    // Cache hits primero (TTL 5 min)
+    const cached = _dohCache.get(hostname);
+    if (cached && cached.expires > Date.now()) {
+      return callback(null, cached.ip, 4);
+    }
+    // Primero Cloudflare, luego Google, luego dns.lookup del sistema
+    dohResolveOnce('1.1.1.1', hostname)
+      .catch(() => dohResolveOnce('8.8.8.8', hostname))
+      .then(ip => {
+        _dohCache.set(hostname, { ip, expires: Date.now() + 5 * 60 * 1000 });
+        callback(null, ip, 4);
+      })
+      .catch(() => {
+        // Último recurso: DNS del sistema
+        require('dns').lookup(hostname, options, callback);
+      });
+  }
+
+  // v3.11.53 + v3.11.71: helpers HTTP con DoH activado (bypassea ISP DNS blocks).
   function httpsGetBuffer(targetUrl, headers, redirectsLeft) {
     if (typeof redirectsLeft !== 'number') redirectsLeft = 6;
     const url = require('url');
@@ -1009,7 +1062,8 @@ function registerIpcHandlers() {
         path: parsed.path,
         headers: Object.assign({
           'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36'
-        }, headers || {})
+        }, headers || {}),
+        lookup: dohLookup // v3.11.71: bypass ISP DNS via Cloudflare/Google DoH
       }, (res) => {
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           if (redirectsLeft <= 0) return reject(new Error('Demasiados redirects'));
@@ -1041,7 +1095,8 @@ function registerIpcHandlers() {
         headers: Object.assign({
           'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
           'Content-Length': Buffer.byteLength(body)
-        }, headers || {})
+        }, headers || {}),
+        lookup: dohLookup // v3.11.71: bypass ISP DNS via Cloudflare/Google DoH
       }, (res) => {
         const chunks = [];
         res.on('data', (d) => chunks.push(d));
