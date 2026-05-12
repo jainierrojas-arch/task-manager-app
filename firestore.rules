@@ -116,5 +116,11 @@ service cloud.firestore {
     match /chatbotConfig/{id}              { allow read, write: if isSignedIn(); }
     match /chatbotKnowledgeBase/{id}       { allow read, write: if isSignedIn(); }
     match /chatbotAppointments/{id}        { allow read, write: if isSignedIn(); }
+    // v3.11.82: webhookInbox — Cloudflare Worker escribe acá (sin auth) DMs nuevos de IG.
+    // Permitimos create público pero solo signed-in users pueden leer/borrar (procesar).
+    match /webhookInbox/{id} {
+      allow create: if true;
+      allow read, update, delete: if isSignedIn();
+    }
   }
 }

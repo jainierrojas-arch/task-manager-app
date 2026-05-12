@@ -75,6 +75,17 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.82': {
+    title: '📲 Fase 3a — Instagram DMs reales via ManyChat → Cloudflare Worker → App',
+    features: [
+      '🌐 <strong>Cloudflare Worker creado</strong>: archivo <code>chatbot-worker.js</code> en el repo. Recibe webhooks de ManyChat (DMs de Instagram) y los escribe en Firestore. La app los lee en tiempo real automáticamente.',
+      '🎯 <strong>Listener inbox en la app</strong>: cuando llega un DM nuevo, la app lo procesa: busca o crea el lead, agrega el mensaje, marca el inbox doc como procesado. Todo automático.',
+      '📋 <strong>Cómo deployar el Worker (10 min, una vez)</strong>:<br>1) Andá a dash.cloudflare.com → registrate gratis<br>2) Workers & Pages → Create application → Create Worker<br>3) Nombrá "task-manager-chatbot" → Deploy<br>4) Edit code → reemplazá todo con el contenido de <code>chatbot-worker.js</code> (lo tenés en el repo del proyecto)<br>5) Save and deploy<br>6) Tu URL queda algo como <code>https://task-manager-chatbot.tu-usuario.workers.dev</code>',
+      '🔌 <strong>En ManyChat</strong>: tu flow del bot de IG → al final agregá una acción "External Request" → POST a tu URL del Worker + <code>/manychat/inbound?biz=BUSINESS_ID&ws=WORKSPACE_ID</code>. ManyChat manda los DMs automáticamente.',
+      '⚠ <strong>Fase 3b (próxima)</strong>: el bot va a responder solo via Groq + mandar la respuesta de vuelta a ManyChat → Instagram. Por ahora los mensajes llegan a la app, vos respondés manualmente o usás la simulación.',
+      '🔐 <strong>IMPORTANTE actualizá Firestore Rules</strong>: agregá la regla <code>webhookInbox</code> que está en el repo (allow create: if true, lectura solo signed-in). Sin eso el Worker no puede escribir.'
+    ]
+  },
   '3.11.81': {
     title: '🧠 Fase 2 — el bot responde solo con IA real (Groq) usando base de conocimiento',
     features: [

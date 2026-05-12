@@ -48,6 +48,78 @@ function wireup() {
   });
   document.getElementById('cbConfigSave').addEventListener('click', saveConfig);
   loadConfig();
+  // v3.11.82: listener del inbox de webhooks (mensajes que llegan via ManyChat/Worker)
+  subscribeWebhookInbox();
+}
+
+// ===== v3.11.82: WEBHOOK INBOX (mensajes que llegan de ManyChat → Worker → Firestore) =====
+let unsubInbox = null;
+function subscribeWebhookInbox() {
+  if (unsubInbox) { try { unsubInbox(); } catch (e) {} unsubInbox = null; }
+  let q = db.collection('webhookInbox').where('processed', '==', false);
+  if (WS_ID) q = q.where('workspaceId', '==', WS_ID);
+  unsubInbox = q.onSnapshot(async snap => {
+    for (const docSnap of snap.docs) {
+      try { await processInboxDoc(docSnap); }
+      catch (e) { console.error('[chatbot] inbox process error:', e); }
+    }
+  }, err => console.error('[chatbot] inbox listener error:', err));
+}
+
+async function processInboxDoc(docSnap) {
+  const d = docSnap.data() || {};
+  const handle = d.handle || '@unknown';
+  const text = d.text || '';
+  const businessId = d.businessId || '';
+  if (!businessId) {
+    console.warn('[chatbot] inbox doc sin businessId, skip:', docSnap.id);
+    await docSnap.ref.update({ processed: true, processingError: 'sin businessId' });
+    return;
+  }
+  // Buscar o crear el lead
+  const leadsSnap = await db.collection('chatbotLeads')
+    .where('businessId', '==', businessId)
+    .where('handle', '==', handle)
+    .limit(1).get();
+  let leadId;
+  if (!leadsSnap.empty) {
+    leadId = leadsSnap.docs[0].id;
+  } else {
+    const newLead = await db.collection('chatbotLeads').add({
+      businessId,
+      workspaceId: WS_ID,
+      handle,
+      displayName: d.displayName || handle.replace(/^@/, ''),
+      manychatContactId: d.manychatContactId || null,
+      funnelStage: 'bienvenida',
+      score: 0,
+      canal: 'instagram',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      lastMessageAt: firebase.firestore.FieldValue.serverTimestamp(),
+      lastMessagePreview: text.slice(0, 80)
+    });
+    leadId = newLead.id;
+  }
+  // Guardar el mensaje del lead
+  await db.collection('chatbotMessages').add({
+    leadId,
+    businessId,
+    workspaceId: WS_ID,
+    text,
+    fromLead: true,
+    source: d.source || 'manychat',
+    timestamp: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  await db.collection('chatbotLeads').doc(leadId).update({
+    lastMessageAt: firebase.firestore.FieldValue.serverTimestamp(),
+    lastMessagePreview: text.slice(0, 80)
+  });
+  // Marcar como procesado
+  await docSnap.ref.update({ processed: true, processedAt: firebase.firestore.FieldValue.serverTimestamp(), leadId });
+
+  // Si este lead está seleccionado actualmente, generar respuesta automática
+  // (si no, el bot va a estar idle hasta que el user lo seleccione)
+  // TODO Fase 3b: auto-responder siempre, enviar de vuelta a ManyChat via Worker outbound endpoint
 }
 
 function setupSubtabs() {
