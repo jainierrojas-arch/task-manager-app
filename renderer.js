@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.68': {
+    title: 'Fix Chrome DPAPI en Windows + cascada de 3 scrapers IG (snapinsta → fastdl → saveig)',
+    features: [
+      '🔧 <strong>Fix Windows DPAPI error</strong>: Chrome en Windows usa una encriptación nueva (App-Bound Encryption) que yt-dlp no puede decifrar sin tu password de Windows (issue 10927 de yt-dlp). Quité Chrome y Brave de la cascada en Windows — solo Firefox es confiable ahí.',
+      '🪟 <strong>En Windows ahora</strong>: la cascada para IG es 1) scrapers públicos (snapinsta/fastdl/saveig sin cookies), 2) yt-dlp con cookies de Firefox. Si no tenés Firefox con IG logueado, la única forma confiable es que los scrapers públicos funcionen.',
+      '🔁 <strong>Cascada de 3 scrapers para IG</strong>: si snapinsta falla (caído / rate limit), intenta fastdl.app. Si ese falla, saveig.app. Si todos fallan, ahí cae a yt-dlp. Triple respaldo para minimizar el "scrapers fallaron".',
+      '🩺 <strong>Mensaje de error mejorado</strong>: si los 3 scrapers fallan, el error muestra qué dijo cada uno individualmente. Útil para diagnosticar si todos están caídos o si es problema de la URL específica.'
+    ]
+  },
   '3.11.67': {
     title: 'Logging visible al apretar el botón rojo — diagnóstico del "tap pero no graba"',
     features: [

@@ -1087,6 +1087,50 @@ function registerIpcHandlers() {
     throw new Error('snapinsta: no encontré URL del video en la respuesta');
   }
 
+  // v3.11.68: scraper alternativo para IG — fastdl.app como backup si snapinsta falla
+  async function scrapeIgViaFastdl(igUrl) {
+    const body = 'url=' + encodeURIComponent(igUrl);
+    const res = await httpsPostString('https://fastdl.app/api/convert', body, {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Origin': 'https://fastdl.app',
+      'Referer': 'https://fastdl.app/',
+      'Accept': 'application/json'
+    });
+    if (res.status !== 200) throw new Error('fastdl HTTP ' + res.status);
+    let json;
+    try { json = JSON.parse(res.text); }
+    catch (_) { throw new Error('fastdl no devolvió JSON'); }
+    // fastdl devuelve { url: [{ url, ... }, ... ] } o similar
+    const list = json.url || json.medias || (json.data && json.data.url) || [];
+    if (Array.isArray(list) && list.length > 0) {
+      const first = list[0];
+      const u = (typeof first === 'string') ? first : (first.url || first.dlUrl || first.src);
+      if (u) return u;
+    }
+    throw new Error('fastdl: respuesta sin URL de video');
+  }
+
+  // v3.11.68: scraper alternativo #2 — saveig.app fallback
+  async function scrapeIgViaSaveig(igUrl) {
+    const body = 'url=' + encodeURIComponent(igUrl);
+    const res = await httpsPostString('https://saveig.app/api/ajaxSearch', body, {
+      'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+      'Origin': 'https://saveig.app',
+      'Referer': 'https://saveig.app/en',
+      'X-Requested-With': 'XMLHttpRequest',
+      'Accept': '*/*'
+    });
+    if (res.status !== 200) throw new Error('saveig HTTP ' + res.status);
+    let json;
+    try { json = JSON.parse(res.text); }
+    catch (_) { throw new Error('saveig no devolvió JSON'); }
+    if (json.status !== 'ok' || !json.data) throw new Error('saveig sin data');
+    const html = String(json.data);
+    const m = html.match(/href="([^"]+\.mp4[^"]*)"/i);
+    if (m && m[1]) return m[1].replace(/&amp;/g, '&').replace(/\\\//g, '/');
+    throw new Error('saveig: no encontré URL en el HTML');
+  }
+
   // tikwm: scraper público para TikTok. GET JSON con URL del video directa.
   async function scrapeTiktokViaTikwm(ttUrl) {
     const fetchUrl = 'https://www.tikwm.com/api/?url=' + encodeURIComponent(ttUrl);
@@ -1100,24 +1144,39 @@ function registerIpcHandlers() {
     return videoUrl;
   }
 
-  // Wrapper: prueba el scraper apropiado según la plataforma. Devuelve {ok, data, mimeType, ext} igual que yt-dlp.
+  // v3.11.68: wrapper con cascada de scrapers — si el primero falla, prueba el siguiente.
   async function tryPublicScraper(platformUrl) {
     let videoUrl = null;
     let provider = '';
-    try {
-      if (/instagram\.com/i.test(platformUrl)) {
-        provider = 'snapinsta';
-        videoUrl = await scrapeIgViaSnapinsta(platformUrl);
-      } else if (/tiktok\.com/i.test(platformUrl)) {
+    const errors = [];
+    if (/instagram\.com/i.test(platformUrl)) {
+      const igScrapers = [
+        { name: 'snapinsta', fn: scrapeIgViaSnapinsta },
+        { name: 'fastdl', fn: scrapeIgViaFastdl },
+        { name: 'saveig', fn: scrapeIgViaSaveig }
+      ];
+      for (const s of igScrapers) {
+        try {
+          videoUrl = await s.fn(platformUrl);
+          if (videoUrl) { provider = s.name; break; }
+        } catch (e) {
+          errors.push(s.name + ': ' + e.message);
+          console.warn('[scraper]', s.name, 'failed:', e.message);
+        }
+      }
+    } else if (/tiktok\.com/i.test(platformUrl)) {
+      try {
         provider = 'tikwm';
         videoUrl = await scrapeTiktokViaTikwm(platformUrl);
-      } else {
-        return { ok: false, skip: true };
+      } catch (e) {
+        errors.push('tikwm: ' + e.message);
       }
-    } catch (e) {
-      return { ok: false, error: provider + ': ' + e.message, skip: false };
+    } else {
+      return { ok: false, skip: true };
     }
-    if (!videoUrl) return { ok: false, error: provider + ': URL vacía', skip: false };
+    if (!videoUrl) {
+      return { ok: false, error: 'Scrapers fallaron: ' + errors.join(' | '), skip: false };
+    }
     // Descargar el video desde la URL del scraper. Whisper acepta mp4 con audio incluido.
     try {
       const dl = await httpsGetBuffer(videoUrl);
@@ -1247,20 +1306,28 @@ function registerIpcHandlers() {
     const isMac = process.platform === 'darwin';
     const isInstagram = /instagram\.com/i.test(platformUrl);
     const strategies = [];
+    // v3.11.68: en Windows, Chrome/Brave/Edge tienen DPAPI encryption nueva que
+    // yt-dlp no puede decifrar (issue 10927). Solo usar Firefox que es la única
+    // confiable. En Mac, el orden anterior se mantiene.
     if (isInstagram) {
-      // IG: chrome primero (más probable que el user tenga IG ahí). Mac dispara
-      // prompt del llavero UNA vez ("Permitir Siempre" + password) y queda
-      // silencioso para siempre. Win no prompts en absoluto.
-      strategies.push({ label: 'cookies de chrome', args: ['--cookies-from-browser', 'chrome'] });
-      if (isWin) strategies.push({ label: 'cookies de edge', args: ['--cookies-from-browser', 'edge'] });
-      strategies.push({ label: 'cookies de brave', args: ['--cookies-from-browser', 'brave'] });
-      strategies.push({ label: 'cookies de firefox', args: ['--cookies-from-browser', 'firefox'] });
+      if (isWin) {
+        // Solo Firefox confiable en Windows (DPAPI rompe Chrome/Edge/Brave)
+        strategies.push({ label: 'cookies de firefox', args: ['--cookies-from-browser', 'firefox'] });
+      } else {
+        // Mac/Linux: cascade completa
+        strategies.push({ label: 'cookies de chrome', args: ['--cookies-from-browser', 'chrome'] });
+        strategies.push({ label: 'cookies de brave', args: ['--cookies-from-browser', 'brave'] });
+        strategies.push({ label: 'cookies de firefox', args: ['--cookies-from-browser', 'firefox'] });
+      }
     } else {
       // TikTok / YouTube / etc — la mayoría no requieren cookies.
       strategies.push({ label: 'sin cookies', args: [] });
-      strategies.push({ label: 'cookies de chrome', args: ['--cookies-from-browser', 'chrome'] });
-      if (isWin) strategies.push({ label: 'cookies de edge', args: ['--cookies-from-browser', 'edge'] });
-      strategies.push({ label: 'cookies de firefox', args: ['--cookies-from-browser', 'firefox'] });
+      if (isWin) {
+        strategies.push({ label: 'cookies de firefox', args: ['--cookies-from-browser', 'firefox'] });
+      } else {
+        strategies.push({ label: 'cookies de chrome', args: ['--cookies-from-browser', 'chrome'] });
+        strategies.push({ label: 'cookies de firefox', args: ['--cookies-from-browser', 'firefox'] });
+      }
     }
 
     let lastFail = null;
