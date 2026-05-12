@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.88': {
+    title: '🚨 HOTFIX Windows: "spawn /bin/bash ENOENT" — la app crasheaba al actualizar',
+    features: [
+      '🩹 <strong>Bug crítico en Windows</strong>: el custom updater (diseñado para macOS) ejecutaba <code>/bin/bash</code> y comandos Unix (<code>unzip</code>, <code>mv</code>, <code>xattr</code>) que no existen en Windows. Resultado: error "A JavaScript error occurred in the main process" y la app no se podía actualizar.',
+      '✅ <strong>Fix</strong>: en Windows el banner ahora usa el <code>autoUpdater</code> nativo de electron-updater (NSIS), que ya funciona out-of-the-box. El custom updater queda restringido a macOS donde es necesario (bypass de firma).',
+      '🛡 <strong>Defensa en main.js</strong>: los IPC handlers <code>custom-download-update</code> y <code>custom-install-update</code> devuelven error en non-Mac en lugar de crashear.',
+      '⚠ <strong>Para usuarios Windows afectados</strong>: si la app les crashea al abrir, descargar manualmente el instalador NSIS de la nueva release y reinstalar.'
+    ]
+  },
   '3.11.87': {
     title: '🩹 Fix scroll en ⚙ Configurar bot (no se llegaba al botón Guardar)',
     features: [
@@ -9265,7 +9274,10 @@ function showManualUpdateBanner(latest, currentVersion) {
   banner.style.cursor = 'pointer';
   // v3.11.35: si tenemos downloadUrl Y el handler IPC custom, descargar e
   // instalar AUTOMÁTICAMENTE sin que el usuario tenga que ir a GitHub.
-  if (latest.downloadUrl && window.api && window.api.customDownloadUpdate) {
+  // v3.11.88: el custom updater SOLO funciona en macOS (usa /bin/bash, unzip, etc.).
+  // En Windows el autoUpdater estándar de electron-updater ya maneja todo.
+  const isMacOS = !window.api || !window.api.platform || window.api.platform === 'darwin';
+  if (isMacOS && latest.downloadUrl && window.api && window.api.customDownloadUpdate) {
     if (_customUpdateState === 'idle') {
       _customUpdateState = 'downloading';
       text.textContent = `⬇ Descargando v${latest.version}... 0%`;

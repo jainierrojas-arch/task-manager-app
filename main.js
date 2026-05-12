@@ -2214,6 +2214,10 @@ function downloadFile(url, destPath, onProgress) {
 
 ipcMain.handle('custom-download-update', async (_, { url, version }) => {
   try {
+    // v3.11.88: el custom updater es solo para macOS — usa /bin/bash, unzip, etc.
+    if (process.platform !== 'darwin') {
+      return { ok: false, error: 'Custom updater is macOS-only; use electron-updater on this platform' };
+    }
     if (!url || !version) return { ok: false, error: 'url y version requeridos' };
     const tmpDir = path.join(os.tmpdir(), 'taskmgr-update');
     try { fs.mkdirSync(tmpDir, { recursive: true }); } catch (_) {}
@@ -2233,6 +2237,10 @@ ipcMain.handle('custom-download-update', async (_, { url, version }) => {
 });
 
 ipcMain.handle('custom-install-update', async () => {
+  // v3.11.88: bloquear en non-mac — los comandos /bin/bash, unzip, mv son unix-only.
+  if (process.platform !== 'darwin') {
+    return { ok: false, error: 'Custom updater is macOS-only; use electron-updater on this platform' };
+  }
   if (!_pendingUpdateZipPath || !fs.existsSync(_pendingUpdateZipPath)) {
     return { ok: false, error: 'No hay update descargada' };
   }
