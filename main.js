@@ -1087,7 +1087,7 @@ function registerIpcHandlers() {
     throw new Error('snapinsta: no encontré URL del video en la respuesta');
   }
 
-  // v3.11.68: scraper alternativo para IG — fastdl.app como backup si snapinsta falla
+  // v3.11.68 + v3.11.70: scraper alternativo para IG — fastdl.app con parser más robusto
   async function scrapeIgViaFastdl(igUrl) {
     const body = 'url=' + encodeURIComponent(igUrl);
     const res = await httpsPostString('https://fastdl.app/api/convert', body, {
@@ -1100,14 +1100,74 @@ function registerIpcHandlers() {
     let json;
     try { json = JSON.parse(res.text); }
     catch (_) { throw new Error('fastdl no devolvió JSON'); }
-    // fastdl devuelve { url: [{ url, ... }, ... ] } o similar
-    const list = json.url || json.medias || (json.data && json.data.url) || [];
-    if (Array.isArray(list) && list.length > 0) {
-      const first = list[0];
-      const u = (typeof first === 'string') ? first : (first.url || first.dlUrl || first.src);
-      if (u) return u;
+    // Recorrer recursivamente buscando una URL .mp4
+    function findVideoUrl(obj, depth) {
+      if (depth > 5 || !obj) return null;
+      if (typeof obj === 'string') {
+        if (/\.mp4/i.test(obj) && /^https?:\/\//.test(obj)) return obj;
+        return null;
+      }
+      if (Array.isArray(obj)) {
+        for (const item of obj) {
+          const r = findVideoUrl(item, depth + 1);
+          if (r) return r;
+        }
+        return null;
+      }
+      if (typeof obj === 'object') {
+        const priority = ['url', 'src', 'dlUrl', 'mp4', 'video_url', 'videoUrl'];
+        for (const k of priority) {
+          if (obj[k]) {
+            const r = findVideoUrl(obj[k], depth + 1);
+            if (r) return r;
+          }
+        }
+        for (const k of Object.keys(obj)) {
+          if (priority.includes(k)) continue;
+          const r = findVideoUrl(obj[k], depth + 1);
+          if (r) return r;
+        }
+      }
+      return null;
     }
+    const url = findVideoUrl(json, 0);
+    if (url) return url;
     throw new Error('fastdl: respuesta sin URL de video');
+  }
+
+  // v3.11.70: scraper alternativo #3 — snapsave.app (dominio distinto, menos chance de DNS block)
+  async function scrapeIgViaSnapsave(igUrl) {
+    const body = 'url=' + encodeURIComponent(igUrl) + '&action=post';
+    const res = await httpsPostString('https://snapsave.app/action.php', body, {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Origin': 'https://snapsave.app',
+      'Referer': 'https://snapsave.app/',
+      'Accept': '*/*'
+    });
+    if (res.status !== 200) throw new Error('snapsave HTTP ' + res.status);
+    const html = res.text;
+    const m = html.match(/href="([^"]+\.mp4[^"]*)"/i);
+    if (m && m[1]) return m[1].replace(/&amp;/g, '&').replace(/\\\//g, '/');
+    throw new Error('snapsave: no encontré URL en respuesta');
+  }
+
+  // v3.11.70: scraper alternativo #4 — igram.io (dominio distinto)
+  async function scrapeIgViaIgram(igUrl) {
+    const body = JSON.stringify({ url: igUrl, ts: Date.now() });
+    const res = await httpsPostString('https://api.igram.io/api/convert', body, {
+      'Content-Type': 'application/json',
+      'Origin': 'https://igram.io',
+      'Referer': 'https://igram.io/',
+      'Accept': 'application/json'
+    });
+    if (res.status !== 200) throw new Error('igram HTTP ' + res.status);
+    let json;
+    try { json = JSON.parse(res.text); } catch (_) { throw new Error('igram no devolvió JSON'); }
+    // igram a veces devuelve { url: [{ url, ... }] }
+    const u = (json.url && Array.isArray(json.url) && json.url[0] && json.url[0].url) ||
+              (json.data && json.data.url) || json.video_url;
+    if (u) return u;
+    throw new Error('igram: respuesta sin URL');
   }
 
   // v3.11.68: scraper alternativo #2 — saveig.app fallback
@@ -1150,9 +1210,12 @@ function registerIpcHandlers() {
     let provider = '';
     const errors = [];
     if (/instagram\.com/i.test(platformUrl)) {
+      // v3.11.70: 5 scrapers en cascada con dominios distintos para minimizar bloqueos DNS
       const igScrapers = [
         { name: 'snapinsta', fn: scrapeIgViaSnapinsta },
         { name: 'fastdl', fn: scrapeIgViaFastdl },
+        { name: 'snapsave', fn: scrapeIgViaSnapsave },
+        { name: 'igram', fn: scrapeIgViaIgram },
         { name: 'saveig', fn: scrapeIgViaSaveig }
       ];
       for (const s of igScrapers) {
@@ -1368,13 +1431,22 @@ function registerIpcHandlers() {
       errMsg += 'Última actividad: ' + ((r.stdoutLast || '').trim() || 'sin output').slice(-150);
       if (r.stderr) errMsg += ' | stderr: ' + r.stderr.trim().slice(-150);
     } else if (looksLikeIgAuth && /instagram/i.test(platformUrl)) {
-      // v3.11.69: error final más útil — incluye qué scrapers fueron probados
-      // antes y mensaje claro sin sugerir "versión vieja".
+      // v3.11.70: detectar errores ENOTFOUND (DNS bloqueado por ISP/VPN) y dar instrucción concreta
       const scraperErrTxt = (scraperRes && scraperRes.error) ? scraperRes.error : 'desconocido';
-      errMsg = 'No se pudo descargar el video. Todos los métodos fallaron:\n\n' +
-        '1) Scrapers públicos (snapinsta, fastdl, saveig): ' + scraperErrTxt.slice(-200) + '\n\n' +
-        '2) yt-dlp con cookies (' + (r.label || '?') + '): ' + ((r.stderr || '').slice(-150).trim() || 'sin detalles') + '\n\n' +
-        'Causas posibles: la URL es de cuenta privada, los scrapers están temporalmente caídos, o tu red bloquea sus servidores. Reintentá en 1-2 minutos.';
+      const dnsBlocked = /ENOTFOUND|EAI_AGAIN|EHOSTUNREACH/i.test(scraperErrTxt);
+      if (dnsBlocked) {
+        errMsg = '🚫 Tu ISP/VPN está bloqueando los servidores de descarga (DNS ENOTFOUND).\n\n' +
+          'SOLUCIÓN (5 min, una vez):\n' +
+          '1) Windows: Configuración → Red e Internet → tu conexión (Wi-Fi o Ethernet) → "Editar" asignación de servidor DNS.\n' +
+          '2) Manual → IPv4 → DNS preferido: 1.1.1.1, DNS alternativo: 1.0.0.1 (Cloudflare).\n' +
+          '3) Guardar y reintentar Transcribir.\n\n' +
+          'Detalle técnico: ' + scraperErrTxt.slice(-150);
+      } else {
+        errMsg = 'No se pudo descargar el video. Todos los métodos fallaron:\n\n' +
+          'Scrapers (snapinsta/fastdl/snapsave/igram/saveig): ' + scraperErrTxt.slice(-200) + '\n\n' +
+          'yt-dlp (' + (r.label || '?') + '): ' + ((r.stderr || '').slice(-150).trim() || 'sin detalles') + '\n\n' +
+          'Reintentá en 1-2 minutos (algunos scrapers tienen rate limit transitorio).';
+      }
     } else {
       const stderrTrim = (r.stderr || '').trim();
       errMsg = stderrTrim

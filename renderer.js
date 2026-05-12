@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.70': {
+    title: '5 scrapers en cascada + detección DNS bloqueado por ISP venezolano',
+    features: [
+      '🌐 <strong>Diagnóstico definitivo</strong>: el ISP venezolano está bloqueando snapinsta.app y saveig.app a nivel DNS (ENOTFOUND). El error final ahora detecta esto explícitamente y da las instrucciones de fix: cambiar el DNS de Windows a Cloudflare 1.1.1.1.',
+      '🔁 <strong>5 scrapers en cascada con dominios distintos</strong>: snapinsta → fastdl → <strong>snapsave.app</strong> (nuevo) → <strong>igram.io</strong> (nuevo) → saveig. Más chance que al menos uno no esté bloqueado.',
+      '🛠 <strong>Parser de fastdl robusto</strong>: ahora busca recursivamente el URL del video en cualquier estructura de respuesta (URL profundos, arrays anidados). Antes solo miraba estructuras superficiales y daba "respuesta sin URL" si fastdl cambiaba su formato.',
+      '💡 <strong>Fix permanente para el equipo en Venezuela</strong>: cambiar DNS a 1.1.1.1 (Cloudflare) o 8.8.8.8 (Google). Pasos: Configuración → Red → tu conexión → Editar DNS → Manual → 1.1.1.1. Eso desbloquea TODOS los dominios bloqueados por el ISP, no solo los scrapers.'
+    ]
+  },
   '3.11.69': {
     title: 'Mensaje de error mejorado — muestra qué scraper falló para diagnosticar',
     features: [
