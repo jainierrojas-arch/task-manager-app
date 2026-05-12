@@ -2779,6 +2779,22 @@
                prompts del llavero eran mala UX. Ahora la app usa scrapers públicos
                (snapinsta para IG, tikwm para TikTok) que funcionan sin auth ni setup. -->
 
+          <!-- v3.11.75: Admin — migrar contenido entre workspaces -->
+          <div class="settings-group" id="adminMigrateWsGroup">
+            <div class="settings-label">🔀 Admin: Migrar contenido entre workspaces</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+              <select id="migrateSourceWs" style="flex:1;min-width:140px;padding:8px;border-radius:8px;background:var(--bg-card);color:var(--text);border:1px solid var(--border)"></select>
+              <span style="color:var(--text-secondary)">→</span>
+              <select id="migrateTargetWs" style="flex:1;min-width:140px;padding:8px;border-radius:8px;background:var(--bg-card);color:var(--text);border:1px solid var(--border)"></select>
+            </div>
+            <button class="btn btn-primary btn-small" id="migrateWsBtn" style="width:100%;padding:10px;font-weight:700">Migrar todo el contenido</button>
+            <div id="migrateWsResult" style="margin-top:8px;font-size:11px"></div>
+            <div class="telegram-instructions">
+              <p><strong>Soluciona "no le aparece a los chicos lo que yo subo"</strong>. Cada workspace está aislado — si vos estás en "Agencia" y los chicos en "Prueba de Cliente", no ven lo que vos creás. Esta herramienta mueve TODO (entries del depósito, categorías, tareas, proyectos, programaciones) del workspace source al target.</p>
+              <p style="margin-top:6px"><strong>Pasos</strong>: 1) Elegí el workspace de origen (de donde sacar el contenido). 2) Elegí el de destino. 3) Click "Migrar". 4) Confirmá. 5) Decíles a los chicos que cambien al workspace destino (selector arriba a la izquierda).</p>
+            </div>
+          </div>
+
           <!-- v3.11.72: Diagnóstico — cualquier user lo ejecuta y ve qué le falla -->
           <div class="settings-group">
             <div class="settings-label">🩺 Diagnóstico</div>

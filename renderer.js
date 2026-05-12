@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.75': {
+    title: '🔀 Migrar contenido entre workspaces — consolidar al equipo en uno solo',
+    features: [
+      '🎯 <strong>Solución al "yo subo y los chicos no ven"</strong>: en Settings hay un nuevo panel admin "🔀 Migrar contenido entre workspaces". Elegís un workspace origen y otro destino, le das click, y la app mueve TODO (entries del depósito, categorías, tareas, proyectos, programaciones, mensajes de chat) al destino.',
+      '⚙ <strong>Cómo usarlo</strong>:<br>1) Settings → "Migrar contenido entre workspaces"<br>2) Source: el workspace donde estaba el contenido (ej. "Prueba de Cliente")<br>3) Target: el workspace al que querés mover todo (ej. "Agencia")<br>4) Click "Migrar"<br>5) Confirmá (es irreversible)<br>6) Decíles a los chicos que cambien al workspace destino — los ven al toque.',
+      '🚀 <strong>Después de la migración</strong>: todos los miembros del equipo eligen el mismo workspace en el selector arriba a la izquierda y ven lo mismo. Para nuevos miembros: marcá ese workspace como "default" desde el menú de workspaces para que entren ahí automáticamente.'
+    ]
+  },
   '3.11.74': {
     title: 'FIX CRÍTICO: DoH no funcionaba en realidad (TLS SNI roto) — ahora SÍ',
     features: [
@@ -9930,6 +9938,92 @@ function renderDiagnostics(el, tests) {
     `;
     }).join('')}
   `;
+}
+
+// ===== v3.11.75: Migrar contenido entre workspaces (admin) =====
+// Consolidar workspaces — mueve todas las entries, categorías, tareas, proyectos
+// y programaciones de un workspace a otro. Para resolver "yo subo y los chicos
+// no ven" cuando están en workspaces distintos.
+const WS_SCOPED_COLLECTIONS_MIGRATE = ['depositEntries', 'depositCategories', 'tasks', 'projects', 'scheduledPosts', 'chatMessages', 'captionTemplates', 'ideas'];
+
+function populateMigrateWsDropdowns() {
+  const sourceSel = document.getElementById('migrateSourceWs');
+  const targetSel = document.getElementById('migrateTargetWs');
+  if (!sourceSel || !targetSel || !Array.isArray(workspaces)) return;
+  const options = workspaces.map(w =>
+    `<option value="${esc(w.id)}">${esc(w.name)}${w.id === currentWorkspaceId ? ' (actual)' : ''}</option>`
+  ).join('');
+  sourceSel.innerHTML = options;
+  targetSel.innerHTML = options;
+  // Default: source = primer otro, target = actual
+  if (currentWorkspaceId) targetSel.value = currentWorkspaceId;
+  const otherWs = workspaces.find(w => w.id !== currentWorkspaceId);
+  if (otherWs) sourceSel.value = otherWs.id;
+}
+
+async function migrateWorkspaceContent(sourceId, targetId, statusEl) {
+  if (sourceId === targetId) {
+    statusEl.innerHTML = '<div style="color:#ff6b6b">El workspace origen y destino son el mismo.</div>';
+    return;
+  }
+  const counts = {};
+  for (const coll of WS_SCOPED_COLLECTIONS_MIGRATE) {
+    try {
+      statusEl.innerHTML = '<div style="color:#888">⏳ Migrando ' + coll + '...</div>';
+      // Query con workspaceId = source. También docs SIN workspaceId si source es el default.
+      const snap = await db.collection(coll).where('workspaceId', '==', sourceId).get();
+      // En Firestore batch máx 500 ops; chunkear
+      const docs = snap.docs;
+      let updated = 0;
+      for (let i = 0; i < docs.length; i += 400) {
+        const batch = db.batch();
+        const chunk = docs.slice(i, i + 400);
+        chunk.forEach(d => batch.update(d.ref, { workspaceId: targetId }));
+        await batch.commit();
+        updated += chunk.length;
+      }
+      counts[coll] = updated;
+    } catch (e) {
+      console.warn('[migrate]', coll, 'failed:', e.message);
+      counts[coll] = 'error: ' + e.message;
+    }
+  }
+  const summary = Object.entries(counts)
+    .map(([k, v]) => '<div>' + k + ': <strong>' + v + '</strong></div>')
+    .join('');
+  statusEl.innerHTML = '<div style="color:#4ecdc4;font-weight:700;margin-bottom:6px">✓ Migración completa</div>' + summary +
+    '<div style="margin-top:8px;color:var(--text-secondary)">Decíles a los chicos que cambien al workspace destino para ver el contenido.</div>';
+}
+
+const migrateBtn = document.getElementById('migrateWsBtn');
+const migrateSourceSel = document.getElementById('migrateSourceWs');
+const migrateTargetSel = document.getElementById('migrateTargetWs');
+const migrateResultEl = document.getElementById('migrateWsResult');
+if (migrateBtn && migrateSourceSel && migrateTargetSel && migrateResultEl) {
+  // Poblar dropdowns cuando carguen workspaces
+  setTimeout(populateMigrateWsDropdowns, 1500);
+  setTimeout(populateMigrateWsDropdowns, 3000);
+  migrateBtn.addEventListener('click', async () => {
+    const sourceId = migrateSourceSel.value;
+    const targetId = migrateTargetSel.value;
+    if (!sourceId || !targetId) {
+      alert('Seleccioná workspace origen y destino primero.');
+      return;
+    }
+    if (sourceId === targetId) {
+      alert('El origen y destino son el mismo workspace.');
+      return;
+    }
+    const sourceName = (workspaces.find(w => w.id === sourceId) || {}).name || sourceId;
+    const targetName = (workspaces.find(w => w.id === targetId) || {}).name || targetId;
+    if (!confirm(`Mover TODO el contenido de "${sourceName}" a "${targetName}"?\n\nIncluye entries del depósito, categorías, tareas, proyectos, programaciones y más. Esto es IRREVERSIBLE (los docs quedan etiquetados como workspace destino).`)) return;
+    migrateBtn.disabled = true;
+    migrateBtn.textContent = '⏳ Migrando...';
+    try { await migrateWorkspaceContent(sourceId, targetId, migrateResultEl); }
+    catch (e) { migrateResultEl.innerHTML = '<div style="color:#ff6b6b">Error: ' + e.message + '</div>'; }
+    migrateBtn.disabled = false;
+    migrateBtn.textContent = 'Migrar todo el contenido';
+  });
 }
 
 const _runDiagBtn = document.getElementById('runDiagnosticsBtn');
