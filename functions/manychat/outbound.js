@@ -23,10 +23,23 @@ export async function onRequestPost(context) {
       return jsonResp({ ok: false, error: 'missing apiKey, contactId or text' }, 400);
     }
 
-    // v3.11.86: dentro de la ventana 24h no se necesita message_tag.
-    // Si ManyChat rechaza por estar fuera de ventana, reintentamos con HUMAN_AGENT
-    // (válido para Instagram).
-    const payload = (extraTag) => ({
+    // Helper: formatea el detalle de error de ManyChat para que sea legible
+    // en el mensaje system de la app (concatena status + message + details).
+    const fmtError = (resp) => {
+      if (!resp) return 'sin respuesta';
+      const parts = [];
+      if (resp.message) parts.push(resp.message);
+      if (resp.details) parts.push('details: ' + JSON.stringify(resp.details));
+      if (resp.errors) parts.push('errors: ' + JSON.stringify(resp.errors));
+      if (parts.length === 0) parts.push(JSON.stringify(resp).slice(0, 300));
+      return parts.join(' | ');
+    };
+
+    // ManyChat API: intentamos 3 variantes hasta dar con la que acepta.
+    // Variante 1: sendContent sin tag (correcto dentro de ventana 24h IG).
+    // Variante 2: sendContent con HUMAN_AGENT (fuera de ventana en IG).
+    // Variante 3: sendContent con ACCOUNT_UPDATE (fallback histórico).
+    const buildPayload = (extraTag) => ({
       subscriber_id: contactId,
       data: {
         version: 'v2',
@@ -46,30 +59,32 @@ export async function onRequestPost(context) {
       body: JSON.stringify(body)
     });
 
-    let mcRes = await callMc(payload(null));
-    let json = await mcRes.json().catch(() => ({}));
-
-    // Si ManyChat devuelve error de message_tag/ventana, reintentamos con HUMAN_AGENT
-    const errStr = JSON.stringify(json).toLowerCase();
-    const needsTag = !mcRes.ok || json.status === 'error' ||
-      errStr.includes('message_tag') || errStr.includes('outside') ||
-      errStr.includes('24') || errStr.includes('window');
-    if (needsTag) {
-      const retry = await callMc(payload('HUMAN_AGENT'));
-      const retryJson = await retry.json().catch(() => ({}));
-      if (retry.ok && retryJson.status !== 'error') {
-        return jsonResp({ ok: true, status: retry.status, response: retryJson, retriedWithTag: 'HUMAN_AGENT' }, 200);
+    const attempts = [
+      { tag: null, label: 'sin message_tag' },
+      { tag: 'HUMAN_AGENT', label: 'HUMAN_AGENT' },
+      { tag: 'ACCOUNT_UPDATE', label: 'ACCOUNT_UPDATE' }
+    ];
+    const tried = [];
+    for (const att of attempts) {
+      const mcRes = await callMc(buildPayload(att.tag));
+      const json = await mcRes.json().catch(() => ({}));
+      tried.push({ label: att.label, status: mcRes.status, response: json });
+      if (mcRes.ok && json.status !== 'error') {
+        return jsonResp({ ok: true, status: mcRes.status, response: json, usedTag: att.tag }, 200);
       }
-      return jsonResp({
-        ok: false,
-        status: retry.status,
-        response: retryJson,
-        firstAttempt: { status: mcRes.status, response: json },
-        retriedWithTag: 'HUMAN_AGENT'
-      }, retry.status || 500);
     }
-
-    return jsonResp({ ok: mcRes.ok, status: mcRes.status, response: json }, mcRes.ok ? 200 : 500);
+    // Si todas las variantes fallaron, devolvemos el error de la primera (más informativo)
+    // pero incluimos todos los intentos para diagnóstico completo.
+    const first = tried[0];
+    return jsonResp({
+      ok: false,
+      status: first.status,
+      response: {
+        status: first.response && first.response.status,
+        message: fmtError(first.response)
+      },
+      allAttempts: tried
+    }, 500);
   } catch (e) {
     return jsonResp({ ok: false, error: e.message }, 500);
   }
