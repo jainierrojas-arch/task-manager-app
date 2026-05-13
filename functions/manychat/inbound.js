@@ -106,7 +106,7 @@ export async function onRequestPost(context) {
     const recentMessages = await listLeadMessages(leadId, 12);
 
     // 7) Llamar Groq
-    const sysPrompt = buildSystemPrompt(config, business, handle);
+    const sysPrompt = buildSystemPrompt(config, business, firstName);
     const apiMessages = [
       { role: 'system', content: sysPrompt },
       ...recentMessages.map(m => ({ role: m.fromLead ? 'user' : 'assistant', content: m.text || '' }))
@@ -179,7 +179,7 @@ function jsonResp(data, status = 200) {
   });
 }
 
-function buildSystemPrompt(config, business, handle) {
+function buildSystemPrompt(config, business, firstName) {
   let s = (config && (config.systemPrompt || '').trim()) ||
     `Sos el chatbot de Instagram de ${(business && business.name) || 'el negocio'}. Tu objetivo es calificar leads y agendar llamadas.`;
   if (config && config.knowledgeBase) {
@@ -188,9 +188,13 @@ function buildSystemPrompt(config, business, handle) {
   if (config && config.calendlyLink) {
     s += '\n\nLINK DE CALENDLY PARA AGENDAR: ' + config.calendlyLink;
   }
-  s += '\n\n===== CONTEXTO DEL LEAD =====\n' +
-    `Handle: ${handle}\n\n` +
-    'Respondé en español natural, frases cortas, una pregunta por vez. Sin emojis excesivos. Sin saludar de nuevo si ya hubo intercambio.';
+  s += '\n\n===== INSTRUCCIONES DE ESTILO =====\n' +
+    'Respondé en español natural, frases cortas, una pregunta por vez. Sin emojis excesivos. ' +
+    'Sin saludar de nuevo si ya hubo intercambio. ' +
+    'NUNCA menciones el @username de la persona ni su handle de Instagram en tus respuestas. ' +
+    (firstName
+      ? `Si tenés que llamarla por su nombre, usá "${firstName}" — sin el @.`
+      : 'Si no sabés el nombre, no inventes uno, simplemente no la nombres.');
   return s;
 }
 
