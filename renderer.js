@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.89': {
+    title: '🖐 Arrastrar y soltar tareas personales para reordenar por prioridad',
+    features: [
+      '🎯 <strong>Drag & drop</strong> en Tareas personales: agarrá cualquier tarea pendiente y arrastrala hacia arriba o abajo para reorganizar por prioridad. Las que pongas arriba quedan primero.',
+      '👁 <strong>Indicador visual</strong>: mientras arrastrás ves una línea violeta marcando dónde va a caer la tarea (arriba o abajo de la que está debajo del cursor).',
+      '💾 <strong>El orden se guarda automáticamente</strong> en Firestore — la próxima vez que abrís la app las tareas siguen en el orden que vos definiste.',
+      '🔄 <strong>Sin romper el orden anterior</strong>: las tareas que no movés mantienen su orden por fecha de creación (más recientes arriba). Solo cuando empezás a arrastrar se activa el orden manual.',
+      'ℹ️ <strong>Las tareas completadas</strong> no son arrastrables (siguen yendo al final).'
+    ]
+  },
   '3.11.88': {
     title: '🚨 HOTFIX Windows: "spawn /bin/bash ENOENT" — la app crasheaba al actualizar',
     features: [
@@ -4649,6 +4659,13 @@ function renderPersonalList() {
   const sorted = [...visible].sort((a, b) => {
     if (a.status === 'completed' && b.status !== 'completed') return 1;
     if (b.status === 'completed' && a.status !== 'completed') return -1;
+    // v3.11.89: respetar sortOrder manual (drag&drop) — sortOrder más bajo va arriba.
+    // Si no tiene sortOrder, fallback a createdAt desc (más recientes arriba como antes).
+    const aHas = typeof a.sortOrder === 'number';
+    const bHas = typeof b.sortOrder === 'number';
+    if (aHas && bHas) return a.sortOrder - b.sortOrder;
+    if (aHas) return -1;
+    if (bHas) return 1;
     const at = a.createdAt?.seconds || 0;
     const bt = b.createdAt?.seconds || 0;
     return bt - at;
@@ -4701,8 +4718,10 @@ function renderPersonalList() {
     const editBtn = !completed
       ? `<button class="task-delete" onclick="editPersonalTask('${task.id}')" title="Editar" style="color:var(--accent)">&#9998;</button>`
       : '';
+    // v3.11.89: data-task-id + draggable=true para reordenar por prioridad
+    const draggable = !completed ? 'draggable="true"' : '';
     html += `
-      <div class="task-item ${completed ? 'completed' : ''}" style="border-left-color:${color}">
+      <div class="task-item ${completed ? 'completed' : ''}" data-task-id="${task.id}" ${draggable} style="border-left-color:${color}">
         <div class="${checkClass}" ${onClick} title="${completed ? 'Completada' : 'Marcar como terminada'}"></div>
         <div style="flex:1">
           <div class="task-text">${esc(task.text)}</div>
@@ -4720,6 +4739,101 @@ function renderPersonalList() {
       </div>`;
   });
   el.personalList.innerHTML = html;
+  setupPersonalDragDrop();
+}
+
+// v3.11.89: drag & drop nativo HTML5 para reordenar tareas personales por prioridad.
+// Usa fractional indexing (un solo write a Firestore por reordenamiento).
+let _personalDragDropWired = false;
+function setupPersonalDragDrop() {
+  if (_personalDragDropWired || !el.personalList) return;
+  _personalDragDropWired = true;
+
+  let draggedId = null;
+
+  el.personalList.addEventListener('dragstart', (e) => {
+    const item = e.target.closest('.task-item[data-task-id][draggable="true"]');
+    if (!item) return;
+    draggedId = item.dataset.taskId;
+    item.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    // Necesario para Firefox
+    try { e.dataTransfer.setData('text/plain', draggedId); } catch (_) {}
+  });
+
+  el.personalList.addEventListener('dragend', () => {
+    el.personalList.querySelectorAll('.task-item').forEach(it => {
+      it.classList.remove('dragging', 'drop-before', 'drop-after');
+    });
+    draggedId = null;
+  });
+
+  el.personalList.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    if (!draggedId) return;
+    const target = e.target.closest('.task-item[data-task-id]');
+    el.personalList.querySelectorAll('.task-item.drop-before, .task-item.drop-after')
+      .forEach(it => it.classList.remove('drop-before', 'drop-after'));
+    if (!target || target.dataset.taskId === draggedId) return;
+    const rect = target.getBoundingClientRect();
+    const isAbove = (e.clientY - rect.top) < rect.height / 2;
+    target.classList.add(isAbove ? 'drop-before' : 'drop-after');
+  });
+
+  el.personalList.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    const target = e.target.closest('.task-item[data-task-id]');
+    if (!target || !draggedId || target.dataset.taskId === draggedId) return;
+    const targetId = target.dataset.taskId;
+    const rect = target.getBoundingClientRect();
+    const isAbove = (e.clientY - rect.top) < rect.height / 2;
+    const tmp = draggedId;
+    draggedId = null;
+    await reorderPersonalTask(tmp, targetId, isAbove ? 'before' : 'after');
+  });
+}
+
+function _effectiveSortOrder(task) {
+  if (typeof task.sortOrder === 'number') return task.sortOrder;
+  // Fallback: tareas viejas sin sortOrder se ordenan por createdAt desc
+  // (más recientes arriba = sortOrder negativo grande).
+  const sec = task.createdAt?.seconds || 0;
+  return -sec * 1000;
+}
+
+async function reorderPersonalTask(draggedId, targetId, position) {
+  // Tomamos la lista visible ordenada actual (misma lógica que renderPersonalList)
+  const visible = personalTasks
+    .filter(t => personalProjectOf(t) === currentPersonalProject && t.status !== 'completed')
+    .sort((a, b) => _effectiveSortOrder(a) - _effectiveSortOrder(b));
+
+  const targetIdx = visible.findIndex(t => t.id === targetId);
+  if (targetIdx === -1) return;
+
+  const targetOrder = _effectiveSortOrder(visible[targetIdx]);
+  let newOrder;
+
+  if (position === 'before') {
+    const prev = visible.slice(0, targetIdx).filter(t => t.id !== draggedId).pop();
+    if (prev) {
+      newOrder = (_effectiveSortOrder(prev) + targetOrder) / 2;
+    } else {
+      newOrder = targetOrder - 1000;
+    }
+  } else {
+    const next = visible.slice(targetIdx + 1).find(t => t.id !== draggedId);
+    if (next) {
+      newOrder = (targetOrder + _effectiveSortOrder(next)) / 2;
+    } else {
+      newOrder = targetOrder + 1000;
+    }
+  }
+
+  try {
+    await db.collection('personalTasks').doc(draggedId).update({ sortOrder: newOrder });
+  } catch (e) {
+    console.error('[reorderPersonalTask] failed:', e);
+  }
 }
 
 async function addPersonalTask() {

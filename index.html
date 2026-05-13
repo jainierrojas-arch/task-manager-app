@@ -1228,6 +1228,19 @@
     .btn-timer-reset:hover { transform: rotate(-90deg); color: #4ecdc4; }
     .task-item:hover { background: var(--bg-hover); }
 
+    /* v3.11.89: drag & drop para reordenar tareas personales por prioridad */
+    .task-item[draggable="true"] { cursor: grab; }
+    .task-item.dragging {
+      opacity: 0.4;
+      cursor: grabbing;
+    }
+    .task-item.drop-before {
+      box-shadow: 0 -3px 0 0 var(--accent);
+    }
+    .task-item.drop-after {
+      box-shadow: 0 3px 0 0 var(--accent);
+    }
+
     @keyframes slideIn {
       from { opacity: 0; transform: translateY(-8px); }
       to { opacity: 1; transform: translateY(0); }
