@@ -2436,15 +2436,46 @@ async function transcribeEntry(entryId, btn) {
         throw new Error(providerLabel + ' API: ' + errMsg);
       }
       transcript = (ipcRes.text || '').trim();
+      // v3.11.90: si el idioma detectado por Whisper NO es español, traducimos
+      // automáticamente con Groq Llama. El campo language viene en ipcRes.language.
+      const detectedLang = (ipcRes.language || '').toLowerCase();
+      const isSpanish = !detectedLang || detectedLang === 'es' || detectedLang === 'spanish' || detectedLang === 'castellano';
+      var translationMeta = null;
+      if (!isSpanish && transcript) {
+        _setTranscriptionStatus('🌍 Idioma detectado: ' + detectedLang + ' — traduciendo al español...');
+        try {
+          const trRes = await window.api.translateToSpanish({
+            apiKey,
+            text: transcript,
+            sourceLanguage: detectedLang
+          });
+          if (trRes && trRes.ok && trRes.text) {
+            translationMeta = { sourceLanguage: detectedLang, originalText: transcript };
+            transcript = trRes.text.trim();
+          } else {
+            console.warn('[transcribe] traducción falló, dejando texto original:', trRes && trRes.error);
+          }
+        } catch (e) {
+          console.warn('[transcribe] error traduciendo:', e);
+        }
+      }
     } else {
       throw new Error('callTranscriptionApi no expuesto. Cerrá y reabrí la app (Quit completo) para que cargue el preload nuevo.');
     }
     if (!transcript) throw new Error('Transcripción vacía. ¿El video tiene audio?');
-    await db.collection('depositEntries').doc(entryId).update({
+    const updateData = {
       transcription: transcript,
       transcribedAt: firebase.firestore.FieldValue.serverTimestamp()
-    });
-    _setTranscriptionStatus('✓ Transcripción lista', 'success');
+    };
+    if (typeof translationMeta !== 'undefined' && translationMeta) {
+      updateData.transcriptionSourceLanguage = translationMeta.sourceLanguage;
+      updateData.transcriptionOriginal = translationMeta.originalText;
+    }
+    await db.collection('depositEntries').doc(entryId).update(updateData);
+    const statusMsg = (typeof translationMeta !== 'undefined' && translationMeta)
+      ? '✓ Transcripción lista (traducido desde ' + translationMeta.sourceLanguage + ')'
+      : '✓ Transcripción lista';
+    _setTranscriptionStatus(statusMsg, 'success');
     setTimeout(() => _renderTranscriptionModalContent(entryId), 200);
   } catch (e) {
     _setTranscriptionStatus('❌ Error: ' + e.message, 'error');

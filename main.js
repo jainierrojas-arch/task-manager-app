@@ -889,7 +889,9 @@ function registerIpcHandlers() {
       parts.push(Buffer.from('\r\n'));
     }
     pushTextField('model', modelName);
-    pushTextField('language', 'es');
+    // v3.11.90: NO forzar language — Whisper auto-detecta. Si el video está en
+    // otro idioma, el renderer lo traduce con Groq Llama después.
+    pushTextField('response_format', 'verbose_json');
     pushFileField('file', filename || 'audio.mp4', mimeType || 'audio/mpeg', audioBuf);
     parts.push(Buffer.from('--' + boundary + '--\r\n'));
     const body = Buffer.concat(parts);
@@ -915,7 +917,8 @@ function registerIpcHandlers() {
           try {
             const data = JSON.parse(txt || '{}');
             if (res.statusCode >= 200 && res.statusCode < 300) {
-              resolve({ ok: true, text: (data.text || '').trim() });
+              // v3.11.90: devolvemos también el idioma detectado por Whisper
+              resolve({ ok: true, text: (data.text || '').trim(), language: data.language || null });
             } else {
               const errMsg = (data.error && data.error.message) || ('HTTP ' + res.statusCode);
               resolve({ ok: false, status: res.statusCode, error: errMsg.slice(0, 500) });
@@ -927,6 +930,76 @@ function registerIpcHandlers() {
       });
       req.on('timeout', () => { try { req.destroy(); } catch (_) {} resolve({ ok: false, error: 'Timeout 150s — la red está bloqueando o el provider está lento' }); });
       req.on('error', (e) => { resolve({ ok: false, error: 'Error de red: ' + e.message + ' (' + (e.code || '?') + ')' }); });
+      req.write(body);
+      req.end();
+    });
+  });
+
+  // v3.11.90: traducir un texto a español usando Groq Llama (la misma API key
+  // que ya usa la app para transcripción). Se llama después de Whisper cuando
+  // el idioma detectado NO es español.
+  ipcMain.handle('translate-to-spanish', async (_, { apiKey, text, sourceLanguage }) => {
+    if (!apiKey || !text) return { ok: false, error: 'apiKey o text vacío' };
+    // Solo Groq tiene Llama 3.3 gratis. Si la key es de OpenAI, usamos GPT-4o-mini.
+    const isGroq = String(apiKey).startsWith('gsk_');
+    const endpoint = isGroq
+      ? 'https://api.groq.com/openai/v1/chat/completions'
+      : 'https://api.openai.com/v1/chat/completions';
+    const model = isGroq ? 'llama-3.3-70b-versatile' : 'gpt-4o-mini';
+    const httpsLib = require('https');
+    const url = require('url');
+
+    const sourceLabel = sourceLanguage ? ` (idioma original: ${sourceLanguage})` : '';
+    const body = JSON.stringify({
+      model,
+      messages: [
+        {
+          role: 'system',
+          content: 'Sos un traductor profesional. Traducí el texto que te envía el usuario al español neutro, manteniendo el estilo conversacional. No agregues prefijos, comentarios, ni explicaciones — devolvé SOLO la traducción.'
+        },
+        {
+          role: 'user',
+          content: `Traducí esto al español${sourceLabel}:\n\n${text}`
+        }
+      ],
+      temperature: 0.3,
+      max_tokens: 2000
+    });
+    const parsed = url.parse(endpoint);
+    return await new Promise((resolve) => {
+      const req = httpsLib.request({
+        method: 'POST',
+        hostname: parsed.hostname,
+        port: 443,
+        path: parsed.path,
+        headers: {
+          'Authorization': 'Bearer ' + apiKey,
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body)
+        },
+        timeout: 60000,
+        lookup: dohLookup
+      }, (res) => {
+        let chunks = [];
+        res.on('data', (d) => chunks.push(d));
+        res.on('end', () => {
+          const txt = Buffer.concat(chunks).toString('utf-8');
+          try {
+            const data = JSON.parse(txt || '{}');
+            if (res.statusCode >= 200 && res.statusCode < 300) {
+              const out = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
+              resolve({ ok: true, text: out.trim() });
+            } else {
+              const errMsg = (data.error && data.error.message) || ('HTTP ' + res.statusCode);
+              resolve({ ok: false, error: errMsg.slice(0, 500) });
+            }
+          } catch (e) {
+            resolve({ ok: false, error: 'Respuesta inválida: ' + txt.slice(0, 200) });
+          }
+        });
+      });
+      req.on('timeout', () => { try { req.destroy(); } catch (_) {} resolve({ ok: false, error: 'Timeout 60s traduciendo' }); });
+      req.on('error', (e) => { resolve({ ok: false, error: 'Error de red traduciendo: ' + e.message }); });
       req.write(body);
       req.end();
     });

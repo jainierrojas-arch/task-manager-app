@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld('api', {
   // v3.11.46: yt-dlp + transcription también disponibles desde la ventana separada
   extractAudioViaYtDlp: (url) => ipcRenderer.invoke('extract-audio-via-ytdlp', url),
   callTranscriptionApi: (payload) => ipcRenderer.invoke('call-transcription-api', payload),
+  // v3.11.90: traducir transcripción a español si idioma original ≠ es
+  translateToSpanish: (payload) => ipcRenderer.invoke('translate-to-spanish', payload),
   // v3.11.61: captura del gimbal BT remote pareado a la Mac (VolumeUp/Down → toggle)
   registerGimbalShortcuts: () => ipcRenderer.invoke('register-gimbal-shortcuts'),
   unregisterGimbalShortcuts: () => ipcRenderer.invoke('unregister-gimbal-shortcuts'),

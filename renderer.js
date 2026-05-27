@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.90': {
+    title: '🌍 Transcribir multi-idioma — videos en inglés/portugués/cualquier idioma → siempre en español',
+    features: [
+      '🎙 <strong>Whisper auto-detecta el idioma del video</strong>: antes la app forzaba <code>language: es</code>, lo que hacía que un video en inglés se transcribiera con texto raro. Ahora Whisper detecta solo y devuelve la transcripción real del idioma original.',
+      '🌎 <strong>Auto-traducción al español</strong>: si el video NO está en español, automáticamente se manda el texto a Groq Llama 3.3 70B para traducir al español neutro. Tarda 1-2 segundos extra.',
+      '🏷 <strong>Status visible mientras traduce</strong>: vas a ver "🌍 Idioma detectado: en — traduciendo al español..." en lugar de quedarte sin saber qué pasa.',
+      '💾 <strong>Se guarda el texto original también</strong>: el transcript en español queda en <code>transcription</code> (lo que usás para generar guiones), y el original queda en <code>transcriptionOriginal</code> + el idioma en <code>transcriptionSourceLanguage</code> por si querés referencia.',
+      '🎁 <strong>Costo</strong>: cero, todo corre con la misma key de Groq que ya tenés configurada. Llama 3.3 70B es gratis con tier generoso.'
+    ]
+  },
   '3.11.89': {
     title: '🖐 Arrastrar y soltar tareas personales para reordenar por prioridad',
     features: [

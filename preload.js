@@ -68,6 +68,8 @@ contextBridge.exposeInMainWorld('api', {
   extractAudioViaYtDlp: (url) => ipcRenderer.invoke('extract-audio-via-ytdlp', url),
   // v3.11.46: llamada a Whisper/Groq desde Node (más confiable en Windows con firewalls corporativos)
   callTranscriptionApi: (payload) => ipcRenderer.invoke('call-transcription-api', payload),
+  // v3.11.90: traducir texto a español con Groq Llama (usado tras transcripción multi-idioma)
+  translateToSpanish: (payload) => ipcRenderer.invoke('translate-to-spanish', payload),
   // v3.11.51: conexión a Instagram desde Settings (admin) → comparte cookies con todo el workspace
   connectInstagram: () => ipcRenderer.invoke('connect-instagram'),
   saveInstagramCookies: (cookies) => ipcRenderer.invoke('save-instagram-cookies', cookies),
