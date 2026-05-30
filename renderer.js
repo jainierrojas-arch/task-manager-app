@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.93': {
+    title: '🩹 Refactor "Eliminar usuario" — un solo confirm, sin prompt confuso',
+    features: [
+      '🚮 <strong>Adios al prompt "ELIMINAR"</strong>: era confuso y la gente cancelaba sin querer. Ahora es un solo confirm con OK / Cancelar.',
+      '🪵 <strong>Logging completo en consola</strong>: cada paso del eliminado se loguea. Si algo falla, abriendo View → Toggle Developer Tools ves exactamente qué paso falló y por qué.',
+      '🗑 <strong>Flow</strong>: click 🗑 → confirm "ELIMINAR a X?" → OK → status=rejected + sacado de workspaces + alert "✓ Usuario eliminado". Listo.'
+    ]
+  },
   '3.11.92': {
     title: '🩹 Fix Eliminar usuario — ahora acepta "eliminar" en cualquier capitalización',
     features: [
@@ -5887,14 +5895,15 @@ window.rejectUser = async function(uid) {
   } catch (e) { alert('Error: ' + e.message); }
 };
 
-// v3.11.91: eliminar usuario de la app por completo.
-// - Marca status='rejected' (la próxima vez que abra la app ve "Acceso rechazado").
-// - Lo quita de todos los workspaces donde estaba como miembro.
-// - Borra la sesión activa (si está logueado, va a perder acceso al recargar/reabrir).
-// - La data histórica (tareas, leads creados por él) queda intacta para no romper el historial.
+// v3.11.93: eliminar usuario de la app por completo. Refactor:
+// - Sin prompt "escribir ELIMINAR" (que generaba confusión).
+// - Un solo confirm. Si confirmás, eliminación inmediata.
+// - Logging completo en console para diagnóstico si algo falla.
 window.deleteTeamMember = async function(uid, displayName) {
+  console.log('[deleteTeamMember] click — uid:', uid, 'name:', displayName);
   if (!currentUserData || currentUserData.role !== 'admin') {
     alert('Solo admins pueden eliminar usuarios.');
+    console.warn('[deleteTeamMember] aborted: not admin');
     return;
   }
   if (uid === currentUser.uid) {
@@ -5902,34 +5911,27 @@ window.deleteTeamMember = async function(uid, displayName) {
     return;
   }
   const label = displayName || 'este usuario';
-  const ok1 = confirm(
-    '¿Eliminar a ' + label + ' definitivamente?\n\n' +
+  const ok = confirm(
+    'ELIMINAR a ' + label + '?\n\n' +
     '• Pierde el acceso a la app inmediatamente.\n' +
     '• Lo saco de todos los workspaces.\n' +
     '• Sus tareas y data histórica quedan intactas.\n\n' +
-    'Esto NO se puede deshacer fácil. ¿Seguro?'
+    'OK = eliminar | Cancelar = no hacer nada'
   );
-  if (!ok1) return;
-  const typed = prompt('Escribí "eliminar" para confirmar (mayúsculas no importan):');
-  // v3.11.92: case-insensitive — acepta ELIMINAR, eliminar, Eliminar, etc.
-  const normalized = (typed || '').trim().toLowerCase();
-  if (normalized !== 'eliminar') {
-    alert(typed
-      ? 'No coincidía con "eliminar" (escribiste: "' + typed + '") — cancelado, no se eliminó nada.'
-      : 'Cancelado, no se eliminó nada.');
-    return;
-  }
+  console.log('[deleteTeamMember] confirm result:', ok);
+  if (!ok) return;
 
   try {
-    // 1) Marcar el doc del usuario como rejected (bloquea login al recargar).
+    console.log('[deleteTeamMember] step 1: updating user doc to rejected...');
     await db.collection('users').doc(uid).update({
       status: 'rejected',
       rejectedAt: firebase.firestore.FieldValue.serverTimestamp(),
       rejectedBy: currentUser.uid,
       deletedFromTeam: true
     });
+    console.log('[deleteTeamMember] step 1 OK: user doc rejected');
 
-    // 2) Quitarlo de todos los workspaces donde está como miembro.
+    console.log('[deleteTeamMember] step 2: scanning workspaces...');
     const wsSnap = await db.collection('workspaces').get();
     const batch = db.batch();
     let workspacesChanged = 0;
@@ -5940,16 +5942,25 @@ window.deleteTeamMember = async function(uid, displayName) {
         const newMembers = members.filter(id => id !== uid);
         batch.update(doc.ref, { members: newMembers });
         workspacesChanged++;
+        console.log('[deleteTeamMember] removing from workspace:', doc.id);
       }
     });
-    if (workspacesChanged > 0) await batch.commit();
+    if (workspacesChanged > 0) {
+      await batch.commit();
+      console.log('[deleteTeamMember] step 2 OK:', workspacesChanged, 'workspaces updated');
+    } else {
+      console.log('[deleteTeamMember] step 2: user was not member of any workspace');
+    }
 
     alert('✓ Usuario eliminado.\n\n' +
-      '• Acceso bloqueado.\n' +
+      '• Acceso bloqueado (status = rejected).\n' +
       '• Sacado de ' + workspacesChanged + ' workspace(s).\n\n' +
-      'Si está logueado en este momento en otra máquina, va a perder acceso al recargar la app.');
+      'Si está logueado en este momento, va a perder acceso al instante.');
+    console.log('[deleteTeamMember] DONE');
   } catch (e) {
-    alert('Error eliminando: ' + e.message);
+    console.error('[deleteTeamMember] ERROR:', e);
+    alert('Error eliminando: ' + (e.message || e) + '\n\n' +
+      'Abrí View → Toggle Developer Tools y mirá la consola para el detalle del error.');
   }
 };
 
