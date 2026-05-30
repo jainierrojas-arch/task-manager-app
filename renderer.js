@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.92': {
+    title: '🩹 Fix Eliminar usuario — ahora acepta "eliminar" en cualquier capitalización',
+    features: [
+      '🐛 <strong>Bug en 3.11.91</strong>: el prompt pedía escribir "ELIMINAR" en mayúsculas exactas. Si escribías "eliminar" o "Eliminar", el script cancelaba silenciosamente sin avisar claro.',
+      '✅ <strong>Fix</strong>: ahora acepta cualquier capitalización (eliminar, ELIMINAR, Eliminar, etc.). Y si escribís algo distinto, el alert te dice EXACTAMENTE qué escribiste para que sepas que cancelaste por error de tipeo.',
+      '💡 <strong>Lección</strong>: si en 3.11.91 te apareció el alert "Cancelado" en lugar de "✓ Usuario eliminado", esa fue la causa.'
+    ]
+  },
   '3.11.91': {
     title: '🗑 Botón "Eliminar usuario" en la lista del Equipo (admin)',
     features: [
@@ -5902,9 +5910,13 @@ window.deleteTeamMember = async function(uid, displayName) {
     'Esto NO se puede deshacer fácil. ¿Seguro?'
   );
   if (!ok1) return;
-  const typed = prompt('Escribí ELIMINAR (en mayúsculas) para confirmar:');
-  if (typed !== 'ELIMINAR') {
-    alert('Cancelado.');
+  const typed = prompt('Escribí "eliminar" para confirmar (mayúsculas no importan):');
+  // v3.11.92: case-insensitive — acepta ELIMINAR, eliminar, Eliminar, etc.
+  const normalized = (typed || '').trim().toLowerCase();
+  if (normalized !== 'eliminar') {
+    alert(typed
+      ? 'No coincidía con "eliminar" (escribiste: "' + typed + '") — cancelado, no se eliminó nada.'
+      : 'Cancelado, no se eliminó nada.');
     return;
   }
 
