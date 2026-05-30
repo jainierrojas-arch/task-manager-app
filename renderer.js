@@ -75,6 +75,17 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.91': {
+    title: '🗑 Botón "Eliminar usuario" en la lista del Equipo (admin)',
+    features: [
+      '🚪 <strong>Nuevo botón "🗑 Eliminar"</strong> al lado de cada miembro del equipo. Solo visible para admins. NO aparece para vos mismo ni para otros admins (anti-lockout).',
+      '✅ <strong>Doble confirmación</strong>: primero un confirm normal y después tenés que escribir "ELIMINAR" para evitar clicks accidentales.',
+      '⚡ <strong>Acceso bloqueado inmediato</strong>: si el usuario eliminado está logueado en ese momento en otra máquina, ve la pantalla "Acceso rechazado" al instante (listener real-time) y se le hace logout automático en 3 seg.',
+      '🏢 <strong>Lo saca de todos los workspaces</strong> donde estaba como miembro, en una sola operación atómica.',
+      '🛡 <strong>Data histórica intacta</strong>: las tareas, leads, posts que el usuario eliminado creó NO se borran — quedan con su nombre como ownerName para no romper el historial.',
+      '🔁 <strong>Reversible si te equivocaste</strong>: en Firebase Console podés cambiar manualmente <code>status: rejected</code> de vuelta a <code>active</code> y readmitir al usuario (tendrías que re-agregarlo a los workspaces).'
+    ]
+  },
   '3.11.90': {
     title: '🌍 Transcribir multi-idioma — videos en inglés/portugués/cualquier idioma → siempre en español',
     features: [
@@ -2185,12 +2196,37 @@ auth.onAuthStateChanged(async (user) => {
     } else {
       showApp(); // status desconocido → asumimos OK
     }
+
+    // v3.11.91: listener real-time sobre el doc del usuario actual.
+    // Si un admin lo elimina/rechaza mientras está logueado, perdemos acceso
+    // inmediatamente (no hace falta esperar al próximo reload).
+    if (_currentUserDocUnsub) { try { _currentUserDocUnsub(); } catch (_) {} }
+    _currentUserDocUnsub = db.collection('users').doc(user.uid).onSnapshot((snap) => {
+      if (!snap.exists) {
+        // El doc fue borrado físicamente — kick out
+        auth.signOut().catch(() => {});
+        return;
+      }
+      const fresh = snap.data() || {};
+      const wasActive = currentUserData && (currentUserData.status === 'active' || !currentUserData.status);
+      const isNowRejected = fresh.status === 'rejected';
+      if (wasActive && isNowRejected) {
+        // Admin lo eliminó: mostrar pantalla de bloqueo y forzar logout.
+        currentUserData.status = 'rejected';
+        try { showRejectedScreen(); } catch (_) {}
+        setTimeout(() => { auth.signOut().catch(() => {}); }, 3000);
+      }
+    }, (err) => console.warn('[currentUserDoc listener] error', err));
   } else {
     currentUser = null;
     currentUserData = null;
+    if (_currentUserDocUnsub) { try { _currentUserDocUnsub(); } catch (_) {} _currentUserDocUnsub = null; }
     showLogin();
   }
 });
+
+// v3.11.91: holder del listener del propio user doc (para limpiar al logout)
+let _currentUserDocUnsub = null;
 
 function showApp() {
   el.loginScreen.classList.add('hidden');
@@ -5772,9 +5808,16 @@ function renderTeam() {
       : '<span style="color:#ff9090" title="Este miembro no recibira notificaciones hasta vincular. Pidele que envie /vincular ' + esc(m.email) + ' al bot">✗ Sin Telegram</span>';
 
     const roleLabel = m.role === 'admin' ? 'Admin' : 'Miembro';
-    const canChangeRole = currentUserData && currentUserData.role === 'admin' && m.id !== currentUser.uid;
+    const isAdminViewer = currentUserData && currentUserData.role === 'admin';
+    const canChangeRole = isAdminViewer && m.id !== currentUser.uid;
     const roleBtn = canChangeRole
       ? `<button class="btn btn-small btn-ghost" onclick="toggleRole('${m.id}', '${m.role}')" style="font-size:10px">${m.role === 'admin' ? 'Quitar admin' : 'Hacer admin'}</button>`
+      : '';
+    // v3.11.91: botón eliminar usuario — solo admin, NO para sí mismo, NO para
+    // otros admins (para evitar lockouts accidentales).
+    const canDelete = isAdminViewer && m.id !== currentUser.uid && m.role !== 'admin';
+    const deleteBtn = canDelete
+      ? `<button class="btn btn-small btn-danger" onclick="deleteTeamMember('${m.id}', '${esc(m.name || m.email || '')}')" style="font-size:10px;margin-left:4px" title="Eliminar usuario de la app">🗑 Eliminar</button>`
       : '';
 
     html += `
@@ -5783,7 +5826,7 @@ function renderTeam() {
         <div class="team-info">
           <div class="team-name">${esc(m.name)} ${m.id === currentUser.uid ? '(tu)' : ''} <span style="font-size:10px;color:${m.role === 'admin' ? 'var(--success)' : 'var(--text-secondary)'}">[${roleLabel}]</span></div>
           <div class="team-email">${esc(m.email)} · ${linkedHtml}</div>
-          <div class="team-tasks">${pending} pendientes - ${waiting} por aprobar - ${done} completadas ${roleBtn}</div>
+          <div class="team-tasks">${pending} pendientes - ${waiting} por aprobar - ${done} completadas ${roleBtn}${deleteBtn}</div>
         </div>
       </div>`;
   });
@@ -5834,6 +5877,68 @@ window.rejectUser = async function(uid) {
       rejectedBy: currentUser.uid
     });
   } catch (e) { alert('Error: ' + e.message); }
+};
+
+// v3.11.91: eliminar usuario de la app por completo.
+// - Marca status='rejected' (la próxima vez que abra la app ve "Acceso rechazado").
+// - Lo quita de todos los workspaces donde estaba como miembro.
+// - Borra la sesión activa (si está logueado, va a perder acceso al recargar/reabrir).
+// - La data histórica (tareas, leads creados por él) queda intacta para no romper el historial.
+window.deleteTeamMember = async function(uid, displayName) {
+  if (!currentUserData || currentUserData.role !== 'admin') {
+    alert('Solo admins pueden eliminar usuarios.');
+    return;
+  }
+  if (uid === currentUser.uid) {
+    alert('No te podés eliminar a vos mismo.');
+    return;
+  }
+  const label = displayName || 'este usuario';
+  const ok1 = confirm(
+    '¿Eliminar a ' + label + ' definitivamente?\n\n' +
+    '• Pierde el acceso a la app inmediatamente.\n' +
+    '• Lo saco de todos los workspaces.\n' +
+    '• Sus tareas y data histórica quedan intactas.\n\n' +
+    'Esto NO se puede deshacer fácil. ¿Seguro?'
+  );
+  if (!ok1) return;
+  const typed = prompt('Escribí ELIMINAR (en mayúsculas) para confirmar:');
+  if (typed !== 'ELIMINAR') {
+    alert('Cancelado.');
+    return;
+  }
+
+  try {
+    // 1) Marcar el doc del usuario como rejected (bloquea login al recargar).
+    await db.collection('users').doc(uid).update({
+      status: 'rejected',
+      rejectedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      rejectedBy: currentUser.uid,
+      deletedFromTeam: true
+    });
+
+    // 2) Quitarlo de todos los workspaces donde está como miembro.
+    const wsSnap = await db.collection('workspaces').get();
+    const batch = db.batch();
+    let workspacesChanged = 0;
+    wsSnap.docs.forEach(doc => {
+      const data = doc.data() || {};
+      const members = Array.isArray(data.members) ? data.members : [];
+      if (members.includes(uid)) {
+        const newMembers = members.filter(id => id !== uid);
+        batch.update(doc.ref, { members: newMembers });
+        workspacesChanged++;
+      }
+    });
+    if (workspacesChanged > 0) await batch.commit();
+
+    alert('✓ Usuario eliminado.\n\n' +
+      '• Acceso bloqueado.\n' +
+      '• Sacado de ' + workspacesChanged + ' workspace(s).\n\n' +
+      'Si está logueado en este momento en otra máquina, va a perder acceso al recargar la app.');
+  } catch (e) {
+    alert('Error eliminando: ' + e.message);
+  }
 };
 
 function renderInviteCodes() {
