@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.94': {
+    title: '🖼 Fix portadas de videos negras en Depósito y Referencias',
+    features: [
+      '🩹 <strong>Bug</strong>: las portadas de videos de Cloudinary salían negras porque la transformación usaba <code>so_auto</code> (smart object detection, feature paga) y <code>so_0</code> (frame 0). En cuentas free, ambas caían al primer frame del video — que en intros oscuras sale negro.',
+      '✅ <strong>Fix</strong>: cambiado a <code>so_3</code> (frame del segundo 3). Funciona en cualquier plan de Cloudinary y casi siempre tiene contenido visible. Si el video dura menos de 3s, Cloudinary cae al último frame automáticamente.',
+      '🔄 <strong>Auto-migración de portadas existentes</strong>: al abrir la app, las entries que tenían portada con <code>so_auto</code> se limpian para que se re-generen con la nueva URL. No tenés que hacer nada — abrí Depósito y al ratito se actualizan solas.',
+      '⚠ <strong>Tareas linkeadas a entries</strong>: la migración propaga la portada nueva también a las tareas con <code>depositEntryId</code>, así Referencias también se ve bien.'
+    ]
+  },
   '3.11.93': {
     title: '🩹 Refactor "Eliminar usuario" — un solo confirm, sin prompt confuso',
     features: [
@@ -2312,13 +2321,14 @@ function isVideoUrl(url) {
   if (/\.(mp4|mov|webm|m4v)(\?.*)?$/i.test(url)) return true;
   return false;
 }
-// Para Cloudinary videos: transforma la URL para obtener el primer frame
-// como jpg (asi se puede usar como background-image normal).
-// Ej: .../video/upload/v123/file.mp4 -> .../video/upload/so_0,w_600/v123/file.jpg
+// Para Cloudinary videos: transforma la URL para obtener un frame del video como jpg.
+// v3.11.94: usamos so_3 (frame del segundo 3) en lugar de so_0 (frame inicial).
+// El frame 0 suele ser negro en videos con intro oscura — so_3 siempre tiene contenido
+// y si el video dura <3s, Cloudinary cae al último frame automáticamente.
 function cloudinaryVideoThumb(url) {
   if (!/\/video\/upload\//.test(url)) return null;
   return url
-    .replace(/\/video\/upload\//, '/video/upload/so_0,w_600/')
+    .replace(/\/video\/upload\//, '/video/upload/so_3,w_600/')
     .replace(/\.(mp4|mov|webm|m4v)(\?.*)?$/i, '.jpg');
 }
 // Devuelve una URL apta para usar como background-image. Si es video no-Cloudinary,

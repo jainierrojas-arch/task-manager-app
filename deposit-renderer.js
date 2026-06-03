@@ -921,14 +921,25 @@ function renderEntries() {
   });
 }
 
-// Cloudinary video → URL de thumbnail (.jpg del primer frame). Cloudinary lo
-// genera al vuelo, sin que tengamos que subirlo. Devuelve null si no es video.
+// Cloudinary video → URL de thumbnail (.jpg). Cloudinary genera la imagen al vuelo.
+// v3.11.94: usábamos so_auto (smart object detection) pero requiere feature paga.
+// En plans gratis fallaba y caía al frame 0 (negro en muchos videos con intro oscura).
+// Cambiado a so_3 (frame del segundo 3) que funciona en cualquier plan y suele tener
+// contenido visible. Si el video dura <3s, Cloudinary cae al último frame automáticamente.
 function cloudinaryVideoThumb(url) {
   if (!url || !/\/video\/upload\//.test(url)) return null;
   if (!/res\.cloudinary\.com/i.test(url)) return null;
   return url
-    .replace(/\/video\/upload\//, '/video/upload/so_auto,w_600/')
+    .replace(/\/video\/upload\//, '/video/upload/so_3,w_600/')
     .replace(/\.(mp4|mov|webm|m4v)(\?.*)?$/i, '.jpg');
+}
+
+// v3.11.94: detecta si una URL es un thumbnail viejo de Cloudinary con so_auto
+// (que sale negro en cuentas free). Esto se usa para invalidar covers viejos y
+// forzar re-generación con la nueva URL so_3.
+function isOldCloudinaryThumb(url) {
+  if (!url || typeof url !== 'string') return false;
+  return /res\.cloudinary\.com/.test(url) && /\/video\/upload\/[^/]*so_auto/.test(url);
 }
 
 // Helpers para servicios conocidos cuando no hay og:image
@@ -1327,24 +1338,28 @@ function looksLikeBrokenIgCover(entry) {
 async function migrateCovers(visibleEntries) {
   for (const entry of visibleEntries) {
     if (coverMigratedThisSession.has(entry.id)) continue;
-    if (entry.coverFetcherV >= 6) continue;
+    // v3.11.94: bumped a 7 para incluir migración de Cloudinary so_auto → so_3.
+    if (entry.coverFetcherV >= 7) continue;
     coverMigratedThisSession.add(entry.id);
 
     const isInstagramLink = (entry.links || []).some(l => /instagram\.com\//.test(l.url || ''));
     const isBroken = looksLikeBrokenIgCover(entry);
+    // v3.11.94: thumbnails viejos de Cloudinary con so_auto salen negros en
+    // cuentas free. Los limpiamos para que se re-generen con so_3.
+    const isOldCloudinaryCover = isOldCloudinaryThumb(entry.coverImage || '');
 
-    if (isInstagramLink && isBroken) {
+    if ((isInstagramLink && isBroken) || isOldCloudinaryCover) {
       try {
         await db.collection('depositEntries').doc(entry.id).update({
           coverImage: firebase.firestore.FieldValue.delete(),
           coverWidth: firebase.firestore.FieldValue.delete(),
           coverHeight: firebase.firestore.FieldValue.delete(),
-          coverFetcherV: 6
+          coverFetcherV: 7
         });
       } catch (_) {}
       await new Promise(r => setTimeout(r, 150));
     } else {
-      try { await db.collection('depositEntries').doc(entry.id).update({ coverFetcherV: 6 }); } catch (_) {}
+      try { await db.collection('depositEntries').doc(entry.id).update({ coverFetcherV: 7 }); } catch (_) {}
     }
   }
 }
@@ -1370,7 +1385,7 @@ async function lazyFetchCovers(visibleEntries) {
           coverImage: cdnThumb,
           coverWidth: 1080,
           coverHeight: 1920,
-          coverFetcherV: 6
+          coverFetcherV: 7
         });
         try {
           const tasksSnap = await db.collection('tasks').where('depositEntryId', '==', entry.id).get();
@@ -1389,7 +1404,7 @@ async function lazyFetchCovers(visibleEntries) {
     }
     try {
       const og = await window.api.fetchOgData(url);
-      const update = { coverImage: og.image || null, coverFetcherV: 6 };
+      const update = { coverImage: og.image || null, coverFetcherV: 7 };
       if (og.imageWidth && og.imageHeight) {
         update.coverWidth = og.imageWidth;
         update.coverHeight = og.imageHeight;
