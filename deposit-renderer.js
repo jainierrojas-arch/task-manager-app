@@ -985,10 +985,14 @@ function renderEntryHtml(e) {
   // Cover: imagen Open Graph del primer link (cacheada en e.coverImage).
   // Si no hay og:image (ej. Instagram bloquea scraping), pintar placeholder con
   // gradiente del servicio + icono + dominio para que SIEMPRE haya portada.
-  // Safety net: si no hay coverImage cacheado pero el primer link es un video
-  // de Cloudinary, generamos el thumb on-the-fly. lazyFetchCovers va a persistir
-  // este mismo valor despues, pero asi el primer render ya muestra portada.
-  const cover = e.coverImage || cloudinaryVideoThumb(links[0]?.url || '');
+  //
+  // v3.11.95: PRIORIZAR el thumb de Cloudinary generado AHORA por sobre el
+  // coverImage cached. Razón: covers viejos pueden tener so_auto/so_0 que salen
+  // negros, o la transformación cambió. Regenerar siempre garantiza que use la
+  // URL actualizada del código. Si el primer link NO es Cloudinary video,
+  // respetamos el coverImage cached (microlink, og:image, etc).
+  const fresh = cloudinaryVideoThumb(links[0]?.url || '');
+  const cover = fresh || e.coverImage;
   const firstUrl = links[0]?.url || '';
   let coverHtml = '';
   if (firstUrl) {

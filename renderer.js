@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.95': {
+    title: '🖼 Fix portadas negras — regenera el thumb en CADA render (no espera migración)',
+    features: [
+      '🐛 <strong>En 3.11.94 todavía salían negras</strong>: el código nuevo usaba so_3 pero el render seguía mostrando el coverImage cached que tenía so_auto/so_0 negros. La migración de Firestore tardaba demasiado o no se disparaba.',
+      '✅ <strong>Fix definitivo</strong>: en cada render de entry/tarea, si el primer link es Cloudinary video, regeneramos el thumb on-the-fly con la URL actual del código (so_3). El coverImage cached se ignora para videos de Cloudinary y solo se respeta para imágenes de microlink/og:image.',
+      '⚡ <strong>Inmediato</strong>: no esperás migración ni nada — abrís la app y las portadas aparecen al toque con la URL nueva.'
+    ]
+  },
   '3.11.94': {
     title: '🖼 Fix portadas de videos negras en Depósito y Referencias',
     features: [
@@ -5660,8 +5668,13 @@ function renderTaskList(container, taskList, mode) {
           previewUrl = entry.links[0].url;
         }
       }
-      if (task.coverImage && previewUrl) {
-        coverPreview = `<div class="task-cover-preview" style="background-image:url('${esc(task.coverImage)}')" onclick="window.api.openExternal('${esc(previewUrl)}')" title="Abrir ${esc(previewUrl)}"></div>`;
+      // v3.11.95: si el previewUrl es Cloudinary video, regenerar el thumb on-the-fly
+      // con la transformación actual (so_3). Los coverImage cached pueden tener
+      // so_auto o so_0 que salen negros.
+      const freshThumb = cloudinaryVideoThumb(previewUrl || '');
+      const effectiveCover = freshThumb || task.coverImage;
+      if (effectiveCover && previewUrl) {
+        coverPreview = `<div class="task-cover-preview" style="background-image:url('${esc(effectiveCover)}')" onclick="window.api.openExternal('${esc(previewUrl)}')" title="Abrir ${esc(previewUrl)}"></div>`;
       }
 
       // Strip + badge de antiguedad (solo en tareas no completadas).
