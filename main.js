@@ -2063,29 +2063,37 @@ function registerIpcHandlers() {
       // Si tikwm no devolvió, cae a Microlink abajo (needsMicrolink)
     }
 
-    // Cascada de intentos: el primero que devuelva imagen gana.
-    // PREFERIMOS Microlink porque proxea las imagenes a su CDN (URLs estables
-    // que cargan en el renderer). Los HTTP/Browser embeds devuelven URLs de
-    // cdninstagram.com con tokens firmados que NO cargan en Electron — solo
-    // los usamos como ultimo recurso si Microlink falla del todo. Si todo
-    // devuelve el logo generico de Instagram, lo aceptamos (mejor algo que nada).
+    // v3.11.97: cambio en orden de cascada para Instagram.
+    // ANTES: Microlink primero → fallback HTTP embed. Pero Microlink free tier
+    // tiene rate limit (50/día) y cuando se quema, todas las entries quedan
+    // con placeholder. Y Microlink suele tardar 10s con timeout.
+    // AHORA: para Instagram, intentamos embed HTTP DIRECTO PRIMERO. Es rápido
+    // (1-2s), sin rate limit, y devuelve URLs scontent.cdninstagram desde el
+    // srcset del EmbeddedMediaImage que sí cargan como background-image.
+    // Microlink queda como FALLBACK por si Instagram bloquea el scrape directo.
     if (needsMicrolink) {
-      const ml = sanitize(await fetchOgViaMicrolink(url));
-      if (ml && ml.image) return ml;
-
-      // Fallback: embed publico de Instagram (los carruseles a veces solo
-      // exponen og:image en /embed/captioned/)
+      // Instagram: embed HTTP primero
       const igMatch = url.match(/instagram\.com\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
       if (igMatch) {
         const embedUrl = `https://www.instagram.com/p/${igMatch[1]}/embed/captioned/`;
-        const mlEmbed = sanitize(await fetchOgViaMicrolink(embedUrl));
-        if (mlEmbed && mlEmbed.image) return mlEmbed;
+        // 1) HTTP directo al embed publico (rapido, sin rate limit)
         const embedHttp = sanitize(await fetchOgViaHttp(embedUrl));
         if (embedHttp && embedHttp.image) return embedHttp;
+        // 2) Microlink en la URL original (si embed HTTP fallo)
+        const ml = sanitize(await fetchOgViaMicrolink(url));
+        if (ml && ml.image) return ml;
+        // 3) Microlink en la URL del embed
+        const mlEmbed = sanitize(await fetchOgViaMicrolink(embedUrl));
+        if (mlEmbed && mlEmbed.image) return mlEmbed;
+        // 4) Browser oculto en el embed (ultimo recurso, mas lento)
         try {
           const browserEmbed = sanitize(await fetchOgViaBrowser(embedUrl));
           if (browserEmbed && browserEmbed.image) return browserEmbed;
         } catch (_) {}
+      } else {
+        // Facebook u otros sitios sociales no-IG: Microlink primero como antes
+        const ml = sanitize(await fetchOgViaMicrolink(url));
+        if (ml && ml.image) return ml;
       }
     }
 

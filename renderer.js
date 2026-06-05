@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.97': {
+    title: '🩹 Fix portadas Instagram que salían "Instagram" genérico',
+    features: [
+      '🐛 <strong>Bug</strong>: Microlink (que era el primer fetcher para Instagram) tiene rate limit free tier de ~50 requests/día. Cuando se quemaba, TODAS las entries nuevas de IG salían con placeholder genérico que dice "Instagram".',
+      '✅ <strong>Fix</strong>: para Instagram ahora vamos directo al embed público de IG (<code>www.instagram.com/p/CODE/embed/captioned/</code>) que es rápido (~1-2s), no tiene rate limit, y devuelve URLs reales del thumbnail desde el srcset del HTML. Microlink queda como fallback.',
+      '⚡ <strong>Resultado</strong>: las portadas de reels/posts de Instagram ahora deberían aparecer inmediatamente al crear la entry. Y si Microlink quemó su quota, NO afecta más.'
+    ]
+  },
   '3.11.96': {
     title: '🎬 Dividir transcripción en escenas (HeyGen / Veo 3) + fix portadas Instagram',
     features: [
