@@ -1029,10 +1029,38 @@
           <button class="btn btn-ghost btn-small" id="transcriptionTeleprompter" data-source="original">🎬 Teleprompter (original)</button>
           <button class="btn btn-ghost btn-small" id="transcriptionCopyOriginal">📋 Copiar</button>
         </div>
+
+        <!-- v3.11.96: dividir guion en escenas para HeyGen / Veo 3 -->
+        <div style="margin-top:14px;padding:12px;background:rgba(255,128,64,0.06);border:1px solid rgba(255,128,64,0.2);border-radius:8px">
+          <div style="font-size:11px;font-weight:700;color:#ff9866;letter-spacing:0.4px;text-transform:uppercase;margin-bottom:8px">🎬 Dividir en escenas (HeyGen / Veo 3)</div>
+          <div style="font-size:10.5px;color:var(--text-dim);margin-bottom:8px;line-height:1.5">
+            Convierte el guion en escenas cortas con continuidad. Pensado para crear videos con tu clon (HeyGen) o generar clips secuenciales (Google Veo 3).
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+            <div style="flex:1;min-width:120px">
+              <label style="display:block;font-size:10px;color:var(--text-secondary);margin-bottom:4px;font-weight:600">Duración por escena</label>
+              <select id="sceneDuration" style="width:100%;padding:8px 10px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);font-family:inherit;font-size:12px">
+                <option value="10">10 segundos</option>
+                <option value="15" selected>15 segundos</option>
+              </select>
+            </div>
+            <div style="flex:1;min-width:160px">
+              <label style="display:block;font-size:10px;color:var(--text-secondary);margin-bottom:4px;font-weight:600">Plataforma destino</label>
+              <select id="sceneTarget" style="width:100%;padding:8px 10px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);font-family:inherit;font-size:12px">
+                <option value="heygen" selected>HeyGen (texto para tu clon AI)</option>
+                <option value="veo3">Google Veo 3 (prompts visuales)</option>
+              </select>
+            </div>
+          </div>
+          <button class="btn btn-primary" id="transcriptionSplitScenes" style="width:100%;background:#ff9866;border-color:#ff7a3d">🎬 Dividir en escenas</button>
+        </div>
       </div>
 
       <!-- v3.10.2: videos grabados desde celular -->
       <div id="transcriptionRecordedSection" style="display:none;margin-top:8px"></div>
+
+      <!-- v3.11.96: escenas generadas -->
+      <div id="transcriptionScenesList" style="margin-top:12px"></div>
 
       <div id="transcriptionVariationsList" style="margin-top:12px"></div>
     </div>

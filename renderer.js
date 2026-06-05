@@ -75,6 +75,17 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.96': {
+    title: '🎬 Dividir transcripción en escenas (HeyGen / Veo 3) + fix portadas Instagram',
+    features: [
+      '🎬 <strong>NUEVO: Dividir guion en escenas</strong> en el modal de transcripción de video. Después de transcribir, podés:<br>• Elegir duración por escena: <strong>10s</strong> o <strong>15s</strong>.<br>• Elegir plataforma: <strong>HeyGen</strong> (texto narrado por tu avatar AI) o <strong>Google Veo 3</strong> (prompts visuales con continuidad).<br>• Click "🎬 Dividir en escenas" y Claude devuelve las escenas listas para copiar.',
+      '🧠 <strong>HeyGen mode</strong>: cada escena es un texto natural para que tu clon lo lea, con cliffhangers entre escenas, manteniendo el hook al inicio.',
+      '🎥 <strong>Veo 3 mode</strong>: cada escena incluye un prompt VISUAL completo (cámara, ambiente, vestuario, acción) + un voiceover separado. Mantiene continuidad del personaje entre clips para que la edición sea fluida.',
+      '📋 <strong>Cada escena</strong> tiene su botón "Copiar" individual + "Copiar todas" del split entero.',
+      '🖼 <strong>Fix portadas de reels Instagram</strong>: las URLs de scontent.cdninstagram.com tienen tokens firmados que vencen tras días/semanas. Ahora detectamos esas URLs vencidas y forzamos re-fetch automático al abrir el Depósito.',
+      '🔄 <strong>Auto-migración</strong>: la primera vez que abrís el Depósito en esta versión, todas las entries de Instagram se re-fetchean con Microlink para tener portadas frescas.'
+    ]
+  },
   '3.11.95': {
     title: '🖼 Fix portadas negras — regenera el thumb en CADA render (no espera migración)',
     features: [

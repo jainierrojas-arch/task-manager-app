@@ -1342,28 +1342,31 @@ function looksLikeBrokenIgCover(entry) {
 async function migrateCovers(visibleEntries) {
   for (const entry of visibleEntries) {
     if (coverMigratedThisSession.has(entry.id)) continue;
-    // v3.11.94: bumped a 7 para incluir migración de Cloudinary so_auto → so_3.
-    if (entry.coverFetcherV >= 7) continue;
+    // v3.11.96: bumped a 8 — fuerza re-fetch de TODAS las entries de Instagram
+    // porque las URLs de scontent.cdninstagram.com tienen tokens firmados que
+    // vencen tras días/semanas y la portada queda muerta (sale negra).
+    if (entry.coverFetcherV >= 8) continue;
     coverMigratedThisSession.add(entry.id);
 
     const isInstagramLink = (entry.links || []).some(l => /instagram\.com\//.test(l.url || ''));
-    const isBroken = looksLikeBrokenIgCover(entry);
-    // v3.11.94: thumbnails viejos de Cloudinary con so_auto salen negros en
-    // cuentas free. Los limpiamos para que se re-generen con so_3.
+    const isTiktokLink = (entry.links || []).some(l => /tiktok\.com\//.test(l.url || ''));
     const isOldCloudinaryCover = isOldCloudinaryThumb(entry.coverImage || '');
+    // v3.11.96: detectar URLs de CDN con tokens expirables (Instagram/Facebook)
+    const cover = entry.coverImage || '';
+    const isExpirableCdnUrl = /scontent.*cdninstagram\.com|scontent.*fbcdn\.net/.test(cover);
 
-    if ((isInstagramLink && isBroken) || isOldCloudinaryCover) {
+    if (isInstagramLink || isTiktokLink || isOldCloudinaryCover || isExpirableCdnUrl) {
       try {
         await db.collection('depositEntries').doc(entry.id).update({
           coverImage: firebase.firestore.FieldValue.delete(),
           coverWidth: firebase.firestore.FieldValue.delete(),
           coverHeight: firebase.firestore.FieldValue.delete(),
-          coverFetcherV: 7
+          coverFetcherV: 8
         });
       } catch (_) {}
-      await new Promise(r => setTimeout(r, 150));
+      await new Promise(r => setTimeout(r, 100));
     } else {
-      try { await db.collection('depositEntries').doc(entry.id).update({ coverFetcherV: 7 }); } catch (_) {}
+      try { await db.collection('depositEntries').doc(entry.id).update({ coverFetcherV: 8 }); } catch (_) {}
     }
   }
 }
@@ -1389,7 +1392,7 @@ async function lazyFetchCovers(visibleEntries) {
           coverImage: cdnThumb,
           coverWidth: 1080,
           coverHeight: 1920,
-          coverFetcherV: 7
+          coverFetcherV: 8
         });
         try {
           const tasksSnap = await db.collection('tasks').where('depositEntryId', '==', entry.id).get();
@@ -1408,7 +1411,7 @@ async function lazyFetchCovers(visibleEntries) {
     }
     try {
       const og = await window.api.fetchOgData(url);
-      const update = { coverImage: og.image || null, coverFetcherV: 7 };
+      const update = { coverImage: og.image || null, coverFetcherV: 8 };
       if (og.imageWidth && og.imageHeight) {
         update.coverWidth = og.imageWidth;
         update.coverHeight = og.imageHeight;
@@ -2587,6 +2590,113 @@ ${entry.transcription}`;
   }
 }
 
+// v3.11.96: dividir un guion transcrito en escenas cortas para HeyGen o Veo 3
+async function splitTranscriptionIntoScenes(entryId, btn) {
+  const entry = entries.find(e => e.id === entryId);
+  if (!entry || !entry.transcription) {
+    alert('Primero transcribí el video.');
+    return;
+  }
+  if (!window.api || !window.api.generateWithClaude) {
+    _setTranscriptionStatus('❌ generateWithClaude no disponible. Actualizá la app.', 'error');
+    return;
+  }
+  const durationSel = document.getElementById('sceneDuration');
+  const targetSel = document.getElementById('sceneTarget');
+  const sceneDuration = parseInt((durationSel && durationSel.value) || '15', 10);
+  const target = (targetSel && targetSel.value) || 'heygen';
+  const targetLabel = target === 'veo3' ? 'Google Veo 3' : 'HeyGen';
+
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Generando escenas...'; }
+  _setTranscriptionStatus(`⏳ Claude dividiendo el guion en escenas de ${sceneDuration}s para ${targetLabel}...`);
+
+  // Promedio de palabras por segundo hablado en español neutro: ~2.3 palabras/seg
+  const wordsPerScene = Math.round(sceneDuration * 2.3);
+
+  let prompt;
+  if (target === 'heygen') {
+    prompt = `Te paso un guion de video. Dividilo en ESCENAS de ${sceneDuration} segundos cada una, que van a usarse con HeyGen para que un avatar AI las narre.
+
+REGLAS:
+1. Cada escena tiene que sonar natural hablada por una persona — frases completas, no fragmentos cortados.
+2. Cada escena debe durar aproximadamente ${sceneDuration} segundos al ser leída — eso son ~${wordsPerScene} palabras por escena.
+3. Mantené el HOOK al inicio de la escena 1. Que cada escena cierre dejando ganas de pasar a la siguiente (cliffhangers, preguntas, tensión).
+4. NO cortes ideas a la mitad. Cada escena debe ser una unidad coherente.
+5. Mantené el sentido y el orden del guion original.
+
+FORMATO de salida — JSON válido, SIN nada antes o después:
+{"scenes":[
+  {"n":1,"text":"texto de la escena 1, listo para que el avatar lo lea"},
+  {"n":2,"text":"texto de la escena 2"},
+  ...
+]}
+
+GUION ORIGINAL:
+${entry.transcription}`;
+  } else {
+    prompt = `Te paso un guion de video. Convertilo en una serie de PROMPTS visuales para Google Veo 3, donde cada prompt genera un clip de ${sceneDuration} segundos.
+
+CONTEXTO IMPORTANTE: El usuario va a generar clips secuenciales con su CLON AI como protagonista. Los clips deben mantener continuidad visual entre escenas (mismo personaje, mismo estilo, transiciones suaves).
+
+REGLAS para cada prompt:
+1. Describí la escena VISUALMENTE — qué se ve, cómo se mueve la cámara, ambiente, iluminación, vestuario del personaje (el clon).
+2. Incluí en cada escena: "Mantener el mismo personaje (clon del usuario) con la misma apariencia y vestuario que en escenas anteriores" para asegurar continuidad.
+3. Acción específica del personaje + diálogo o voiceover que va sobre el clip.
+4. Cada escena dura ${sceneDuration}s — no más, no menos.
+5. Estilo cinematográfico, lenguaje claro de prompts de generación de video.
+
+FORMATO de salida — JSON válido, SIN nada antes o después:
+{"scenes":[
+  {"n":1,"text":"prompt completo para Veo 3 escena 1","voiceover":"qué se escucha hablando en esta escena"},
+  {"n":2,"text":"prompt para Veo 3 escena 2","voiceover":"..."},
+  ...
+]}
+
+GUION ORIGINAL:
+${entry.transcription}`;
+  }
+
+  try {
+    const result = await window.api.generateWithClaude({
+      prompt,
+      model: 'claude-sonnet-4-6',
+      maxTokens: 4000
+    });
+    if (!result || !result.ok) {
+      throw new Error(result && result.error ? result.error : 'No se pudo conectar con Claude');
+    }
+    const raw = (result.text || '').trim();
+    // Extraer JSON aunque venga con texto extra antes/después
+    let json;
+    try {
+      json = JSON.parse(raw);
+    } catch (_) {
+      const m = raw.match(/\{[\s\S]*\}/);
+      if (!m) throw new Error('Claude no devolvió JSON válido. Probá de nuevo.');
+      json = JSON.parse(m[0]);
+    }
+    const scenes = (json && Array.isArray(json.scenes)) ? json.scenes : [];
+    if (scenes.length === 0) throw new Error('Claude no devolvió escenas. Probá de nuevo.');
+
+    const currentEntry = entries.find(e => e.id === entryId);
+    const sceneSplits = Array.isArray(currentEntry.sceneSplits) ? currentEntry.sceneSplits : [];
+    sceneSplits.push({
+      target,
+      targetLabel,
+      duration: sceneDuration,
+      scenes,
+      createdAt: new Date().toISOString()
+    });
+    await db.collection('depositEntries').doc(entryId).update({ sceneSplits });
+    _setTranscriptionStatus(`✓ ${scenes.length} escenas generadas para ${targetLabel}`, 'success');
+    setTimeout(() => _renderTranscriptionModalContent(entryId), 200);
+  } catch (e) {
+    _setTranscriptionStatus('❌ Error generando escenas: ' + (e.message || e), 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🎬 Dividir en escenas'; }
+  }
+}
+
 // ===== Modal de transcripción + teleprompter (v3.9.11) =====
 let _currentTranscriptionEntryId = null;
 
@@ -2681,6 +2791,75 @@ function _renderTranscriptionModalContent(entryId) {
       }));
     }
   }
+  // v3.11.96: render de escenas generadas (HeyGen / Veo 3)
+  const scenesList = document.getElementById('transcriptionScenesList');
+  if (scenesList) {
+    const splits = Array.isArray(entry.sceneSplits) ? entry.sceneSplits : [];
+    if (splits.length === 0) {
+      scenesList.innerHTML = '';
+    } else {
+      scenesList.innerHTML = splits.map((split, splitIdx) => {
+        const scenes = split.scenes || [];
+        const headerLabel = `🎬 Escenas para ${esc(split.targetLabel || split.target)} · ${split.duration}s · ${scenes.length} escenas`;
+        const scenesHtml = scenes.map((s, i) => {
+          const text = esc(s.text || '');
+          const voiceover = s.voiceover ? `<div style="font-size:10.5px;color:var(--text-secondary);margin-top:4px;padding-top:4px;border-top:1px dashed var(--border)"><strong>🎙 Voiceover:</strong> ${esc(s.voiceover)}</div>` : '';
+          return `
+            <div style="padding:10px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;margin-bottom:6px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+                <span style="font-size:11px;font-weight:700;color:#ff9866">Escena ${s.n || (i + 1)}</span>
+                <button class="btn btn-ghost btn-small" data-copy-scene="${splitIdx}-${i}" style="padding:2px 8px;font-size:10px">📋 Copiar</button>
+              </div>
+              <div style="font-size:12.5px;color:var(--text-primary);line-height:1.5;white-space:pre-wrap">${text}</div>
+              ${voiceover}
+            </div>`;
+        }).join('');
+        // Texto plano de todas las escenas (útil para copiar todo)
+        return `
+          <div style="margin-bottom:14px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin:14px 0 8px">
+              <span style="font-size:11px;font-weight:700;color:#ff9866;letter-spacing:0.4px;text-transform:uppercase">${headerLabel}</span>
+              <div style="display:flex;gap:6px">
+                <button class="btn btn-ghost btn-small" data-copy-all-scenes="${splitIdx}" style="padding:2px 8px;font-size:10px">📋 Copiar todas</button>
+                <button class="btn btn-danger btn-small" data-del-scene-split="${splitIdx}" style="padding:2px 8px;font-size:10px">🗑</button>
+              </div>
+            </div>
+            ${scenesHtml}
+          </div>`;
+      }).join('');
+      // Wiring
+      scenesList.querySelectorAll('[data-copy-scene]').forEach(b => b.addEventListener('click', () => {
+        const [si, ei] = b.dataset.copyScene.split('-').map(Number);
+        const s = (splits[si] && splits[si].scenes && splits[si].scenes[ei]) || {};
+        const txt = s.voiceover ? (s.text + '\n\nVoiceover: ' + s.voiceover) : (s.text || '');
+        navigator.clipboard.writeText(txt);
+        b.textContent = '✓';
+        setTimeout(() => { b.textContent = '📋 Copiar'; }, 1500);
+      }));
+      scenesList.querySelectorAll('[data-copy-all-scenes]').forEach(b => b.addEventListener('click', () => {
+        const si = parseInt(b.dataset.copyAllScenes);
+        const split = splits[si];
+        if (!split) return;
+        const allText = split.scenes.map((s, i) => {
+          const header = `=== Escena ${s.n || (i + 1)} ===\n`;
+          const main = s.text || '';
+          const vo = s.voiceover ? `\n\nVoiceover: ${s.voiceover}` : '';
+          return header + main + vo;
+        }).join('\n\n');
+        navigator.clipboard.writeText(allText);
+        b.textContent = '✓ Copiado';
+        setTimeout(() => { b.textContent = '📋 Copiar todas'; }, 1500);
+      }));
+      scenesList.querySelectorAll('[data-del-scene-split]').forEach(b => b.addEventListener('click', async () => {
+        if (!confirm('Borrar este split de escenas?')) return;
+        const idx = parseInt(b.dataset.delSceneSplit);
+        const newSplits = splits.slice();
+        newSplits.splice(idx, 1);
+        await db.collection('depositEntries').doc(entryId).update({ sceneSplits: newSplits });
+      }));
+    }
+  }
+
   // Variaciones
   const list = document.getElementById('transcriptionVariationsList');
   const variations = Array.isArray(entry.scriptVariations) ? entry.scriptVariations : [];
@@ -2826,6 +3005,12 @@ function _wireupTranscriptionAndTeleprompter() {
       estilo: estiloSelect ? estiloSelect.value : 'hook_dato'
     };
     rewriteScriptForEntry(_currentTranscriptionEntryId, generate, opts);
+  });
+  // v3.11.96: botón "Dividir en escenas"
+  const splitBtn = document.getElementById('transcriptionSplitScenes');
+  if (splitBtn) splitBtn.addEventListener('click', () => {
+    if (!_currentTranscriptionEntryId) return;
+    splitTranscriptionIntoScenes(_currentTranscriptionEntryId, splitBtn);
   });
   const tpBtn = document.getElementById('transcriptionTeleprompter');
   if (tpBtn) tpBtn.addEventListener('click', () => {
