@@ -912,6 +912,10 @@ function renderEntries() {
     area.querySelectorAll('[data-schedule-entry]').forEach(btn => {
       btn.addEventListener('click', () => scheduleFromEntry(btn.dataset.scheduleEntry));
     });
+    // v3.11.98: re-fetch manual de portada
+    area.querySelectorAll('[data-refetch-cover]').forEach(btn => {
+      btn.addEventListener('click', () => refetchEntryCover(btn.dataset.refetchCover, btn));
+    });
   }
 
   const backBtn = document.getElementById('backToSubs');
@@ -1074,6 +1078,7 @@ function renderEntryHtml(e) {
               <button class="btn btn-primary btn-small" data-reuse="${esc(e.id)}" title="Volver a Tareas por hacer">&#128260; Reutilizar</button>
             ` : `
               <button class="btn btn-ghost btn-small" data-edit="${esc(e.id)}" title="Editar">&#9998;</button>
+              <button class="btn btn-ghost btn-small" data-refetch-cover="${esc(e.id)}" title="Re-fetchear portada (cuando salió placeholder negro/Instagram)" style="opacity:0.7">&#128260;</button>
               <button class="btn btn-danger btn-small" data-delete-entry="${esc(e.id)}" title="Eliminar">&#10005;</button>
               <button class="btn btn-info btn-small" data-move="${esc(e.id)}" title="Mover a otra categoria">&#128194; Mover</button>
               <button class="btn btn-primary btn-small" data-take="${esc(e.id)}" title="Tomarla yo (solo o cadena)">&#128587; Tomar</button>
@@ -2590,6 +2595,95 @@ ${entry.transcription}`;
   }
 }
 
+// v3.11.98: re-fetchear manualmente la portada de una entry específica.
+// Útil cuando el lazy fetcher falló y el usuario quiere forzar un nuevo intento.
+// Logguea todo el flow en la consola para diagnosticar problemas.
+async function refetchEntryCover(entryId, btn) {
+  console.log('[refetch-cover] start for entry:', entryId);
+  const entry = entries.find(e => e.id === entryId);
+  if (!entry) {
+    console.error('[refetch-cover] entry not found:', entryId);
+    return;
+  }
+  const links = entry.links || [];
+  if (links.length === 0) {
+    alert('Esta entry no tiene links — no hay desde dónde fetchear.');
+    return;
+  }
+  const url = links[0].url;
+  console.log('[refetch-cover] first link:', url);
+  if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
+  try {
+    // 1) Si es video de Cloudinary, generar thumb por URL
+    const cdn = cloudinaryVideoThumb(url);
+    if (cdn) {
+      console.log('[refetch-cover] cloudinary thumb generated:', cdn);
+      await db.collection('depositEntries').doc(entryId).update({
+        coverImage: cdn,
+        coverWidth: 1080,
+        coverHeight: 1920,
+        coverFetcherV: 99
+      });
+      console.log('[refetch-cover] DONE (cloudinary path)');
+      return;
+    }
+    // 2) Llamar a fetch-og-data (cascada completa)
+    console.log('[refetch-cover] calling fetchOgData...');
+    const og = await window.api.fetchOgData(url);
+    console.log('[refetch-cover] fetchOgData result:', og);
+    if (!og || !og.image) {
+      alert('No se pudo obtener portada del link.\n\nURL: ' + url + '\n\nProbablemente la red bloquea Instagram embed o el link no es público. Mirá la consola para detalles.');
+      return;
+    }
+    const update = { coverImage: og.image, coverFetcherV: 99 };
+    if (og.imageWidth && og.imageHeight) {
+      update.coverWidth = og.imageWidth;
+      update.coverHeight = og.imageHeight;
+    }
+    await db.collection('depositEntries').doc(entryId).update(update);
+    console.log('[refetch-cover] DONE (og path), image:', og.image);
+  } catch (e) {
+    console.error('[refetch-cover] ERROR:', e);
+    alert('Error: ' + (e.message || e));
+  } finally {
+    if (btn) { btn.textContent = '🔄'; btn.disabled = false; }
+  }
+}
+
+// v3.11.98: copy al portapapeles con fallback robusto. navigator.clipboard.writeText
+// puede fallar silenciosamente en Electron iframes (sin foco, sin permisos, contexto
+// no-secure). Si falla, caemos a document.execCommand('copy') con un textarea temporal.
+async function copyToClipboardRobust(text) {
+  if (!text) return false;
+  // Intento 1: API moderna
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (e) {
+    console.warn('[copy] navigator.clipboard falló, intentando fallback:', e.message);
+  }
+  // Intento 2: textarea + execCommand (legacy pero funciona en cualquier contexto)
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    ta.style.top = '-9999px';
+    ta.setAttribute('readonly', '');
+    document.body.appendChild(ta);
+    ta.select();
+    ta.setSelectionRange(0, ta.value.length);
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    if (ok) return true;
+  } catch (e) {
+    console.error('[copy] execCommand fallback falló:', e);
+  }
+  return false;
+}
+
 // v3.11.96: dividir un guion transcrito en escenas cortas para HeyGen o Veo 3
 async function splitTranscriptionIntoScenes(entryId, btn) {
   const entry = entries.find(e => e.id === entryId);
@@ -2828,15 +2922,15 @@ function _renderTranscriptionModalContent(entryId) {
           </div>`;
       }).join('');
       // Wiring
-      scenesList.querySelectorAll('[data-copy-scene]').forEach(b => b.addEventListener('click', () => {
+      scenesList.querySelectorAll('[data-copy-scene]').forEach(b => b.addEventListener('click', async () => {
         const [si, ei] = b.dataset.copyScene.split('-').map(Number);
         const s = (splits[si] && splits[si].scenes && splits[si].scenes[ei]) || {};
         const txt = s.voiceover ? (s.text + '\n\nVoiceover: ' + s.voiceover) : (s.text || '');
-        navigator.clipboard.writeText(txt);
-        b.textContent = '✓';
+        const ok = await copyToClipboardRobust(txt);
+        b.textContent = ok ? '✓' : '⚠';
         setTimeout(() => { b.textContent = '📋 Copiar'; }, 1500);
       }));
-      scenesList.querySelectorAll('[data-copy-all-scenes]').forEach(b => b.addEventListener('click', () => {
+      scenesList.querySelectorAll('[data-copy-all-scenes]').forEach(b => b.addEventListener('click', async () => {
         const si = parseInt(b.dataset.copyAllScenes);
         const split = splits[si];
         if (!split) return;
@@ -2846,8 +2940,8 @@ function _renderTranscriptionModalContent(entryId) {
           const vo = s.voiceover ? `\n\nVoiceover: ${s.voiceover}` : '';
           return header + main + vo;
         }).join('\n\n');
-        navigator.clipboard.writeText(allText);
-        b.textContent = '✓ Copiado';
+        const ok = await copyToClipboardRobust(allText);
+        b.textContent = ok ? '✓ Copiado' : '⚠ Error';
         setTimeout(() => { b.textContent = '📋 Copiar todas'; }, 1500);
       }));
       scenesList.querySelectorAll('[data-del-scene-split]').forEach(b => b.addEventListener('click', async () => {
@@ -2891,9 +2985,11 @@ function _renderTranscriptionModalContent(entryId) {
     list.querySelectorAll('[data-tp-variation]').forEach(b => b.addEventListener('click', () => {
       openTeleprompter(variations[parseInt(b.dataset.tpVariation)].text, entryId);
     }));
-    list.querySelectorAll('[data-copy-variation]').forEach(b => b.addEventListener('click', () => {
-      navigator.clipboard.writeText(variations[parseInt(b.dataset.copyVariation)].text);
-      b.textContent = '✓';
+    list.querySelectorAll('[data-copy-variation]').forEach(b => b.addEventListener('click', async () => {
+      const idx = parseInt(b.dataset.copyVariation);
+      const text = (variations[idx] && variations[idx].text) || '';
+      const ok = await copyToClipboardRobust(text);
+      b.textContent = ok ? '✓ Copiado' : '⚠ Error';
       setTimeout(() => { b.textContent = '📋 Copiar'; }, 1500);
     }));
     list.querySelectorAll('[data-del-variation]').forEach(b => b.addEventListener('click', async () => {

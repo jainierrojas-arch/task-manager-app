@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.98': {
+    title: '🩹 Fix botón Copiar guion + botón "🔄 Re-fetch portada" manual',
+    features: [
+      '📋 <strong>Copiar guion ahora SÍ funciona</strong>: navigator.clipboard puede fallar silenciosamente en Electron iframes (sin foco, sin permisos). Ahora tenemos fallback con textarea + execCommand que funciona en cualquier contexto. El botón muestra "✓ Copiado" si funcionó o "⚠ Error" si falló.',
+      '🔄 <strong>Botón "🔄 Re-fetch portada"</strong> en cada entry del Depósito (al lado del lápiz de editar). Si la portada quedó en placeholder genérico, click → fuerza re-fetch.',
+      '🪵 <strong>Logging extensivo</strong>: el botón loguea cada paso a la consola del developer tools. Si falla, abrí View → Toggle Developer Tools → Console y mandame el log para diagnosticar el caso exacto.'
+    ]
+  },
   '3.11.97': {
     title: '🩹 Fix portadas Instagram que salían "Instagram" genérico',
     features: [
