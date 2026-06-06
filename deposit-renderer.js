@@ -3037,9 +3037,46 @@ function _renderTranscriptionModalContent(entryId) {
       newVars.splice(idx, 1);
       await db.collection('depositEntries').doc(entryId).update({ scriptVariations: newVars });
     }));
-    // v3.11.107: los listeners split-var / copy-var-scene / clear-var-scenes
-    // viven ahora en event delegation global (final del archivo) — más robusto
-    // contra re-renders.
+    // v3.11.110: bind LOCAL directo para split-var (además del delegate global).
+    // Doble protección. Los bind locales son los que históricamente funcionan
+    // para los otros botones (tp-variation, copy-variation, del-variation).
+    const splitBtns = list.querySelectorAll('[data-split-var]');
+    console.log('[render-vars] binding', splitBtns.length, 'split-var buttons');
+    splitBtns.forEach(btn => btn.addEventListener('click', async (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const idx = parseInt(btn.dataset.splitVar, 10);
+      console.log('[split-var LOCAL] click idx=', idx);
+      const currentEntry = entries.find(e => e.id === entryId);
+      if (!currentEntry || !Array.isArray(currentEntry.scriptVariations)) {
+        _setTranscriptionStatus('⚠ Entry no encontrada', 'error');
+        return;
+      }
+      const v = currentEntry.scriptVariations[idx];
+      if (!v || !v.text) { _setTranscriptionStatus('⚠ Variación vacía', 'error'); return; }
+      const durSel = list.querySelector(`[data-var-scene-dur="${idx}"]`);
+      const instrTa = list.querySelector(`[data-var-scene-instructions="${idx}"]`);
+      const duration = parseInt((durSel && durSel.value) || '15', 10);
+      const sceneInstructions = (instrTa && instrTa.value || '').trim();
+      const scenes = splitTextByDuration(v.text, duration);
+      console.log('[split-var LOCAL] split into', scenes.length, 'scenes, instr len', sceneInstructions.length);
+      if (scenes.length === 0) { _setTranscriptionStatus('⚠ Texto muy corto', 'error'); return; }
+      const newVars = currentEntry.scriptVariations.slice();
+      newVars[idx] = { ...v, scenes, sceneDuration: duration, sceneInstructions };
+      btn.disabled = true;
+      btn.textContent = '⏳ Dividiendo...';
+      _setTranscriptionStatus(`⏳ Dividiendo en ${scenes.length} escenas de ${duration}s...`);
+      try {
+        await db.collection('depositEntries').doc(entryId).update({ scriptVariations: newVars });
+        _setTranscriptionStatus(`✓ Variación dividida en ${scenes.length} escenas`, 'success');
+        setTimeout(() => _renderTranscriptionModalContent(entryId), 200);
+      } catch (e) {
+        console.error('[split-var LOCAL] save error', e);
+        _setTranscriptionStatus('❌ Error: ' + (e.message || e), 'error');
+        btn.disabled = false;
+        btn.textContent = '✂️ Dividir esta variación';
+      }
+    }));
   }
 }
 

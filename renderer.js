@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.110': {
+    title: '🩹 Fix DEFINITIVO botón Dividir variación (doble bind)',
+    features: [
+      '🐛 <strong>El delegate global de v3.11.107 no estaba disparando</strong> por alguna razón ambiental. Los otros botones de la variación (Teleprompter, Copiar, Eliminar) usan bind LOCAL directo en el render — históricamente funciona perfecto.',
+      '✅ <strong>Fix</strong>: agregado bind LOCAL directo en cada render para el botón "✂️ Dividir esta variación", igual que los otros botones. El delegate global queda como red de seguridad.',
+      '🪵 <strong>Log al render</strong>: <code>[render-vars] binding N split-var buttons</code> aparece en Console cada vez que se renderiza la lista. Si lo ves, el bind se hizo. Si no aparece, hay algo más raro pasando.',
+      '🪵 <strong>Log al click</strong>: <code>[split-var LOCAL] click idx=...</code> al hacer click. Si lo ves, el handler disparó.'
+    ]
+  },
   '3.11.109': {
     title: '📌 Instrucciones que se repiten en TODAS las escenas',
     features: [
