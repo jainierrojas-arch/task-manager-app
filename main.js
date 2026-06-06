@@ -2083,29 +2083,26 @@ function registerIpcHandlers() {
       // Si tikwm no devolvió, cae a Microlink abajo (needsMicrolink)
     }
 
-    // v3.11.100: Instagram cambió el embed — ahora se renderiza 100% con JS,
-    // el HTML estático YA NO trae el thumbnail (sin EmbeddedMediaImage, sin
-    // scontent en el HTML inicial). Browser oculto con Chromium es el único
-    // confiable porque ejecuta JS y espera al render. Microlink como fallback
-    // (también ejecuta JS pero tiene rate limit).
+    // v3.11.103: REVERTIDO el orden — Microlink PRIMERO para Instagram.
+    // REGLA INVIOLABLE (aprendida a la mala en v2.70, v2.72, v3.11.97, v3.11.100):
+    // Las URLs scontent.cdninstagram.com / fbcdn.net que devuelven el embed HTTP
+    // y el Browser oculto tienen tokens HMAC firmados con Referer/IP/cookies
+    // del fetcher — NO CARGAN en el renderer Electron, devuelven 403. Aunque
+    // Microlink solo devuelva el logo genérico de IG, es preferible un logo a
+    // un cuadro negro con 403.
     if (needsMicrolink) {
       const igMatch = url.match(/instagram\.com\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
       if (igMatch) {
         const embedUrl = `https://www.instagram.com/p/${igMatch[1]}/embed/captioned/`;
-        // 1) Browser oculto en el embed (lento pero ejecuta JS)
-        try {
-          const browserEmbed = sanitize(await fetchOgViaBrowser(embedUrl));
-          if (browserEmbed && browserEmbed.image) return browserEmbed;
-        } catch (_) {}
-        // 2) Microlink en la URL original
+        // 1) Microlink en la URL original (proxea el thumb a su CDN, sí carga)
         const ml = sanitize(await fetchOgViaMicrolink(url));
         if (ml && ml.image) return ml;
-        // 3) Microlink en la URL del embed
+        // 2) Microlink en la URL del embed
         const mlEmbed = sanitize(await fetchOgViaMicrolink(embedUrl));
         if (mlEmbed && mlEmbed.image) return mlEmbed;
-        // 4) HTTP directo al embed (ya no trae nada pero por si IG vuelve)
-        const embedHttp = sanitize(await fetchOgViaHttp(embedUrl));
-        if (embedHttp && embedHttp.image) return embedHttp;
+        // NO más fallback a HTTP/Browser embed para IG — sus URLs dan 403 en
+        // el renderer. Si Microlink falló, devolvemos null y la card pinta
+        // placeholder de marca (gradiente IG).
       } else {
         const ml = sanitize(await fetchOgViaMicrolink(url));
         if (ml && ml.image) return ml;

@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.103': {
+    title: '🙃 Fix portadas IG REVERTIDO al orden correcto — Microlink primero',
+    features: [
+      '🎯 <strong>Diagnóstico final</strong>: los 3 errores 403 que quedaban (<code>scontent.cdninstagram.com</code>) eran las URLs que el Browser oculto consiguió en v3.11.100. Esas URLs tienen tokens HMAC firmados con cookies/IP del fetcher — no cargan en el renderer Electron (Referer mismatch).',
+      '🔁 <strong>Fix</strong>: revertido el orden de la cascada para Instagram. <strong>Microlink va primero</strong>, embed HTTP/Browser oculto eliminados de la cascada (no producían URLs cargables). Microlink proxea el thumbnail por su propio CDN — URLs estables que sí cargan en cualquier navegador.',
+      '🔄 <strong>Migración v10</strong>: limpia automáticamente los covers scontent rotos guardados por v3.11.100. En el próximo arranque se re-fetchean por Microlink.',
+      '🧠 <strong>Auto-memoria reforzada</strong>: ya lo había aprendido en v2.70 y v2.72, y lo violé otra vez en v3.11.97 y v3.11.100. Memoria actualizada para que no vuelva a pasar.'
+    ]
+  },
   '3.11.102': {
     title: '🔥 FIX CRÍTICO RAÍZ — Firestore caía con ERR_QUIC_PROTOCOL_ERROR (no era IG)',
     features: [
