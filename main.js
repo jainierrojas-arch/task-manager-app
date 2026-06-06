@@ -2057,6 +2057,18 @@ function registerIpcHandlers() {
         if (lc.includes('lookaside.instagram.com')) {
           return { ...result, image: null };
         }
+        // v3.11.105: Microlink free devuelve un data:image/png base64 placeholder
+        // gris cuando NO consigue scrapear el thumb real de Instagram. Rechazamos
+        // esa URI para caer al placeholder de marca (gradiente IG bonito) en lugar
+        // de pintar el gris feo.
+        if (lc.startsWith('data:')) {
+          return { ...result, image: null };
+        }
+        // Microlink también a veces devuelve URLs a su CDN con "logo" en el path
+        // que son fallback genérico — rechazamos
+        if (lc.includes('static.cdninstagram.com/rsrc.php')) {
+          return { ...result, image: null };
+        }
       }
       return result;
     };

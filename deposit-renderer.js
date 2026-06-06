@@ -2984,11 +2984,8 @@ function _renderTranscriptionModalContent(entryId) {
         const scenesHtml = scenes.length === 0 ? '' : `
           <div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border)">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-              <span style="font-size:10px;color:#ff9866;font-weight:700;letter-spacing:0.3px;text-transform:uppercase">🎬 ${scenes.length} escenas de ${currentDur}s</span>
-              <div style="display:flex;gap:4px">
-                <button class="btn btn-ghost btn-small" data-copy-all-var-scenes="${i}" style="padding:2px 8px;font-size:10px">📋 Copiar todas</button>
-                <button class="btn btn-danger btn-small" data-clear-var-scenes="${i}" style="padding:2px 8px;font-size:10px">🗑</button>
-              </div>
+              <span style="font-size:10px;color:#ff9866;font-weight:700;letter-spacing:0.3px;text-transform:uppercase">🎬 ${scenes.length} escenas de ${currentDur}s · El botón "📋 Copiar" de arriba copia TODAS juntas</span>
+              <button class="btn btn-danger btn-small" data-clear-var-scenes="${i}" style="padding:2px 8px;font-size:10px">🗑</button>
             </div>
             <div style="display:flex;flex-direction:column;gap:6px">
               ${scenes.map((sc, sIdx) => `
@@ -3030,7 +3027,17 @@ function _renderTranscriptionModalContent(entryId) {
     }));
     list.querySelectorAll('[data-copy-variation]').forEach(b => b.addEventListener('click', async () => {
       const idx = parseInt(b.dataset.copyVariation);
-      const text = (variations[idx] && variations[idx].text) || '';
+      const v = variations[idx] || {};
+      // v3.11.105: si la variación tiene escenas generadas, "Copiar" copia
+      // TODAS las escenas concatenadas (junto con título de escena) listas
+      // para pegar. Si no hay escenas, copia el texto plano de la variación.
+      let text = '';
+      if (Array.isArray(v.scenes) && v.scenes.length > 0) {
+        const dur = v.sceneDuration || 15;
+        text = v.scenes.map((s, i) => `Escena ${i + 1} (${dur}s):\n${s}`).join('\n\n');
+      } else {
+        text = v.text || '';
+      }
       const ok = await copyToClipboardRobust(text);
       b.textContent = ok ? '✓ Copiado' : '⚠ Error';
       setTimeout(() => { b.textContent = '📋 Copiar'; }, 1500);
@@ -3060,15 +3067,6 @@ function _renderTranscriptionModalContent(entryId) {
       const ok = await copyToClipboardRobust(text);
       b.textContent = ok ? '✓ Copiado' : '⚠ Error';
       setTimeout(() => { b.textContent = '📋 Copiar'; }, 1500);
-    }));
-    list.querySelectorAll('[data-copy-all-var-scenes]').forEach(b => b.addEventListener('click', async () => {
-      const idx = parseInt(b.dataset.copyAllVarScenes);
-      const scs = (variations[idx] && variations[idx].scenes) || [];
-      const dur = (variations[idx] && variations[idx].sceneDuration) || 15;
-      const text = scs.map((s, i) => `Escena ${i + 1} (${dur}s):\n${s}`).join('\n\n');
-      const ok = await copyToClipboardRobust(text);
-      b.textContent = ok ? '✓ Copiado todo' : '⚠ Error';
-      setTimeout(() => { b.textContent = '📋 Copiar todas'; }, 1500);
     }));
     list.querySelectorAll('[data-clear-var-scenes]').forEach(b => b.addEventListener('click', async () => {
       if (!confirm('Borrar las escenas de esta variación?')) return;

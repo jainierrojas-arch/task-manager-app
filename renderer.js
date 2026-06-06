@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.105': {
+    title: '📋 Copiar todo junto + 🔍 Diagnóstico real portadas IG',
+    features: [
+      '📋 <strong>Copiar todo junto</strong>: cuando una variación tiene escenas generadas, el botón "📋 Copiar" del header ahora copia <strong>TODAS las escenas formateadas en un solo bloque</strong> (Escena 1, Escena 2, ...). Eliminado el botón redundante "Copiar todas". Si la variación no tiene escenas, el botón copia el texto plano como siempre.',
+      '🩹 <strong>Portadas Instagram — diagnóstico real</strong>: Microlink en plan free ya NO consigue el thumb real de IG porque Instagram cambió la página y los meta tags se generan client-side con JavaScript. Microlink devuelve un data:image base64 con un placeholder gris feo (parece imagen rota).',
+      '✅ <strong>Fix</strong>: rechazamos data:URIs y URLs <code>static.cdninstagram.com/rsrc.php</code> (logos genéricos). Ahora cuando IG no se puede scrapear, la card cae al placeholder de marca (gradiente naranja-rosa-violeta + ícono cámara + "INSTAGRAM") — mucho más prolijo que el gris.',
+      '💡 <strong>Para tener portadas REALES de IG</strong> habría que usar plan paid de Microlink o un scraper alternativo. Lo veremos en una próxima versión si querés.'
+    ]
+  },
   '3.11.104': {
     title: '✂️ Dividir cada variación en escenas (8/10/15s) + Google Flash Omni',
     features: [
