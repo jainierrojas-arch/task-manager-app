@@ -2959,6 +2959,7 @@ function _renderTranscriptionModalContent(entryId) {
         // variación elegida y lo parte en chunks por word count, sin agregar nada.
         const scenes = Array.isArray(v.scenes) ? v.scenes : [];
         const currentDur = v.sceneDuration || 15;
+        const instructions = v.sceneInstructions || '';
         const scenesHtml = scenes.length === 0 ? '' : `
           <div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border)">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
@@ -2972,6 +2973,8 @@ function _renderTranscriptionModalContent(entryId) {
                     <span style="font-size:10px;color:#ff9866;font-weight:700">Escena ${sIdx + 1} · ${currentDur}s</span>
                     <button class="btn btn-ghost btn-small" data-copy-var-scene="${i}-${sIdx}" style="padding:2px 8px;font-size:10px">📋 Copiar</button>
                   </div>
+                  ${instructions ? `<div style="font-size:11.5px;line-height:1.5;color:var(--text-secondary);background:rgba(255,128,64,0.04);padding:6px 8px;border-radius:4px;margin-bottom:6px;white-space:pre-wrap">${esc(instructions)}</div>` : ''}
+                  ${instructions ? `<div style="font-size:10px;color:#ff9866;font-weight:700;margin-bottom:3px">Guion en español:</div>` : ''}
                   <div style="font-size:12px;line-height:1.5;color:var(--text-primary)">${esc(sc)}</div>
                 </div>
               `).join('')}
@@ -2988,14 +2991,19 @@ function _renderTranscriptionModalContent(entryId) {
               </div>
             </div>
             <div class="transcript-variation-text">${safeText}</div>
-            <div style="margin-top:10px;padding:8px 10px;background:rgba(255,128,64,0.06);border:1px solid rgba(255,128,64,0.2);border-radius:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-              <span style="font-size:10px;color:#ff9866;font-weight:700;letter-spacing:0.3px;text-transform:uppercase">🎬 Dividir en escenas</span>
-              <select data-var-scene-dur="${i}" style="padding:4px 8px;background:var(--bg-card);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-family:inherit;font-size:11px">
-                <option value="8" ${currentDur===8?'selected':''}>8 segundos</option>
-                <option value="10" ${currentDur===10?'selected':''}>10 segundos</option>
-                <option value="15" ${currentDur===15?'selected':''}>15 segundos</option>
-              </select>
-              <button class="btn btn-primary btn-small" data-split-var="${i}" style="padding:4px 10px;font-size:10px;background:#ff9866;border-color:#ff7a3d">✂️ Dividir esta variación</button>
+            <div style="margin-top:10px;padding:10px 12px;background:rgba(255,128,64,0.06);border:1px solid rgba(255,128,64,0.2);border-radius:6px">
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+                <span style="font-size:10px;color:#ff9866;font-weight:700;letter-spacing:0.3px;text-transform:uppercase">🎬 Dividir en escenas</span>
+                <select data-var-scene-dur="${i}" style="padding:4px 8px;background:var(--bg-card);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-family:inherit;font-size:11px">
+                  <option value="8" ${currentDur===8?'selected':''}>8 segundos</option>
+                  <option value="10" ${currentDur===10?'selected':''}>10 segundos</option>
+                  <option value="15" ${currentDur===15?'selected':''}>15 segundos</option>
+                </select>
+                <button class="btn btn-primary btn-small" data-split-var="${i}" style="padding:4px 10px;font-size:10px;background:#ff9866;border-color:#ff7a3d">✂️ Dividir esta variación</button>
+              </div>
+              <label style="display:block;font-size:10px;color:#ff9866;font-weight:600;margin-bottom:4px;letter-spacing:0.3px">📌 Instrucciones (se repiten en TODAS las escenas, encima del guion)</label>
+              <textarea data-var-scene-instructions="${i}" placeholder="Ej: Personaje: hombre joven latino, ropa casual oscura.\nCámara: medium shot, fondo desenfocado.\nIluminación: cinematográfica suave.\nVoz neutra, energía media." rows="4" style="width:100%;padding:8px 10px;background:var(--bg-card);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-family:inherit;font-size:11.5px;line-height:1.5;resize:vertical;box-sizing:border-box">${esc(instructions)}</textarea>
+              <div style="font-size:9.5px;color:var(--text-dim);margin-top:4px;font-style:italic">Al copiar cada escena saldrá: tus instrucciones + "Guion en español:" + texto de esa escena. Perfecto para HeyGen / Flash Omni / Veo.</div>
             </div>
             ${scenesHtml}
           </div>`;
@@ -3012,7 +3020,9 @@ function _renderTranscriptionModalContent(entryId) {
       let text = '';
       if (Array.isArray(v.scenes) && v.scenes.length > 0) {
         const dur = v.sceneDuration || 15;
-        text = v.scenes.map((s, i) => `Escena ${i + 1} (${dur}s):\n${s}`).join('\n\n');
+        const instr = v.sceneInstructions || '';
+        // v3.11.109: cada escena se exporta con instrucciones + "Guion en español:" + texto
+        text = v.scenes.map((s, i) => `=== Escena ${i + 1} (${dur}s) ===\n${formatSceneForCopy(s, instr)}`).join('\n\n');
       } else {
         text = v.text || '';
       }
@@ -3031,6 +3041,15 @@ function _renderTranscriptionModalContent(entryId) {
     // viven ahora en event delegation global (final del archivo) — más robusto
     // contra re-renders.
   }
+}
+
+// v3.11.109: formatea una escena para copiar/exportar — si la variación tiene
+// sceneInstructions, las antepone con "Guion en español:" como separador.
+// Si no, devuelve solo el texto de la escena.
+function formatSceneForCopy(sceneText, instructions) {
+  const instr = (instructions || '').trim();
+  if (!instr) return sceneText || '';
+  return `${instr}\n\nGuion en español:\n${sceneText || ''}`;
 }
 
 // v3.11.104: split textual puro del guion en chunks por word count.
@@ -3128,14 +3147,16 @@ document.addEventListener('click', (ev) => {
     }
     const durSel = document.querySelector(`[data-var-scene-dur="${idx}"]`);
     const duration = parseInt((durSel && durSel.value) || '15', 10);
+    const instrTa = document.querySelector(`[data-var-scene-instructions="${idx}"]`);
+    const sceneInstructions = (instrTa && instrTa.value || '').trim();
     const v = entry.scriptVariations[idx];
     if (!v || !v.text) { _setTranscriptionStatus('⚠ La variación está vacía', 'error'); return; }
-    console.log('[split-var] splitting variation', idx, 'duration', duration, 'words', v.text.split(/\s+/).length);
+    console.log('[split-var] splitting variation', idx, 'duration', duration, 'words', v.text.split(/\s+/).length, 'instr', sceneInstructions.length);
     const scenes = splitTextByDuration(v.text, duration);
     console.log('[split-var] split returned', scenes.length, 'scenes');
     if (scenes.length === 0) { _setTranscriptionStatus('⚠ El split devolvió 0 escenas — texto muy corto', 'error'); return; }
     const newVars = entry.scriptVariations.slice();
-    newVars[idx] = { ...v, scenes, sceneDuration: duration };
+    newVars[idx] = { ...v, scenes, sceneDuration: duration, sceneInstructions };
     splitVarBtn.disabled = true;
     splitVarBtn.textContent = '⏳ Dividiendo...';
     _setTranscriptionStatus(`⏳ Dividiendo variación en ${scenes.length} escenas de ${duration}s...`);
@@ -3160,8 +3181,10 @@ document.addEventListener('click', (ev) => {
     ev.stopPropagation();
     const [varIdx, sIdx] = copyVarSceneBtn.dataset.copyVarScene.split('-').map(n => parseInt(n, 10));
     const entry = entries.find(e => e.id === _currentTranscriptionEntryId);
-    const text = (entry && entry.scriptVariations && entry.scriptVariations[varIdx]
-      && entry.scriptVariations[varIdx].scenes && entry.scriptVariations[varIdx].scenes[sIdx]) || '';
+    const v = entry && entry.scriptVariations && entry.scriptVariations[varIdx];
+    const sceneText = (v && v.scenes && v.scenes[sIdx]) || '';
+    // v3.11.109: incluir instrucciones + "Guion en español:" si la variación tiene
+    const text = formatSceneForCopy(sceneText, v && v.sceneInstructions);
     copyToClipboardRobust(text).then(ok => {
       copyVarSceneBtn.textContent = ok ? '✓ Copiado' : '⚠ Error';
       setTimeout(() => { copyVarSceneBtn.textContent = '📋 Copiar'; }, 1500);

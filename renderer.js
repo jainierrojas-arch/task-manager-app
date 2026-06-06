@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.109': {
+    title: '📌 Instrucciones que se repiten en TODAS las escenas',
+    features: [
+      '📌 <strong>NUEVO: caja de Instrucciones</strong> en el panel "🎬 Dividir en escenas" debajo de cada variación. Escribís ahí lo que querés que se repita en TODAS las escenas (personaje, cámara, iluminación, estilo, lo que sea).',
+      '✂️ <strong>Al dividir</strong>, cada escena se renderiza así:<br><code>[tus instrucciones]<br><br>Guion en español:<br>[texto de esa escena]</code>',
+      '📋 <strong>Al copiar</strong> (individual o todas juntas), el formato se incluye automáticamente. Pegás directo en HeyGen / Google Flash Omni / Veo / etc. con las reglas de personaje + cámara + iluminación + el texto que toca decir, todo consistente entre escenas.',
+      '💡 <strong>Ejemplo de instrucciones</strong>:<br><code>Personaje: hombre joven latino, ropa casual oscura.<br>Cámara: medium shot, fondo desenfocado.<br>Iluminación: cinematográfica suave.<br>Voz neutra, energía media.</code>',
+      '🧠 <strong>Persistente</strong>: las instrucciones se guardan en la variación. Si volvés a abrir el modal, siguen ahí.'
+    ]
+  },
   '3.11.108': {
     title: '🩹 Fix REAL botón Dividir variación — modal no se re-renderizaba',
     features: [
