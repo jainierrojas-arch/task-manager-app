@@ -407,6 +407,10 @@
     });
     const auth = firebase.auth();
     const db = firebase.firestore();
+    // v3.11.102: fuerza long polling cuando QUIC/WebChannel falla.
+    try {
+      db.settings({ experimentalAutoDetectLongPolling: true, merge: true });
+    } catch (e) { console.warn('[firestore-settings]', e.message); }
     // v3.8.1: aplicar wrapper de workspace si está disponible (definido en chat-renderer.js
     // header inline). Carga el script primero para que el wrapper exista al ejecutar.
   </script>

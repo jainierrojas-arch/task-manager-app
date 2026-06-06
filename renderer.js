@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.102': {
+    title: '🔥 FIX CRÍTICO RAÍZ — Firestore caía con ERR_QUIC_PROTOCOL_ERROR (no era IG)',
+    features: [
+      '🕵️ <strong>Diagnóstico real (gracias al screenshot de DevTools)</strong>: 317 errores en Console diciendo <code>net::ERR_QUIC_PROTOCOL_ERROR.QUIC_PUBLIC_RESET</code> y <code>400 ()</code> al hablar con <code>firestore.googleapis.com</code>. Esto significa que <strong>Firestore mismo</strong> estaba fallando — los entries del Depósito no se cargaban completos, los fetchers no podían persistir el coverImage, ¡todo el flujo estaba muerto a nivel base de datos!',
+      '🧯 <strong>Causa</strong>: el SDK de Firestore usa por defecto un protocolo llamado QUIC (HTTP/3 sobre UDP). Tu red (ISP, router, antivirus o sistema) está bloqueando UDP. QUIC falla → Firestore corta.',
+      '✅ <strong>Fix</strong>: agregado <code>experimentalAutoDetectLongPolling: true</code> en los 4 puntos de inicialización de Firestore (index.html, deposit.html, chat.html, chatbot.html). El SDK ahora detecta automáticamente cuando QUIC falla y cae a long polling HTTP/2 sobre TCP — funciona en cualquier red.',
+      '💡 <strong>Esto explica TODO el síntoma anterior</strong>: las portadas no aparecían porque las queries a Firestore que devolvían los entries fallaban masivamente, y los updates de coverImage tampoco se persistían. NO era Instagram, NO era Cloudinary, era la red.'
+    ]
+  },
   '3.11.101': {
     title: '🩹 Hotfix JS error que rompía las cards del Depósito',
     features: [

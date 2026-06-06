@@ -202,6 +202,10 @@ CASOS DE ÉXITO: María (coach) facturó $5K USD en 60 días, Juan (consultor) p
     });
     const auth = firebase.auth();
     const db = firebase.firestore();
+    // v3.11.102: fuerza long polling cuando QUIC/WebChannel falla.
+    try {
+      db.settings({ experimentalAutoDetectLongPolling: true, merge: true });
+    } catch (e) { console.warn('[firestore-settings]', e.message); }
   </script>
   <script src="chatbot-renderer.js"></script>
 </body>
