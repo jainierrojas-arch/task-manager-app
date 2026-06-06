@@ -926,24 +926,30 @@ function renderEntries() {
 }
 
 // Cloudinary video → URL de thumbnail (.jpg). Cloudinary genera la imagen al vuelo.
-// v3.11.94: usábamos so_auto (smart object detection) pero requiere feature paga.
-// En plans gratis fallaba y caía al frame 0 (negro en muchos videos con intro oscura).
-// Cambiado a so_3 (frame del segundo 3) que funciona en cualquier plan y suele tener
-// contenido visible. Si el video dura <3s, Cloudinary cae al último frame automáticamente.
+// v3.11.99: combo robusta — so_2 (frame al segundo 2, lo bastante adentro para
+// esquivar splash negro pero suficientemente temprano para que videos de 3s+
+// lo tengan), q_auto y f_jpg garantizan formato/calidad universal. Pequeño
+// width=600 mantiene la imagen liviana. Antes usabamos so_3 que fallaba en
+// videos cortos o con splash de >3s — saliendo negros.
 function cloudinaryVideoThumb(url) {
   if (!url || !/\/video\/upload\//.test(url)) return null;
   if (!/res\.cloudinary\.com/i.test(url)) return null;
   return url
-    .replace(/\/video\/upload\//, '/video/upload/so_3,w_600/')
+    .replace(/\/video\/upload\//, '/video/upload/so_2,w_600,q_auto,f_jpg/')
     .replace(/\.(mp4|mov|webm|m4v)(\?.*)?$/i, '.jpg');
 }
 
-// v3.11.94: detecta si una URL es un thumbnail viejo de Cloudinary con so_auto
-// (que sale negro en cuentas free). Esto se usa para invalidar covers viejos y
-// forzar re-generación con la nueva URL so_3.
+// v3.11.94: detecta thumbnails viejos de Cloudinary con transformaciones que
+// salen negras (so_auto en cuentas free, so_0 que es el frame 0/negro,
+// so_3 que falla en videos cortos). Se usa para invalidar covers viejos y
+// forzar re-generación con la nueva URL.
 function isOldCloudinaryThumb(url) {
   if (!url || typeof url !== 'string') return false;
-  return /res\.cloudinary\.com/.test(url) && /\/video\/upload\/[^/]*so_auto/.test(url);
+  if (!/res\.cloudinary\.com/.test(url)) return false;
+  if (!/\/video\/upload\//.test(url)) return false;
+  // Cualquier so_X que NO sea exactamente so_2,w_600,q_auto,f_jpg es viejo
+  return /\/video\/upload\/[^/]*so_(auto|0|1|3|4|5)\b/.test(url) ||
+         /\/video\/upload\/[^/]*so_2(?!,w_600,q_auto,f_jpg)/.test(url);
 }
 
 // Helpers para servicios conocidos cuando no hay og:image
@@ -1001,14 +1007,21 @@ function renderEntryHtml(e) {
   let coverHtml = '';
   if (firstUrl) {
     if (cover) {
-      // Si tenemos las dimensiones reales de la imagen (Microlink las devuelve),
-      // forzamos el aspect-ratio del card a las dimensiones reales para que la
-      // imagen llene 100% sin recortar ni dejar barras grandes.
+      // v3.11.99: usar <img> real (no background-image) para poder detectar
+      // errores de carga via onerror. Si la URL del cover falla (Cloudinary
+      // genera thumb roto, IG CDN token expirado, Microlink 404), el handler
+      // cae al placeholder en vez de dejar un cuadro negro.
       let arStyle = '';
       if (e.coverWidth && e.coverHeight) {
         arStyle = `aspect-ratio:${e.coverWidth} / ${e.coverHeight};`;
       }
-      coverHtml = `<div class="entry-cover" data-link-open="${esc(firstUrl)}" style="background-image:url('${esc(cover)}');${arStyle}"></div>`;
+      const svc = serviceFromUrl(firstUrl);
+      const fallbackStyle = `background:${svc.gradient};`;
+      const fallbackBody = `<div class=\"entry-cover-icon\">${svc.icon}</div><div class=\"entry-cover-domain\">${esc(svc.name)}</div>`;
+      // onerror: vacía el wrapper y lo convierte en placeholder. También
+      // marca data-cover-broken para que lazyFetchCovers reintente.
+      const onerr = `this.onerror=null;this.parentElement.classList.add('entry-cover-placeholder');this.parentElement.style.cssText+=';${fallbackStyle}';this.parentElement.innerHTML='${fallbackBody.replace(/'/g, "\\'")}';this.parentElement.dataset.coverBroken='1';`;
+      coverHtml = `<div class="entry-cover" data-link-open="${esc(firstUrl)}" data-entry-cover-id="${esc(e.id)}" style="${arStyle}"><img src="${esc(cover)}" alt="" loading="lazy" onerror="${onerr}" style="width:100%;height:100%;object-fit:cover;display:block"></div>`;
     } else {
       const svc = serviceFromUrl(firstUrl);
       let domain = firstUrl;
@@ -1350,7 +1363,7 @@ async function migrateCovers(visibleEntries) {
     // v3.11.96: bumped a 8 — fuerza re-fetch de TODAS las entries de Instagram
     // porque las URLs de scontent.cdninstagram.com tienen tokens firmados que
     // vencen tras días/semanas y la portada queda muerta (sale negra).
-    if (entry.coverFetcherV >= 8) continue;
+    if (entry.coverFetcherV >= 9) continue;
     coverMigratedThisSession.add(entry.id);
 
     const isInstagramLink = (entry.links || []).some(l => /instagram\.com\//.test(l.url || ''));
@@ -1366,12 +1379,12 @@ async function migrateCovers(visibleEntries) {
           coverImage: firebase.firestore.FieldValue.delete(),
           coverWidth: firebase.firestore.FieldValue.delete(),
           coverHeight: firebase.firestore.FieldValue.delete(),
-          coverFetcherV: 8
+          coverFetcherV: 9
         });
       } catch (_) {}
       await new Promise(r => setTimeout(r, 100));
     } else {
-      try { await db.collection('depositEntries').doc(entry.id).update({ coverFetcherV: 8 }); } catch (_) {}
+      try { await db.collection('depositEntries').doc(entry.id).update({ coverFetcherV: 9 }); } catch (_) {}
     }
   }
 }
@@ -1397,7 +1410,7 @@ async function lazyFetchCovers(visibleEntries) {
           coverImage: cdnThumb,
           coverWidth: 1080,
           coverHeight: 1920,
-          coverFetcherV: 8
+          coverFetcherV: 9
         });
         try {
           const tasksSnap = await db.collection('tasks').where('depositEntryId', '==', entry.id).get();
@@ -1416,7 +1429,7 @@ async function lazyFetchCovers(visibleEntries) {
     }
     try {
       const og = await window.api.fetchOgData(url);
-      const update = { coverImage: og.image || null, coverFetcherV: 8 };
+      const update = { coverImage: og.image || null, coverFetcherV: 9 };
       if (og.imageWidth && og.imageHeight) {
         update.coverWidth = og.imageWidth;
         update.coverHeight = og.imageHeight;

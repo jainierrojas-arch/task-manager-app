@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.99': {
+    title: '🖼 Fix DEFINITIVO portadas — frame correcto del video + fallback automático',
+    features: [
+      '🎬 <strong>Frame del video correcto</strong>: cambiada la transformación de Cloudinary de <code>so_3</code> (frame al segundo 3 — fallaba en videos cortos o con splash) a <code>so_2,q_auto,f_jpg</code> (frame al segundo 2 + calidad auto + JPG forzado). Más robusta y compatible.',
+      '🩹 <strong>Fallback automático cuando la portada falla a cargar</strong>: las portadas ahora se renderizan con <code>&lt;img&gt;</code> real (no background-image) — si la URL devuelve 404, token expirado o imagen vacía, el handler <code>onerror</code> automáticamente convierte la card en placeholder de marca (gradiente IG / TikTok / etc) en vez de dejar un cuadro negro.',
+      '🔄 <strong>Migration automática v9</strong>: en el próximo arranque la app detecta TODOS los thumbs viejos (so_auto, so_0, so_1, so_3, etc) y los regenera con la nueva transformación. No tenés que apretar nada — abrí el Depósito y dejá que se carguen solas.'
+    ]
+  },
   '3.11.98': {
     title: '🩹 Fix botón Copiar guion + botón "🔄 Re-fetch portada" manual',
     features: [
