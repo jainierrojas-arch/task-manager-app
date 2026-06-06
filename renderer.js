@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.108': {
+    title: '🩹 Fix REAL botón Dividir variación — modal no se re-renderizaba',
+    features: [
+      '🐛 <strong>Bug encontrado</strong>: el click SÍ funcionaba y SÍ guardaba en Firestore, pero el modal de transcripción NO es reactivo a cambios del array <code>entries</code> — onSnapshot actualizaba los datos pero el modal seguía mostrando el render viejo sin las escenas. Por eso parecía que el botón no hacía nada.',
+      '✅ <strong>Fix</strong>: después de guardar el split, ahora se fuerza un re-render del modal con <code>_renderTranscriptionModalContent</code>. Las escenas aparecen al instante debajo de la variación.',
+      '💡 <strong>Feedback visual</strong>: el botón ahora dice "⏳ Dividiendo..." mientras procesa, y el estado del modal muestra "✓ Variación dividida en N escenas" cuando termina. Igual para errores.',
+      '🧹 <strong>Limpiar split</strong>: el botón 🗑 también fuerza re-render al borrar las escenas.'
+    ]
+  },
   '3.11.107': {
     title: '🎯 CTA integrado + fix botón Dividir variación',
     features: [

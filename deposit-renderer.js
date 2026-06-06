@@ -3123,21 +3123,34 @@ document.addEventListener('click', (ev) => {
     const entry = entries.find(e => e.id === entryId);
     if (!entry || !Array.isArray(entry.scriptVariations) || !entry.scriptVariations[idx]) {
       console.warn('[split-var] no entry / variation', { entryId, idx });
+      _setTranscriptionStatus('⚠ No se pudo dividir: variación no encontrada', 'error');
       return;
     }
     const durSel = document.querySelector(`[data-var-scene-dur="${idx}"]`);
     const duration = parseInt((durSel && durSel.value) || '15', 10);
     const v = entry.scriptVariations[idx];
-    if (!v || !v.text) return;
+    if (!v || !v.text) { _setTranscriptionStatus('⚠ La variación está vacía', 'error'); return; }
     console.log('[split-var] splitting variation', idx, 'duration', duration, 'words', v.text.split(/\s+/).length);
     const scenes = splitTextByDuration(v.text, duration);
+    console.log('[split-var] split returned', scenes.length, 'scenes');
+    if (scenes.length === 0) { _setTranscriptionStatus('⚠ El split devolvió 0 escenas — texto muy corto', 'error'); return; }
     const newVars = entry.scriptVariations.slice();
     newVars[idx] = { ...v, scenes, sceneDuration: duration };
     splitVarBtn.disabled = true;
     splitVarBtn.textContent = '⏳ Dividiendo...';
+    _setTranscriptionStatus(`⏳ Dividiendo variación en ${scenes.length} escenas de ${duration}s...`);
     db.collection('depositEntries').doc(entryId).update({ scriptVariations: newVars })
-      .then(() => console.log('[split-var] saved', scenes.length, 'scenes'))
-      .catch(e => console.error('[split-var] save error', e))
+      .then(() => {
+        console.log('[split-var] saved', scenes.length, 'scenes');
+        _setTranscriptionStatus(`✓ Variación dividida en ${scenes.length} escenas`, 'success');
+        // v3.11.108: forzar re-render del modal para que aparezcan las escenas
+        // (onSnapshot actualiza el array `entries` pero el modal no es reactivo)
+        setTimeout(() => _renderTranscriptionModalContent(entryId), 200);
+      })
+      .catch(e => {
+        console.error('[split-var] save error', e);
+        _setTranscriptionStatus('❌ Error guardando escenas: ' + (e.message || e), 'error');
+      })
       .finally(() => { splitVarBtn.disabled = false; splitVarBtn.textContent = '✂️ Dividir esta variación'; });
     return;
   }
@@ -3167,7 +3180,8 @@ document.addEventListener('click', (ev) => {
     const newVars = entry.scriptVariations.slice();
     const { scenes, sceneDuration, ...rest } = newVars[idx] || {};
     newVars[idx] = rest;
-    db.collection('depositEntries').doc(entryId).update({ scriptVariations: newVars });
+    db.collection('depositEntries').doc(entryId).update({ scriptVariations: newVars })
+      .then(() => setTimeout(() => _renderTranscriptionModalContent(entryId), 200));
     return;
   }
 });
