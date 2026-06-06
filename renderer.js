@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.106': {
+    title: '📏 Longitud del guion (Corto/Medio/Largo) + limpieza UI',
+    features: [
+      '📏 <strong>Nueva opción Longitud al generar variación</strong>: en el panel "Generar variación con Claude" ahora hay un tercer select: <strong>Corto (~30s)</strong>, <strong>Medio (~60s)</strong> o <strong>Largo (~90s)</strong>. Claude ajusta la cantidad de palabras del guion a esa duración objetivo (~70/140/210 palabras hablables).',
+      '🧹 <strong>Eliminado el panel global de "Dividir en escenas"</strong> (HeyGen/Google Flash Omni) que estaba al final del modal de transcripción. Ya no tenía sentido tenerlo separado.',
+      '✅ <strong>El split en escenas vive solo debajo de cada variación</strong> (panel naranja "✂️ Dividir esta variación") — exactamente donde lo necesitás, sobre el texto que ya tenés generado con tu tono/estilo/longitud preferidos.',
+      '🏷 <strong>Tag de longitud</strong> en el header de cada variación: vas a ver "Educativo · Hook con dato · Medio" para saber con qué configuración fue generada.'
+    ]
+  },
   '3.11.105': {
     title: '📋 Copiar todo junto + 🔍 Diagnóstico real portadas IG',
     features: [

@@ -2540,6 +2540,14 @@ const SCRIPT_ESTILOS = {
   comparativa:   { label: 'Comparativa',            desc: 'Comparás 2 opciones / 2 enfoques / 2 resultados' }
 };
 
+// v3.11.106: longitud del guion generado por Claude.
+// Promedio hablado en español neutro: ~2.3 palabras/seg.
+const SCRIPT_LONGITUDES = {
+  corto: { label: 'Corto', seconds: 30, words: 70, desc: 'corto y directo, ~30 segundos hablado' },
+  medio: { label: 'Medio', seconds: 60, words: 140, desc: 'mediano, ~60 segundos hablado' },
+  largo: { label: 'Largo', seconds: 90, words: 210, desc: 'extendido, ~90 segundos hablado, espacio para desarrollar más' }
+};
+
 async function rewriteScriptForEntry(entryId, btn, opts) {
   const entry = entries.find(e => e.id === entryId);
   if (!entry || !entry.transcription) { alert('Primero transcribí el video.'); return; }
@@ -2549,23 +2557,27 @@ async function rewriteScriptForEntry(entryId, btn, opts) {
   }
   const tonoKey = (opts && opts.tono) || 'educativo';
   const estiloKey = (opts && opts.estilo) || 'hook_dato';
+  const longitudKey = (opts && opts.longitud) || 'medio';
   const tono = SCRIPT_TONOS[tonoKey] || SCRIPT_TONOS.educativo;
   const estilo = SCRIPT_ESTILOS[estiloKey] || SCRIPT_ESTILOS.hook_dato;
+  const longitud = SCRIPT_LONGITUDES[longitudKey] || SCRIPT_LONGITUDES.medio;
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Generando...'; }
-  _setTranscriptionStatus(`⏳ Claude generando variación (${tono.label} · ${estilo.label})...`);
+  _setTranscriptionStatus(`⏳ Claude generando variación ${longitud.label.toLowerCase()} (${tono.label} · ${estilo.label})...`);
   try {
     const prompt = `Recreá el siguiente guion de video.
 
 REGLAS OBLIGATORIAS:
 1. EMPEZÁ con un HOOK VIRAL de retención de audiencia — los primeros 3 segundos definen si la persona se queda o pasa de largo. Sé brutal: dato impactante, pregunta provocadora, frase polémica, o lo que aplique según el estilo.
-2. Mantené la MISMA idea/tema central y la duración aproximada (similar cantidad de palabras).
-3. Cambiá las palabras, el ángulo, el orden — que NO sea reconocible como copia del original.
-4. Cerralo con un cliffhanger, CTA o pregunta que mantenga al espectador hasta el final.
-5. Escribilo en español neutro, listo para grabar.
+2. LONGITUD: el guion debe ser ${longitud.desc}. Apuntá a aproximadamente ${longitud.words} palabras (${longitud.seconds} segundos hablados). NO te quedes corto NI te excedas — esa es la duración objetivo. Si el original es mucho más largo o más corto, ajustalo a esa medida sin perder la idea central.
+3. Mantené la MISMA idea/tema central que el original, pero adaptada a la longitud pedida.
+4. Cambiá las palabras, el ángulo, el orden — que NO sea reconocible como copia del original.
+5. Cerralo con un cliffhanger, CTA o pregunta que mantenga al espectador hasta el final.
+6. Escribilo en español neutro, listo para grabar.
 
 PERFIL DE ESTA VARIACIÓN:
 - Tono: ${tono.label} — ${tono.desc}
 - Estilo: ${estilo.label} — ${estilo.desc}
+- Longitud: ${longitud.label} (~${longitud.seconds}s / ~${longitud.words} palabras)
 
 DEVOLVÉ SOLO el guion nuevo, sin explicaciones, sin encabezados, sin comillas. Texto plano listo para leer en cámara.
 
@@ -2574,7 +2586,7 @@ ${entry.transcription}`;
     const result = await window.api.generateWithClaude({
       prompt: prompt,
       model: 'claude-sonnet-4-6',
-      maxTokens: 2000
+      maxTokens: 2500
     });
     if (!result || !result.ok) {
       throw new Error(result && result.error ? result.error : 'No se pudo conectar con Claude');
@@ -2587,8 +2599,10 @@ ${entry.transcription}`;
       text: newText,
       tono: tonoKey,
       estilo: estiloKey,
+      longitud: longitudKey,
       tonoLabel: tono.label,
       estiloLabel: estilo.label,
+      longitudLabel: longitud.label,
       createdAt: new Date().toISOString(),
       createdBy: (window.parent && window.parent.currentUser) ? window.parent.currentUser.uid : null
     });
@@ -2892,74 +2906,8 @@ function _renderTranscriptionModalContent(entryId) {
       }));
     }
   }
-  // v3.11.96: render de escenas generadas (HeyGen / Veo 3)
-  const scenesList = document.getElementById('transcriptionScenesList');
-  if (scenesList) {
-    const splits = Array.isArray(entry.sceneSplits) ? entry.sceneSplits : [];
-    if (splits.length === 0) {
-      scenesList.innerHTML = '';
-    } else {
-      scenesList.innerHTML = splits.map((split, splitIdx) => {
-        const scenes = split.scenes || [];
-        const headerLabel = `🎬 Escenas para ${esc(split.targetLabel || split.target)} · ${split.duration}s · ${scenes.length} escenas`;
-        const scenesHtml = scenes.map((s, i) => {
-          const text = esc(s.text || '');
-          const voiceover = s.voiceover ? `<div style="font-size:10.5px;color:var(--text-secondary);margin-top:4px;padding-top:4px;border-top:1px dashed var(--border)"><strong>🎙 Voiceover:</strong> ${esc(s.voiceover)}</div>` : '';
-          return `
-            <div style="padding:10px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;margin-bottom:6px">
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-                <span style="font-size:11px;font-weight:700;color:#ff9866">Escena ${s.n || (i + 1)}</span>
-                <button class="btn btn-ghost btn-small" data-copy-scene="${splitIdx}-${i}" style="padding:2px 8px;font-size:10px">📋 Copiar</button>
-              </div>
-              <div style="font-size:12.5px;color:var(--text-primary);line-height:1.5;white-space:pre-wrap">${text}</div>
-              ${voiceover}
-            </div>`;
-        }).join('');
-        // Texto plano de todas las escenas (útil para copiar todo)
-        return `
-          <div style="margin-bottom:14px">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin:14px 0 8px">
-              <span style="font-size:11px;font-weight:700;color:#ff9866;letter-spacing:0.4px;text-transform:uppercase">${headerLabel}</span>
-              <div style="display:flex;gap:6px">
-                <button class="btn btn-ghost btn-small" data-copy-all-scenes="${splitIdx}" style="padding:2px 8px;font-size:10px">📋 Copiar todas</button>
-                <button class="btn btn-danger btn-small" data-del-scene-split="${splitIdx}" style="padding:2px 8px;font-size:10px">🗑</button>
-              </div>
-            </div>
-            ${scenesHtml}
-          </div>`;
-      }).join('');
-      // Wiring
-      scenesList.querySelectorAll('[data-copy-scene]').forEach(b => b.addEventListener('click', async () => {
-        const [si, ei] = b.dataset.copyScene.split('-').map(Number);
-        const s = (splits[si] && splits[si].scenes && splits[si].scenes[ei]) || {};
-        const txt = s.voiceover ? (s.text + '\n\nVoiceover: ' + s.voiceover) : (s.text || '');
-        const ok = await copyToClipboardRobust(txt);
-        b.textContent = ok ? '✓' : '⚠';
-        setTimeout(() => { b.textContent = '📋 Copiar'; }, 1500);
-      }));
-      scenesList.querySelectorAll('[data-copy-all-scenes]').forEach(b => b.addEventListener('click', async () => {
-        const si = parseInt(b.dataset.copyAllScenes);
-        const split = splits[si];
-        if (!split) return;
-        const allText = split.scenes.map((s, i) => {
-          const header = `=== Escena ${s.n || (i + 1)} ===\n`;
-          const main = s.text || '';
-          const vo = s.voiceover ? `\n\nVoiceover: ${s.voiceover}` : '';
-          return header + main + vo;
-        }).join('\n\n');
-        const ok = await copyToClipboardRobust(allText);
-        b.textContent = ok ? '✓ Copiado' : '⚠ Error';
-        setTimeout(() => { b.textContent = '📋 Copiar todas'; }, 1500);
-      }));
-      scenesList.querySelectorAll('[data-del-scene-split]').forEach(b => b.addEventListener('click', async () => {
-        if (!confirm('Borrar este split de escenas?')) return;
-        const idx = parseInt(b.dataset.delSceneSplit);
-        const newSplits = splits.slice();
-        newSplits.splice(idx, 1);
-        await db.collection('depositEntries').doc(entryId).update({ sceneSplits: newSplits });
-      }));
-    }
-  }
+  // v3.11.106: bloque global de split (HeyGen/Flash Omni) eliminado.
+  // El split ahora se hace por variación individual con splitTextByDuration.
 
   // Variaciones
   const list = document.getElementById('transcriptionVariationsList');
@@ -2973,6 +2921,7 @@ function _renderTranscriptionModalContent(entryId) {
         const tagBits = [];
         if (v.tonoLabel) tagBits.push(esc(v.tonoLabel));
         if (v.estiloLabel) tagBits.push(esc(v.estiloLabel));
+        if (v.longitudLabel) tagBits.push(esc(v.longitudLabel));
         const tags = tagBits.length > 0
           ? `<span style="font-size:9px;color:var(--text-secondary);background:var(--bg-card);padding:2px 6px;border-radius:4px;margin-left:6px;font-weight:500">${tagBits.join(' · ')}</span>`
           : '';
@@ -3195,14 +3144,20 @@ function _wireupTranscriptionAndTeleprompter() {
     ).join('');
     estiloSelect.value = 'hook_dato';
   }
+  const longitudSelect = document.getElementById('variationLongitud');
   function updateVariationDesc() {
     if (!descEl || !tonoSelect || !estiloSelect) return;
     const t = SCRIPT_TONOS[tonoSelect.value];
     const e = SCRIPT_ESTILOS[estiloSelect.value];
-    if (t && e) descEl.textContent = `→ ${t.desc} · ${e.desc}`;
+    const l = longitudSelect ? SCRIPT_LONGITUDES[longitudSelect.value] : null;
+    if (t && e) {
+      const lDesc = l ? ` · ${l.label} (~${l.seconds}s)` : '';
+      descEl.textContent = `→ ${t.desc} · ${e.desc}${lDesc}`;
+    }
   }
   if (tonoSelect) tonoSelect.addEventListener('change', updateVariationDesc);
   if (estiloSelect) estiloSelect.addEventListener('change', updateVariationDesc);
+  if (longitudSelect) longitudSelect.addEventListener('change', updateVariationDesc);
   updateVariationDesc();
 
   const generate = document.getElementById('transcriptionGenerate');
@@ -3210,15 +3165,10 @@ function _wireupTranscriptionAndTeleprompter() {
     if (!_currentTranscriptionEntryId) return;
     const opts = {
       tono: tonoSelect ? tonoSelect.value : 'educativo',
-      estilo: estiloSelect ? estiloSelect.value : 'hook_dato'
+      estilo: estiloSelect ? estiloSelect.value : 'hook_dato',
+      longitud: longitudSelect ? longitudSelect.value : 'medio'
     };
     rewriteScriptForEntry(_currentTranscriptionEntryId, generate, opts);
-  });
-  // v3.11.96: botón "Dividir en escenas"
-  const splitBtn = document.getElementById('transcriptionSplitScenes');
-  if (splitBtn) splitBtn.addEventListener('click', () => {
-    if (!_currentTranscriptionEntryId) return;
-    splitTranscriptionIntoScenes(_currentTranscriptionEntryId, splitBtn);
   });
   const tpBtn = document.getElementById('transcriptionTeleprompter');
   if (tpBtn) tpBtn.addEventListener('click', () => {
