@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.104': {
+    title: '✂️ Dividir cada variación en escenas (8/10/15s) + Google Flash Omni',
+    features: [
+      '✂️ <strong>Dividir variación en escenas</strong>: debajo de cada variación de guion ahora tenés un mini panel con opciones <strong>8s / 10s / 15s</strong> y un botón "✂️ Dividir esta variación". Toma EXACTAMENTE el texto de la variación y lo parte en partes para que tu avatar las lea — <strong>NO agrega nada, NO reescribe</strong>, solo divide.',
+      '📋 <strong>Copiar por escena</strong>: cada escena que aparece tiene su botón "📋 Copiar" individual. También "📋 Copiar todas" arriba para llevarte el split entero formateado.',
+      '🤖 <strong>Split textual sin IA</strong>: el corte es matemático (~2.3 palabras por segundo hablado en español), respetando final de oración. Instantáneo, sin consumir tokens de Claude.',
+      '🏷 <strong>Renombrado Veo 3 → Google Flash Omni</strong> en el split global del transcript y en los prompts de Claude.',
+      '➕ <strong>Opción de 8 segundos</strong> agregada al split global (antes solo había 10 y 15).'
+    ]
+  },
   '3.11.103': {
     title: '🙃 Fix portadas IG REVERTIDO al orden correcto — Microlink primero',
     features: [

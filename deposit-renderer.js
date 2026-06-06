@@ -2706,7 +2706,7 @@ async function splitTranscriptionIntoScenes(entryId, btn) {
   const targetSel = document.getElementById('sceneTarget');
   const sceneDuration = parseInt((durationSel && durationSel.value) || '15', 10);
   const target = (targetSel && targetSel.value) || 'heygen';
-  const targetLabel = target === 'veo3' ? 'Google Veo 3' : 'HeyGen';
+  const targetLabel = target === 'flashomni' ? 'Google Flash Omni' : 'HeyGen';
 
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Generando escenas...'; }
   _setTranscriptionStatus(`⏳ Claude dividiendo el guion en escenas de ${sceneDuration}s para ${targetLabel}...`);
@@ -2735,7 +2735,7 @@ FORMATO de salida — JSON válido, SIN nada antes o después:
 GUION ORIGINAL:
 ${entry.transcription}`;
   } else {
-    prompt = `Te paso un guion de video. Convertilo en una serie de PROMPTS visuales para Google Veo 3, donde cada prompt genera un clip de ${sceneDuration} segundos.
+    prompt = `Te paso un guion de video. Convertilo en una serie de PROMPTS visuales para Google Flash Omni, donde cada prompt genera un clip de ${sceneDuration} segundos.
 
 CONTEXTO IMPORTANTE: El usuario va a generar clips secuenciales con su CLON AI como protagonista. Los clips deben mantener continuidad visual entre escenas (mismo personaje, mismo estilo, transiciones suaves).
 
@@ -2748,8 +2748,8 @@ REGLAS para cada prompt:
 
 FORMATO de salida — JSON válido, SIN nada antes o después:
 {"scenes":[
-  {"n":1,"text":"prompt completo para Veo 3 escena 1","voiceover":"qué se escucha hablando en esta escena"},
-  {"n":2,"text":"prompt para Veo 3 escena 2","voiceover":"..."},
+  {"n":1,"text":"prompt completo para Google Flash Omni escena 1","voiceover":"qué se escucha hablando en esta escena"},
+  {"n":2,"text":"prompt para Google Flash Omni escena 2","voiceover":"..."},
   ...
 ]}
 
@@ -2976,6 +2976,32 @@ function _renderTranscriptionModalContent(entryId) {
         const tags = tagBits.length > 0
           ? `<span style="font-size:9px;color:var(--text-secondary);background:var(--bg-card);padding:2px 6px;border-radius:4px;margin-left:6px;font-weight:500">${tagBits.join(' · ')}</span>`
           : '';
+        // v3.11.104: panel "Dividir esta variación en escenas" + render de escenas.
+        // El split es TEXTUAL puro (sin Claude) — toma EXACTAMENTE el texto de la
+        // variación elegida y lo parte en chunks por word count, sin agregar nada.
+        const scenes = Array.isArray(v.scenes) ? v.scenes : [];
+        const currentDur = v.sceneDuration || 15;
+        const scenesHtml = scenes.length === 0 ? '' : `
+          <div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border)">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+              <span style="font-size:10px;color:#ff9866;font-weight:700;letter-spacing:0.3px;text-transform:uppercase">🎬 ${scenes.length} escenas de ${currentDur}s</span>
+              <div style="display:flex;gap:4px">
+                <button class="btn btn-ghost btn-small" data-copy-all-var-scenes="${i}" style="padding:2px 8px;font-size:10px">📋 Copiar todas</button>
+                <button class="btn btn-danger btn-small" data-clear-var-scenes="${i}" style="padding:2px 8px;font-size:10px">🗑</button>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:6px">
+              ${scenes.map((sc, sIdx) => `
+                <div style="background:var(--bg-card);padding:8px 10px;border-radius:6px;border-left:3px solid #ff9866">
+                  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:4px">
+                    <span style="font-size:10px;color:#ff9866;font-weight:700">Escena ${sIdx + 1} · ${currentDur}s</span>
+                    <button class="btn btn-ghost btn-small" data-copy-var-scene="${i}-${sIdx}" style="padding:2px 8px;font-size:10px">📋 Copiar</button>
+                  </div>
+                  <div style="font-size:12px;line-height:1.5;color:var(--text-primary)">${esc(sc)}</div>
+                </div>
+              `).join('')}
+            </div>
+          </div>`;
         return `
           <div class="transcript-variation">
             <div class="transcript-variation-header">
@@ -2987,6 +3013,16 @@ function _renderTranscriptionModalContent(entryId) {
               </div>
             </div>
             <div class="transcript-variation-text">${safeText}</div>
+            <div style="margin-top:10px;padding:8px 10px;background:rgba(255,128,64,0.06);border:1px solid rgba(255,128,64,0.2);border-radius:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <span style="font-size:10px;color:#ff9866;font-weight:700;letter-spacing:0.3px;text-transform:uppercase">🎬 Dividir en escenas</span>
+              <select data-var-scene-dur="${i}" style="padding:4px 8px;background:var(--bg-card);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-family:inherit;font-size:11px">
+                <option value="8" ${currentDur===8?'selected':''}>8 segundos</option>
+                <option value="10" ${currentDur===10?'selected':''}>10 segundos</option>
+                <option value="15" ${currentDur===15?'selected':''}>15 segundos</option>
+              </select>
+              <button class="btn btn-primary btn-small" data-split-var="${i}" style="padding:4px 10px;font-size:10px;background:#ff9866;border-color:#ff7a3d">✂️ Dividir esta variación</button>
+            </div>
+            ${scenesHtml}
           </div>`;
       }).join('');
     list.querySelectorAll('[data-tp-variation]').forEach(b => b.addEventListener('click', () => {
@@ -3006,7 +3042,78 @@ function _renderTranscriptionModalContent(entryId) {
       newVars.splice(idx, 1);
       await db.collection('depositEntries').doc(entryId).update({ scriptVariations: newVars });
     }));
+    // v3.11.104: dividir UNA variación específica en escenas (split textual, sin Claude)
+    list.querySelectorAll('[data-split-var]').forEach(b => b.addEventListener('click', async () => {
+      const idx = parseInt(b.dataset.splitVar);
+      const durSel = list.querySelector(`[data-var-scene-dur="${idx}"]`);
+      const duration = parseInt((durSel && durSel.value) || '15', 10);
+      const v = variations[idx];
+      if (!v || !v.text) return;
+      const scenes = splitTextByDuration(v.text, duration);
+      const newVars = variations.slice();
+      newVars[idx] = { ...v, scenes, sceneDuration: duration };
+      await db.collection('depositEntries').doc(entryId).update({ scriptVariations: newVars });
+    }));
+    list.querySelectorAll('[data-copy-var-scene]').forEach(b => b.addEventListener('click', async () => {
+      const [varIdx, sIdx] = b.dataset.copyVarScene.split('-').map(n => parseInt(n, 10));
+      const text = (variations[varIdx] && variations[varIdx].scenes && variations[varIdx].scenes[sIdx]) || '';
+      const ok = await copyToClipboardRobust(text);
+      b.textContent = ok ? '✓ Copiado' : '⚠ Error';
+      setTimeout(() => { b.textContent = '📋 Copiar'; }, 1500);
+    }));
+    list.querySelectorAll('[data-copy-all-var-scenes]').forEach(b => b.addEventListener('click', async () => {
+      const idx = parseInt(b.dataset.copyAllVarScenes);
+      const scs = (variations[idx] && variations[idx].scenes) || [];
+      const dur = (variations[idx] && variations[idx].sceneDuration) || 15;
+      const text = scs.map((s, i) => `Escena ${i + 1} (${dur}s):\n${s}`).join('\n\n');
+      const ok = await copyToClipboardRobust(text);
+      b.textContent = ok ? '✓ Copiado todo' : '⚠ Error';
+      setTimeout(() => { b.textContent = '📋 Copiar todas'; }, 1500);
+    }));
+    list.querySelectorAll('[data-clear-var-scenes]').forEach(b => b.addEventListener('click', async () => {
+      if (!confirm('Borrar las escenas de esta variación?')) return;
+      const idx = parseInt(b.dataset.clearVarScenes);
+      const newVars = variations.slice();
+      const { scenes, sceneDuration, ...rest } = newVars[idx] || {};
+      newVars[idx] = rest;
+      await db.collection('depositEntries').doc(entryId).update({ scriptVariations: newVars });
+    }));
   }
+}
+
+// v3.11.104: split textual puro del guion en chunks por word count.
+// NO usa Claude — solo agrupa oraciones del texto original hasta alcanzar
+// el target de palabras por escena. NO agrega ni reescribe nada.
+// Promedio hablado en español neutro: ~2.3 palabras/seg.
+function splitTextByDuration(text, durationSec) {
+  if (!text || !text.trim()) return [];
+  const wordsTarget = Math.round(durationSec * 2.3); // 8s≈18, 10s≈23, 15s≈35
+  // Parte el texto en oraciones manteniendo signos de puntuación
+  const sentences = text.match(/[^.!?¡¿\n]+[.!?¡¿]+|[^.!?¡¿\n]+(?=\n|$)/g) || [text];
+  const scenes = [];
+  let current = '';
+  let currentWords = 0;
+  for (const raw of sentences) {
+    const s = raw.trim();
+    if (!s) continue;
+    const w = s.split(/\s+/).length;
+    if (currentWords === 0) {
+      current = s;
+      currentWords = w;
+      continue;
+    }
+    // Cabe si total ≤ wordsTarget * 1.3 (tolerancia 30% para no quedarse corto)
+    if (currentWords + w <= Math.round(wordsTarget * 1.3)) {
+      current += ' ' + s;
+      currentWords += w;
+    } else {
+      scenes.push(current);
+      current = s;
+      currentWords = w;
+    }
+  }
+  if (current) scenes.push(current);
+  return scenes;
 }
 
 // v3.9.13: event delegation global para los botones de transcribir/recrear
