@@ -1029,6 +1029,29 @@
               </select>
             </div>
           </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+            <div style="flex:1;min-width:160px">
+              <label style="display:block;font-size:10px;color:var(--text-secondary);margin-bottom:4px;font-weight:600">CTA (Call To Action)</label>
+              <select id="variationCta" style="width:100%;padding:8px 10px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);font-family:inherit;font-size:12px">
+                <option value="ninguno" selected>Sin CTA</option>
+                <option value="seguir">Seguir cuenta</option>
+                <option value="comentar">Comentar</option>
+                <option value="aprender">Aprender más / link en bio</option>
+                <option value="guardar">Guardar el video</option>
+                <option value="guardar_seguir">Guardar + Seguir</option>
+                <option value="comentar_seguir">Comentar + Seguir</option>
+                <option value="compartir">Compartir con alguien</option>
+              </select>
+            </div>
+            <div style="flex:1;min-width:140px">
+              <label style="display:block;font-size:10px;color:var(--text-secondary);margin-bottom:4px;font-weight:600">Posición CTA</label>
+              <select id="variationCtaPos" style="width:100%;padding:8px 10px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);font-family:inherit;font-size:12px">
+                <option value="final" selected>Al final del guion</option>
+                <option value="medio">Estratégicamente en el medio</option>
+                <option value="ambos">En el medio Y al final</option>
+              </select>
+            </div>
+          </div>
           <div id="variationDesc" style="font-size:10.5px;color:var(--text-dim);margin-bottom:8px;line-height:1.5;font-style:italic"></div>
           <button class="btn btn-primary" id="transcriptionGenerate" style="width:100%">✨ Generar variación</button>
         </div>

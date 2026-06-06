@@ -2548,6 +2548,23 @@ const SCRIPT_LONGITUDES = {
   largo: { label: 'Largo', seconds: 90, words: 210, desc: 'extendido, ~90 segundos hablado, espacio para desarrollar más' }
 };
 
+// v3.11.107: opciones de CTA (Call To Action) integradas en el guion.
+const SCRIPT_CTAS = {
+  ninguno: { label: 'Sin CTA', instruction: null },
+  seguir: { label: 'Seguir cuenta', instruction: 'Sigue la cuenta para más contenido como este' },
+  comentar: { label: 'Comentar', instruction: 'Comenta tu opinión / experiencia / qué se te ocurre con esto' },
+  aprender: { label: 'Aprender más', instruction: 'Aprende más en el link en la bio / link en mi perfil' },
+  guardar: { label: 'Guardar video', instruction: 'Guarda este video para volver a verlo cuando lo necesites' },
+  guardar_seguir: { label: 'Guardar + Seguir', instruction: 'Guarda este video y sigue la cuenta para no perderte más' },
+  comentar_seguir: { label: 'Comentar + Seguir', instruction: 'Comenta abajo + Sigue la cuenta para más' },
+  compartir: { label: 'Compartir', instruction: 'Compartí este video con alguien que lo necesita ver' }
+};
+const SCRIPT_CTA_POSICIONES = {
+  final: { label: 'Al final', instruction: 'EXACTAMENTE en la última frase del guion, como cierre' },
+  medio: { label: 'En el medio', instruction: 'ESTRATÉGICAMENTE integrado en el medio del guion, en una transición natural — no que rompa el flujo' },
+  ambos: { label: 'Medio + final', instruction: 'integrado SUTILMENTE en el medio Y reforzado EXPLÍCITAMENTE en el cierre final' }
+};
+
 async function rewriteScriptForEntry(entryId, btn, opts) {
   const entry = entries.find(e => e.id === entryId);
   if (!entry || !entry.transcription) { alert('Primero transcribí el video.'); return; }
@@ -2558,12 +2575,19 @@ async function rewriteScriptForEntry(entryId, btn, opts) {
   const tonoKey = (opts && opts.tono) || 'educativo';
   const estiloKey = (opts && opts.estilo) || 'hook_dato';
   const longitudKey = (opts && opts.longitud) || 'medio';
+  const ctaKey = (opts && opts.cta) || 'ninguno';
+  const ctaPosKey = (opts && opts.ctaPos) || 'final';
   const tono = SCRIPT_TONOS[tonoKey] || SCRIPT_TONOS.educativo;
   const estilo = SCRIPT_ESTILOS[estiloKey] || SCRIPT_ESTILOS.hook_dato;
   const longitud = SCRIPT_LONGITUDES[longitudKey] || SCRIPT_LONGITUDES.medio;
+  const cta = SCRIPT_CTAS[ctaKey] || SCRIPT_CTAS.ninguno;
+  const ctaPos = SCRIPT_CTA_POSICIONES[ctaPosKey] || SCRIPT_CTA_POSICIONES.final;
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Generando...'; }
-  _setTranscriptionStatus(`⏳ Claude generando variación ${longitud.label.toLowerCase()} (${tono.label} · ${estilo.label})...`);
+  _setTranscriptionStatus(`⏳ Claude generando variación ${longitud.label.toLowerCase()} (${tono.label} · ${estilo.label}${cta.instruction ? ' · CTA: ' + cta.label : ''})...`);
   try {
+    const ctaBlock = cta.instruction
+      ? `5. CTA OBLIGATORIO: integrá un Call To Action que diga "${cta.instruction}". Posición: ${ctaPos.instruction}. El CTA debe sentirse natural — NO suena a comercial barato, suena a invitación honesta del creador.`
+      : `5. NO incluyas CTA. Cerralo con un cliffhanger, reflexión o pregunta que mantenga al espectador hasta el final.`;
     const prompt = `Recreá el siguiente guion de video.
 
 REGLAS OBLIGATORIAS:
@@ -2571,13 +2595,14 @@ REGLAS OBLIGATORIAS:
 2. LONGITUD: el guion debe ser ${longitud.desc}. Apuntá a aproximadamente ${longitud.words} palabras (${longitud.seconds} segundos hablados). NO te quedes corto NI te excedas — esa es la duración objetivo. Si el original es mucho más largo o más corto, ajustalo a esa medida sin perder la idea central.
 3. Mantené la MISMA idea/tema central que el original, pero adaptada a la longitud pedida.
 4. Cambiá las palabras, el ángulo, el orden — que NO sea reconocible como copia del original.
-5. Cerralo con un cliffhanger, CTA o pregunta que mantenga al espectador hasta el final.
+${ctaBlock}
 6. Escribilo en español neutro, listo para grabar.
 
 PERFIL DE ESTA VARIACIÓN:
 - Tono: ${tono.label} — ${tono.desc}
 - Estilo: ${estilo.label} — ${estilo.desc}
 - Longitud: ${longitud.label} (~${longitud.seconds}s / ~${longitud.words} palabras)
+${cta.instruction ? `- CTA: ${cta.label} — "${cta.instruction}" — ${ctaPos.label}` : '- CTA: ninguno'}
 
 DEVOLVÉ SOLO el guion nuevo, sin explicaciones, sin encabezados, sin comillas. Texto plano listo para leer en cámara.
 
@@ -2600,9 +2625,12 @@ ${entry.transcription}`;
       tono: tonoKey,
       estilo: estiloKey,
       longitud: longitudKey,
+      cta: ctaKey,
+      ctaPos: ctaPosKey,
       tonoLabel: tono.label,
       estiloLabel: estilo.label,
       longitudLabel: longitud.label,
+      ctaLabel: cta.instruction ? cta.label : null,
       createdAt: new Date().toISOString(),
       createdBy: (window.parent && window.parent.currentUser) ? window.parent.currentUser.uid : null
     });
@@ -2922,6 +2950,7 @@ function _renderTranscriptionModalContent(entryId) {
         if (v.tonoLabel) tagBits.push(esc(v.tonoLabel));
         if (v.estiloLabel) tagBits.push(esc(v.estiloLabel));
         if (v.longitudLabel) tagBits.push(esc(v.longitudLabel));
+        if (v.ctaLabel) tagBits.push('CTA: ' + esc(v.ctaLabel));
         const tags = tagBits.length > 0
           ? `<span style="font-size:9px;color:var(--text-secondary);background:var(--bg-card);padding:2px 6px;border-radius:4px;margin-left:6px;font-weight:500">${tagBits.join(' · ')}</span>`
           : '';
@@ -2998,33 +3027,9 @@ function _renderTranscriptionModalContent(entryId) {
       newVars.splice(idx, 1);
       await db.collection('depositEntries').doc(entryId).update({ scriptVariations: newVars });
     }));
-    // v3.11.104: dividir UNA variación específica en escenas (split textual, sin Claude)
-    list.querySelectorAll('[data-split-var]').forEach(b => b.addEventListener('click', async () => {
-      const idx = parseInt(b.dataset.splitVar);
-      const durSel = list.querySelector(`[data-var-scene-dur="${idx}"]`);
-      const duration = parseInt((durSel && durSel.value) || '15', 10);
-      const v = variations[idx];
-      if (!v || !v.text) return;
-      const scenes = splitTextByDuration(v.text, duration);
-      const newVars = variations.slice();
-      newVars[idx] = { ...v, scenes, sceneDuration: duration };
-      await db.collection('depositEntries').doc(entryId).update({ scriptVariations: newVars });
-    }));
-    list.querySelectorAll('[data-copy-var-scene]').forEach(b => b.addEventListener('click', async () => {
-      const [varIdx, sIdx] = b.dataset.copyVarScene.split('-').map(n => parseInt(n, 10));
-      const text = (variations[varIdx] && variations[varIdx].scenes && variations[varIdx].scenes[sIdx]) || '';
-      const ok = await copyToClipboardRobust(text);
-      b.textContent = ok ? '✓ Copiado' : '⚠ Error';
-      setTimeout(() => { b.textContent = '📋 Copiar'; }, 1500);
-    }));
-    list.querySelectorAll('[data-clear-var-scenes]').forEach(b => b.addEventListener('click', async () => {
-      if (!confirm('Borrar las escenas de esta variación?')) return;
-      const idx = parseInt(b.dataset.clearVarScenes);
-      const newVars = variations.slice();
-      const { scenes, sceneDuration, ...rest } = newVars[idx] || {};
-      newVars[idx] = rest;
-      await db.collection('depositEntries').doc(entryId).update({ scriptVariations: newVars });
-    }));
+    // v3.11.107: los listeners split-var / copy-var-scene / clear-var-scenes
+    // viven ahora en event delegation global (final del archivo) — más robusto
+    // contra re-renders.
   }
 }
 
@@ -3104,9 +3109,65 @@ document.addEventListener('click', (ev) => {
     if (recs.length === 1) {
       try { window.api.openExternal(recs[0].url); } catch (e) { window.open(recs[0].url, '_blank', 'noopener'); }
     } else if (recs.length > 1) {
-      // Múltiples videos: abrir el modal de transcripción que ahora muestra la sección de grabados
       openTranscriptionModal(openRecordedBtn.dataset.openRecorded);
     }
+    return;
+  }
+  // v3.11.107: handlers del split por variación (delegate global, no depende del wireup local)
+  const splitVarBtn = ev.target.closest('[data-split-var]');
+  if (splitVarBtn) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    const idx = parseInt(splitVarBtn.dataset.splitVar, 10);
+    const entryId = _currentTranscriptionEntryId;
+    const entry = entries.find(e => e.id === entryId);
+    if (!entry || !Array.isArray(entry.scriptVariations) || !entry.scriptVariations[idx]) {
+      console.warn('[split-var] no entry / variation', { entryId, idx });
+      return;
+    }
+    const durSel = document.querySelector(`[data-var-scene-dur="${idx}"]`);
+    const duration = parseInt((durSel && durSel.value) || '15', 10);
+    const v = entry.scriptVariations[idx];
+    if (!v || !v.text) return;
+    console.log('[split-var] splitting variation', idx, 'duration', duration, 'words', v.text.split(/\s+/).length);
+    const scenes = splitTextByDuration(v.text, duration);
+    const newVars = entry.scriptVariations.slice();
+    newVars[idx] = { ...v, scenes, sceneDuration: duration };
+    splitVarBtn.disabled = true;
+    splitVarBtn.textContent = '⏳ Dividiendo...';
+    db.collection('depositEntries').doc(entryId).update({ scriptVariations: newVars })
+      .then(() => console.log('[split-var] saved', scenes.length, 'scenes'))
+      .catch(e => console.error('[split-var] save error', e))
+      .finally(() => { splitVarBtn.disabled = false; splitVarBtn.textContent = '✂️ Dividir esta variación'; });
+    return;
+  }
+  const copyVarSceneBtn = ev.target.closest('[data-copy-var-scene]');
+  if (copyVarSceneBtn) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    const [varIdx, sIdx] = copyVarSceneBtn.dataset.copyVarScene.split('-').map(n => parseInt(n, 10));
+    const entry = entries.find(e => e.id === _currentTranscriptionEntryId);
+    const text = (entry && entry.scriptVariations && entry.scriptVariations[varIdx]
+      && entry.scriptVariations[varIdx].scenes && entry.scriptVariations[varIdx].scenes[sIdx]) || '';
+    copyToClipboardRobust(text).then(ok => {
+      copyVarSceneBtn.textContent = ok ? '✓ Copiado' : '⚠ Error';
+      setTimeout(() => { copyVarSceneBtn.textContent = '📋 Copiar'; }, 1500);
+    });
+    return;
+  }
+  const clearVarScenesBtn = ev.target.closest('[data-clear-var-scenes]');
+  if (clearVarScenesBtn) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (!confirm('Borrar las escenas de esta variación?')) return;
+    const idx = parseInt(clearVarScenesBtn.dataset.clearVarScenes, 10);
+    const entryId = _currentTranscriptionEntryId;
+    const entry = entries.find(e => e.id === entryId);
+    if (!entry || !Array.isArray(entry.scriptVariations)) return;
+    const newVars = entry.scriptVariations.slice();
+    const { scenes, sceneDuration, ...rest } = newVars[idx] || {};
+    newVars[idx] = rest;
+    db.collection('depositEntries').doc(entryId).update({ scriptVariations: newVars });
     return;
   }
 });
@@ -3145,19 +3206,26 @@ function _wireupTranscriptionAndTeleprompter() {
     estiloSelect.value = 'hook_dato';
   }
   const longitudSelect = document.getElementById('variationLongitud');
+  const ctaSelect = document.getElementById('variationCta');
+  const ctaPosSelect = document.getElementById('variationCtaPos');
   function updateVariationDesc() {
     if (!descEl || !tonoSelect || !estiloSelect) return;
     const t = SCRIPT_TONOS[tonoSelect.value];
     const e = SCRIPT_ESTILOS[estiloSelect.value];
     const l = longitudSelect ? SCRIPT_LONGITUDES[longitudSelect.value] : null;
+    const c = ctaSelect ? SCRIPT_CTAS[ctaSelect.value] : null;
+    const cp = ctaPosSelect ? SCRIPT_CTA_POSICIONES[ctaPosSelect.value] : null;
     if (t && e) {
       const lDesc = l ? ` · ${l.label} (~${l.seconds}s)` : '';
-      descEl.textContent = `→ ${t.desc} · ${e.desc}${lDesc}`;
+      const ctaDesc = (c && c.instruction) ? ` · CTA "${c.label}" ${cp ? cp.label.toLowerCase() : ''}` : '';
+      descEl.textContent = `→ ${t.desc} · ${e.desc}${lDesc}${ctaDesc}`;
     }
   }
   if (tonoSelect) tonoSelect.addEventListener('change', updateVariationDesc);
   if (estiloSelect) estiloSelect.addEventListener('change', updateVariationDesc);
   if (longitudSelect) longitudSelect.addEventListener('change', updateVariationDesc);
+  if (ctaSelect) ctaSelect.addEventListener('change', updateVariationDesc);
+  if (ctaPosSelect) ctaPosSelect.addEventListener('change', updateVariationDesc);
   updateVariationDesc();
 
   const generate = document.getElementById('transcriptionGenerate');
@@ -3166,7 +3234,9 @@ function _wireupTranscriptionAndTeleprompter() {
     const opts = {
       tono: tonoSelect ? tonoSelect.value : 'educativo',
       estilo: estiloSelect ? estiloSelect.value : 'hook_dato',
-      longitud: longitudSelect ? longitudSelect.value : 'medio'
+      longitud: longitudSelect ? longitudSelect.value : 'medio',
+      cta: ctaSelect ? ctaSelect.value : 'ninguno',
+      ctaPos: ctaPosSelect ? ctaPosSelect.value : 'final'
     };
     rewriteScriptForEntry(_currentTranscriptionEntryId, generate, opts);
   });

@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.107': {
+    title: '🎯 CTA integrado + fix botón Dividir variación',
+    features: [
+      '🐛 <strong>Fix botón "✂️ Dividir esta variación"</strong>: el listener no se estaba enganchando con re-renders rápidos. Movido a event delegation global (más robusto). Ahora sí divide al instante con logs en Console por si querés ver.',
+      '🎯 <strong>NUEVO: CTA (Call To Action)</strong> en el generador de variación. Dos selects nuevos:',
+      '• <strong>CTA</strong>: Sin CTA / Seguir cuenta / Comentar / Aprender más / Guardar el video / Guardar+Seguir / Comentar+Seguir / Compartir',
+      '• <strong>Posición CTA</strong>: Al final del guion / Estratégicamente en el medio / En el medio Y al final',
+      '🧠 <strong>Claude integra el CTA naturalmente</strong> en el guion según tu elección — no suena a comercial barato, suena a invitación honesta del creador. El tag del CTA aparece en el header de la variación.'
+    ]
+  },
   '3.11.106': {
     title: '📏 Longitud del guion (Corto/Medio/Largo) + limpieza UI',
     features: [
