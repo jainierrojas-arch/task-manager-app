@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.101': {
+    title: '🩹 Hotfix JS error que rompía las cards del Depósito',
+    features: [
+      '🐛 <strong>Bug v3.11.99</strong>: el handler onerror inline que metimos contenía HTML entities (&#128247;, etc) que el parser interpretaba mal y rompía el JS de toda la card. Por eso aparecía "JS error: Invalid token" arriba y NINGUNA portada se cargaba (ni IG ni Cloudinary ni nada).',
+      '✅ <strong>Fix</strong>: ahora el gradiente de marca está SIEMPRE en el fondo del wrapper, y el <code>&lt;img&gt;</code> va encima. Si la imagen carga la tapa, si falla queda el gradiente visible. onerror simplificado a una sola línea sin HTML.',
+      '🔄 <strong>Combinado con v3.11.100</strong>: con esto el fetcher IG con Chromium oculto + render fix ya pueden trabajar bien.'
+    ]
+  },
   '3.11.100': {
     title: '🔥 Fix CRÍTICO portadas Instagram — Browser oculto + JS render',
     features: [

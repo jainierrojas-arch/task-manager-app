@@ -1006,24 +1006,18 @@ function renderEntryHtml(e) {
   const firstUrl = links[0]?.url || '';
   let coverHtml = '';
   if (firstUrl) {
+    const svc = serviceFromUrl(firstUrl);
     if (cover) {
-      // v3.11.99: usar <img> real (no background-image) para poder detectar
-      // errores de carga via onerror. Si la URL del cover falla (Cloudinary
-      // genera thumb roto, IG CDN token expirado, Microlink 404), el handler
-      // cae al placeholder en vez de dejar un cuadro negro.
+      // v3.11.101: gradiente de marca SIEMPRE como background del wrapper.
+      // El <img> va encima — si carga tapa el gradiente, si falla (404, token
+      // expirado, etc.) queda el gradiente visible (nunca cuadro negro).
+      // onerror simple: solo esconde el img, el gradiente del wrapper queda.
       let arStyle = '';
       if (e.coverWidth && e.coverHeight) {
         arStyle = `aspect-ratio:${e.coverWidth} / ${e.coverHeight};`;
       }
-      const svc = serviceFromUrl(firstUrl);
-      const fallbackStyle = `background:${svc.gradient};`;
-      const fallbackBody = `<div class=\"entry-cover-icon\">${svc.icon}</div><div class=\"entry-cover-domain\">${esc(svc.name)}</div>`;
-      // onerror: vacía el wrapper y lo convierte en placeholder. También
-      // marca data-cover-broken para que lazyFetchCovers reintente.
-      const onerr = `this.onerror=null;this.parentElement.classList.add('entry-cover-placeholder');this.parentElement.style.cssText+=';${fallbackStyle}';this.parentElement.innerHTML='${fallbackBody.replace(/'/g, "\\'")}';this.parentElement.dataset.coverBroken='1';`;
-      coverHtml = `<div class="entry-cover" data-link-open="${esc(firstUrl)}" data-entry-cover-id="${esc(e.id)}" style="${arStyle}"><img src="${esc(cover)}" alt="" loading="lazy" onerror="${onerr}" style="width:100%;height:100%;object-fit:cover;display:block"></div>`;
+      coverHtml = `<div class="entry-cover" data-link-open="${esc(firstUrl)}" style="background:${svc.gradient};${arStyle}"><img src="${esc(cover)}" alt="" loading="lazy" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover;display:block"></div>`;
     } else {
-      const svc = serviceFromUrl(firstUrl);
       let domain = firstUrl;
       try { domain = new URL(firstUrl).hostname.replace(/^www\./, ''); } catch (_) {}
       coverHtml = `
