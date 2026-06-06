@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.100': {
+    title: '🔥 Fix CRÍTICO portadas Instagram — Browser oculto + JS render',
+    features: [
+      '🕵️ <strong>Diagnóstico</strong>: Instagram cambió su embed. El HTML estático YA NO trae el thumbnail (sin EmbeddedMediaImage, sin scontent.cdninstagram). Todo se renderiza client-side con JavaScript. Por eso TODAS las portadas de IG salían placeholder.',
+      '🌐 <strong>Fix</strong>: ahora usamos Chromium oculto que ejecuta JS y hace polling cada 500ms (hasta 8s) hasta detectar el thumbnail renderizado. Una vez detectado, devuelve la URL real.',
+      '⏱ <strong>Trade-off</strong>: las portadas tardan ~3-6 segundos en aparecer la primera vez (antes eran ~1s). Después se cachean en Firestore y se ven instantáneas. Vale la pena por las portadas reales.',
+      '🔄 <strong>Re-fetch automático</strong>: al abrir el Depósito, las portadas placeholders existentes se vuelven a intentar. No tenés que apretar nada.'
+    ]
+  },
   '3.11.99': {
     title: '🖼 Fix DEFINITIVO portadas — frame correcto del video + fallback automático',
     features: [

@@ -1931,6 +1931,9 @@ function registerIpcHandlers() {
 
   function fetchOgViaBrowser(url) {
     // Carga la pagina en un BrowserWindow oculto y extrae meta tags despues de que JS haya corrido.
+    // v3.11.100: aumentado tiempo de espera porque IG embed necesita 2-3s para
+    // renderizar el thumbnail desde su JS bundle. Y poll cada 500ms hasta 8s
+    // por si el render es lento.
     return new Promise((resolve) => {
       let win = null;
       let done = false;
@@ -1949,23 +1952,17 @@ function registerIpcHandlers() {
             nodeIntegration: false,
             contextIsolation: true,
             sandbox: true,
-            // v3.11.14: usar el mismo partition que el Explorer para tener
-            // las cookies del usuario (logueado en IG). Sin esto, IG mostraba
-            // login wall al fetcher y devolvía og:description vacía.
             partition: 'persist:explorer'
           }
         });
-        const timeout = setTimeout(() => finish(null), 7000);
-        const extract = async () => {
+        const timeout = setTimeout(() => finish(null), 15000);
+        const extractOnce = async () => {
           try {
-            const data = await win.webContents.executeJavaScript(`
+            return await win.webContents.executeJavaScript(`
               (() => {
                 const get = (sel) => { const el = document.querySelector(sel); return el ? el.getAttribute('content') : null; };
                 let img = get('meta[property="og:image"]') || get('meta[name="twitter:image"]');
                 if (!img) {
-                  // Para embed de Instagram: el thumbnail real esta en el SRCSET
-                  // del <img class="EmbeddedMediaImage">. El src apunta a
-                  // lookaside.instagram.com que es un 302 al HTML, NO una imagen.
                   const embImg = document.querySelector('img.EmbeddedMediaImage');
                   if (embImg) {
                     const srcset = embImg.getAttribute('srcset');
@@ -1980,14 +1977,21 @@ function registerIpcHandlers() {
                   }
                 }
                 if (!img) {
-                  const embedded = document.querySelector('img[src*="scontent"][src*="cdninstagram"], video[poster]');
-                  if (embedded) img = embedded.getAttribute('src') || embedded.getAttribute('poster');
+                  // Buscar cualquier <img> con scontent.cdninstagram que NO sea
+                  // un logo (rsrc.php es logo estatico de IG, no contenido).
+                  const candidates = Array.from(document.querySelectorAll('img'))
+                    .map(el => el.getAttribute('src') || el.getAttribute('data-src'))
+                    .filter(s => s && /scontent|cdninstagram\\.com|fbcdn\\.net/.test(s))
+                    .filter(s => !/rsrc\\.php/.test(s))
+                    .filter(s => !/lookaside\\.instagram/.test(s));
+                  if (candidates.length) img = candidates[0];
+                }
+                if (!img) {
+                  const vid = document.querySelector('video[poster]');
+                  if (vid) img = vid.getAttribute('poster');
                 }
                 let title = get('meta[property="og:title"]') || get('meta[name="twitter:title"]') || document.title;
                 let description = get('meta[property="og:description"]') || get('meta[name="twitter:description"]');
-                // v3.11.14: si og:description está vacío (ej. IG reel logueado pero
-                // los meta tags no se actualizaron client-side), buscar el caption
-                // en el DOM directo. IG suele ponerlo en h1 dentro de article.
                 if (!description) {
                   try {
                     const h1 = document.querySelector('article h1') || document.querySelector('h1');
@@ -1999,14 +2003,30 @@ function registerIpcHandlers() {
                 return { image: img, title, description };
               })()
             `, true);
-            clearTimeout(timeout);
-            finish(data);
           } catch (e) {
-            clearTimeout(timeout);
-            finish(null);
+            return null;
           }
         };
-        win.webContents.once('did-finish-load', () => setTimeout(extract, 800));
+        // Poll cada 500ms hasta encontrar imagen o agotar 8s desde did-finish-load
+        const startPoll = async () => {
+          const deadline = Date.now() + 8000;
+          let last = null;
+          while (Date.now() < deadline && !done) {
+            const data = await extractOnce();
+            if (data) {
+              last = data;
+              if (data.image) {
+                clearTimeout(timeout);
+                finish(data);
+                return;
+              }
+            }
+            await new Promise(r => setTimeout(r, 500));
+          }
+          clearTimeout(timeout);
+          finish(last);
+        };
+        win.webContents.once('did-finish-load', () => setTimeout(startPoll, 600));
         win.webContents.once('did-fail-load', () => { clearTimeout(timeout); finish(null); });
         win.loadURL(url, {
           userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
@@ -2063,35 +2083,30 @@ function registerIpcHandlers() {
       // Si tikwm no devolvió, cae a Microlink abajo (needsMicrolink)
     }
 
-    // v3.11.97: cambio en orden de cascada para Instagram.
-    // ANTES: Microlink primero → fallback HTTP embed. Pero Microlink free tier
-    // tiene rate limit (50/día) y cuando se quema, todas las entries quedan
-    // con placeholder. Y Microlink suele tardar 10s con timeout.
-    // AHORA: para Instagram, intentamos embed HTTP DIRECTO PRIMERO. Es rápido
-    // (1-2s), sin rate limit, y devuelve URLs scontent.cdninstagram desde el
-    // srcset del EmbeddedMediaImage que sí cargan como background-image.
-    // Microlink queda como FALLBACK por si Instagram bloquea el scrape directo.
+    // v3.11.100: Instagram cambió el embed — ahora se renderiza 100% con JS,
+    // el HTML estático YA NO trae el thumbnail (sin EmbeddedMediaImage, sin
+    // scontent en el HTML inicial). Browser oculto con Chromium es el único
+    // confiable porque ejecuta JS y espera al render. Microlink como fallback
+    // (también ejecuta JS pero tiene rate limit).
     if (needsMicrolink) {
-      // Instagram: embed HTTP primero
       const igMatch = url.match(/instagram\.com\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
       if (igMatch) {
         const embedUrl = `https://www.instagram.com/p/${igMatch[1]}/embed/captioned/`;
-        // 1) HTTP directo al embed publico (rapido, sin rate limit)
-        const embedHttp = sanitize(await fetchOgViaHttp(embedUrl));
-        if (embedHttp && embedHttp.image) return embedHttp;
-        // 2) Microlink en la URL original (si embed HTTP fallo)
+        // 1) Browser oculto en el embed (lento pero ejecuta JS)
+        try {
+          const browserEmbed = sanitize(await fetchOgViaBrowser(embedUrl));
+          if (browserEmbed && browserEmbed.image) return browserEmbed;
+        } catch (_) {}
+        // 2) Microlink en la URL original
         const ml = sanitize(await fetchOgViaMicrolink(url));
         if (ml && ml.image) return ml;
         // 3) Microlink en la URL del embed
         const mlEmbed = sanitize(await fetchOgViaMicrolink(embedUrl));
         if (mlEmbed && mlEmbed.image) return mlEmbed;
-        // 4) Browser oculto en el embed (ultimo recurso, mas lento)
-        try {
-          const browserEmbed = sanitize(await fetchOgViaBrowser(embedUrl));
-          if (browserEmbed && browserEmbed.image) return browserEmbed;
-        } catch (_) {}
+        // 4) HTTP directo al embed (ya no trae nada pero por si IG vuelve)
+        const embedHttp = sanitize(await fetchOgViaHttp(embedUrl));
+        if (embedHttp && embedHttp.image) return embedHttp;
       } else {
-        // Facebook u otros sitios sociales no-IG: Microlink primero como antes
         const ml = sanitize(await fetchOgViaMicrolink(url));
         if (ml && ml.image) return ml;
       }
