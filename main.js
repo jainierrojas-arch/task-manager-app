@@ -2073,10 +2073,29 @@ function registerIpcHandlers() {
       return result;
     };
 
-    // v3.11.66: para TikTok usamos tikwm primero — devuelve `cover` que es el
-    // thumbnail real del video (mismo que se ve en TikTok). Microlink para
-    // TikTok suele devolver el logo genérico o nada utilizable.
+    // v3.11.111: para TikTok usamos el oEmbed OFICIAL primero.
+    // Endpoint: https://www.tiktok.com/oembed?url=...
+    // Es público, gratis, sin rate limit, y devuelve `thumbnail_url` con un
+    // JPEG firmado pero con expiración de ~2 años — carga perfecto en Electron.
+    // Probado en vivo: HTTP 200, 720x1280 JPEG válido.
+    // tikwm queda como fallback (suele caerse / dar code:-1 cada tanto).
     if (isTiktok) {
+      // 1) oEmbed oficial de TikTok
+      try {
+        const oembedUrl = 'https://www.tiktok.com/oembed?url=' + encodeURIComponent(url);
+        const res = await httpsGetBuffer(oembedUrl, { 'Accept': 'application/json' });
+        const json = JSON.parse(res.buf.toString('utf-8'));
+        if (json && json.thumbnail_url) {
+          return sanitize({
+            image: json.thumbnail_url,
+            title: json.title || null,
+            description: json.author_name ? '@' + (json.author_unique_id || json.author_name) : null,
+            imageWidth: json.thumbnail_width || null,
+            imageHeight: json.thumbnail_height || null
+          });
+        }
+      } catch (e) { console.warn('[og-fetch] tiktok oembed failed:', e.message); }
+      // 2) tikwm como fallback
       try {
         const fetchUrl = 'https://www.tikwm.com/api/?url=' + encodeURIComponent(url);
         const tkRes = await httpsGetBuffer(fetchUrl, { 'Accept': 'application/json' });
@@ -2091,8 +2110,8 @@ function registerIpcHandlers() {
             });
           }
         }
-      } catch (e) { console.warn('[og-fetch] tikwm failed:', e.message); }
-      // Si tikwm no devolvió, cae a Microlink abajo (needsMicrolink)
+      } catch (e) { console.warn('[og-fetch] tikwm fallback failed:', e.message); }
+      // Si los dos cayeron, sigue a Microlink (needsMicrolink)
     }
 
     // v3.11.103: REVERTIDO el orden — Microlink PRIMERO para Instagram.

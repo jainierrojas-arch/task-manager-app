@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.111': {
+    title: '🎬 Portadas TikTok REALES — oEmbed oficial + diagnóstico final IG',
+    features: [
+      '🔍 <strong>Investigación en vivo</strong>: probé todos los endpoints públicos disponibles para portadas:',
+      '✅ <strong>TikTok</strong>: encontré el oEmbed OFICIAL <code>https://www.tiktok.com/oembed?url=...</code> — público, gratis, sin rate limit. Devuelve <code>thumbnail_url</code> con JPEG real 720x1280 que carga HTTP 200 en Electron. <strong>Ya no más placeholder TikTok</strong>.',
+      '⚠️ <strong>Instagram</strong>: NO existe endpoint público gratis HOY. Probado: Facebook Graph oEmbed (requiere App Token), api.instagram.com/oembed (deprecated), Microlink free (devuelve placeholder), embed HTTP (devuelve URLs scontent que dan 403), Browser oculto (idem). Para portadas reales de IG hay que pagar Microlink Pro / iframe.ly / scraper.',
+      '🎨 <strong>Para Instagram queda el placeholder de marca</strong> (gradiente naranja-rosa-violeta + 📸 + "INSTAGRAM") que se ve elegante y consistente. Mejor eso que cuadro negro o gris.',
+      '🔄 <strong>Migración v11</strong>: re-fetchea automáticamente los TikToks viejos con el nuevo oEmbed.'
+    ]
+  },
   '3.11.110': {
     title: '🩹 Fix DEFINITIVO botón Dividir variación (doble bind)',
     features: [
