@@ -1571,8 +1571,11 @@ function addLinkRow(link) {
     const svc = serviceFromUrl(url);
     let domain = url;
     try { domain = new URL(url).hostname.replace(/^www\./, ''); } catch (e) {}
+    // v3.11.113: igual que las cards — gradient siempre de fondo, <img> encima
+    // con onerror. Si la URL falla a cargar (token expirado, 403 de CDN), el
+    // gradient queda visible y no se ve cuadro negro/vacío.
     const imgHtml = og && og.image
-      ? `<div class="link-preview-img" style="background-image:url('${esc(og.image)}')"></div>`
+      ? `<div class="link-preview-img" style="background:${svc.gradient}"><img src="${esc(og.image)}" alt="" loading="lazy" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover;display:block"></div>`
       : `<div class="link-preview-img link-preview-img-placeholder" style="background:${svc.gradient}">${svc.icon}</div>`;
     const title = (og && og.title) ? og.title : svc.name;
     const descHtml = (og && og.description) ? `<div class="link-preview-desc">${esc(og.description)}</div>` : '';

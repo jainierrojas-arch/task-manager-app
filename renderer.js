@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.113': {
+    title: '🖼 Preview de link al pegar — unificado con cards (sin cuadro negro)',
+    features: [
+      '🩹 <strong>Preview del modal "Nueva entrada"</strong>: al pegar un link, la miniatura tipo-WhatsApp usaba <code>background-image</code> que falla en silencio si la URL no carga. Ahora usa <code>&lt;img&gt;</code> con <code>onerror</code> + gradiente de marca de fondo — igual que las cards del Depósito.',
+      '✅ <strong>Comportamiento consistente</strong>: si la URL falla a cargar, queda visible el gradiente de marca (IG, TikTok, etc) en vez de un cuadro vacío.',
+      '🔄 Combinado con el fetcher mejorado de v3.11.111+ (TikTok oEmbed oficial + IG con cookies del user logueado), las portadas que se muestran tanto al PEGAR el link como en las CARDS del Depósito ahora son consistentes y robustas.'
+    ]
+  },
   '3.11.112': {
     title: '🪟 Fix Windows auto-update colgado + 📸 Portadas IG con cookies del user',
     features: [
