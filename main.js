@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, screen, Menu, MenuItem, globalShortcut } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, screen, Menu, MenuItem, globalShortcut, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { autoUpdater } = require('electron-updater');
@@ -1929,6 +1929,85 @@ function registerIpcHandlers() {
     });
   }
 
+  // v3.11.112: variante de fetchOgViaBrowser que acepta partition custom.
+  // Permite usar cookies del user logueado en IG (persist:tm-instagram).
+  function fetchOgViaBrowserWithPartition(url, partitionName) {
+    return new Promise((resolve) => {
+      let win = null;
+      let done = false;
+      const cleanup = () => { try { if (win && !win.isDestroyed()) win.close(); } catch (_) {} };
+      const finish = (data) => {
+        if (done) return; done = true;
+        cleanup();
+        resolve(data || { image: null, title: null, description: null });
+      };
+      try {
+        win = new BrowserWindow({
+          show: false,
+          width: 1280,
+          height: 900,
+          webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true,
+            sandbox: true,
+            partition: partitionName || 'persist:explorer'
+          }
+        });
+        const timeout = setTimeout(() => finish(null), 15000);
+        const extractOnce = async () => {
+          try {
+            return await win.webContents.executeJavaScript(`
+              (() => {
+                const get = (sel) => { const el = document.querySelector(sel); return el ? el.getAttribute('content') : null; };
+                let img = get('meta[property="og:image"]') || get('meta[name="twitter:image"]');
+                if (!img) {
+                  const candidates = Array.from(document.querySelectorAll('img'))
+                    .map(el => el.getAttribute('src') || el.getAttribute('data-src'))
+                    .filter(s => s && /scontent|cdninstagram\\.com|fbcdn\\.net/.test(s))
+                    .filter(s => !/rsrc\\.php/.test(s))
+                    .filter(s => !/lookaside\\.instagram/.test(s));
+                  if (candidates.length) img = candidates[0];
+                }
+                if (!img) {
+                  const vid = document.querySelector('video[poster]');
+                  if (vid) img = vid.getAttribute('poster');
+                }
+                let title = get('meta[property="og:title"]') || get('meta[name="twitter:title"]') || document.title;
+                let description = get('meta[property="og:description"]') || get('meta[name="twitter:description"]');
+                return { image: img, title, description };
+              })()
+            `, true);
+          } catch (e) { return null; }
+        };
+        const startPoll = async () => {
+          const deadline = Date.now() + 8000;
+          let last = null;
+          while (Date.now() < deadline && !done) {
+            const data = await extractOnce();
+            if (data) {
+              last = data;
+              if (data.image) {
+                clearTimeout(timeout);
+                finish(data);
+                return;
+              }
+            }
+            await new Promise(r => setTimeout(r, 500));
+          }
+          clearTimeout(timeout);
+          finish(last);
+        };
+        win.webContents.once('did-finish-load', () => setTimeout(startPoll, 600));
+        win.webContents.once('did-fail-load', () => { clearTimeout(timeout); finish(null); });
+        win.loadURL(url, {
+          userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }).catch(() => { finish(null); });
+      } catch (e) {
+        finish(null);
+      }
+    });
+  }
+
   function fetchOgViaBrowser(url) {
     // Carga la pagina en un BrowserWindow oculto y extrae meta tags despues de que JS haya corrido.
     // v3.11.100: aumentado tiempo de espera porque IG embed necesita 2-3s para
@@ -2114,26 +2193,36 @@ function registerIpcHandlers() {
       // Si los dos cayeron, sigue a Microlink (needsMicrolink)
     }
 
-    // v3.11.103: REVERTIDO el orden — Microlink PRIMERO para Instagram.
-    // REGLA INVIOLABLE (aprendida a la mala en v2.70, v2.72, v3.11.97, v3.11.100):
-    // Las URLs scontent.cdninstagram.com / fbcdn.net que devuelven el embed HTTP
-    // y el Browser oculto tienen tokens HMAC firmados con Referer/IP/cookies
-    // del fetcher — NO CARGAN en el renderer Electron, devuelven 403. Aunque
-    // Microlink solo devuelva el logo genérico de IG, es preferible un logo a
-    // un cuadro negro con 403.
+    // v3.11.112: cascada Instagram con cookies del user si está logueado.
+    // Si el user conectó IG via "Conectar Instagram", existe la session
+    // persist:tm-instagram con cookies sessionid de Instagram. Con esas cookies
+    // el Browser oculto recibe URLs scontent firmadas que SÍ cargan en el
+    // renderer (porque comparten la misma session/cookies).
+    // Si NO hay cookies, caemos a Microlink (que devuelve placeholder pero
+    // no rompe), y en última instancia placeholder de marca.
     if (needsMicrolink) {
       const igMatch = url.match(/instagram\.com\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
       if (igMatch) {
         const embedUrl = `https://www.instagram.com/p/${igMatch[1]}/embed/captioned/`;
-        // 1) Microlink en la URL original (proxea el thumb a su CDN, sí carga)
+        // 1) Browser oculto con cookies del user logueado en IG
+        try {
+          const igSession = session.fromPartition('persist:tm-instagram');
+          const cookies = await igSession.cookies.get({ domain: '.instagram.com' });
+          const hasSession = cookies.some(c => c.name === 'sessionid' && c.value);
+          if (hasSession) {
+            console.log('[og-fetch] IG: usando cookies del user logueado (persist:tm-instagram)');
+            const browserAuth = sanitize(await fetchOgViaBrowserWithPartition(url, 'persist:tm-instagram'));
+            if (browserAuth && browserAuth.image) return browserAuth;
+            const browserAuthEmbed = sanitize(await fetchOgViaBrowserWithPartition(embedUrl, 'persist:tm-instagram'));
+            if (browserAuthEmbed && browserAuthEmbed.image) return browserAuthEmbed;
+          }
+        } catch (e) { console.warn('[og-fetch] IG cookies check failed:', e.message); }
+        // 2) Microlink en la URL original
         const ml = sanitize(await fetchOgViaMicrolink(url));
         if (ml && ml.image) return ml;
-        // 2) Microlink en la URL del embed
+        // 3) Microlink en la URL del embed
         const mlEmbed = sanitize(await fetchOgViaMicrolink(embedUrl));
         if (mlEmbed && mlEmbed.image) return mlEmbed;
-        // NO más fallback a HTTP/Browser embed para IG — sus URLs dan 403 en
-        // el renderer. Si Microlink falló, devolvemos null y la card pinta
-        // placeholder de marca (gradiente IG).
       } else {
         const ml = sanitize(await fetchOgViaMicrolink(url));
         if (ml && ml.image) return ml;

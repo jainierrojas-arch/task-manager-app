@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.112': {
+    title: '🪟 Fix Windows auto-update colgado + 📸 Portadas IG con cookies del user',
+    features: [
+      '🪟 <strong>FIX Windows que se quedaba en "descargando"</strong>: agregado <code>verifyUpdateCodeSignature: false</code> al NSIS config. electron-updater rechazaba instalar el .exe porque no tiene firma digital — descargaba todo pero <code>quitAndInstall</code> fallaba silenciosamente. Ahora se aplica al instante.',
+      '📸 <strong>Portadas Instagram REALES si estás logueado</strong>: si conectaste tu cuenta IG via "Conectar Instagram", el fetcher ahora usa esas cookies con un Browser oculto. Las URLs scontent firmadas SÍ cargan porque comparten tu sesión. <strong>Funciona como cuando ves un link de IG en WhatsApp.</strong>',
+      '🔄 <strong>Cascada nueva para IG</strong>: 1) Browser con cookies del user → 2) Microlink original → 3) Microlink embed → 4) placeholder de marca. La primera opción que funcione gana.',
+      '💡 <strong>Si las portadas IG no aparecen</strong>, abrí Settings → "Conectar Instagram" y logueate. Después abrí el Depósito y refrescá.'
+    ]
+  },
   '3.11.111': {
     title: '🎬 Portadas TikTok REALES — oEmbed oficial + diagnóstico final IG',
     features: [
