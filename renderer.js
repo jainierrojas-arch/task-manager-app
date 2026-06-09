@@ -75,6 +75,17 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.124': {
+    title: '🩺 Diagnósticos visibles en Reparar portadas y Abrir en Explorer',
+    features: [
+      '🩺 <strong>Confirm al hacer click en Reparar</strong>: ahora aparece un diálogo "Reparar N entries?" para confirmar. Si no aparece, el botón no está bindeando — abrí DevTools y mandame los logs [repair-covers].',
+      '🩺 <strong>Alert al terminar</strong>: muestra "Listo: X de Y actualizadas" para que sepas el resultado.',
+      '🪵 <strong>Logs en click de video</strong>: <code>[link-open] {url, isVideo, hasOpenInExplorer}</code> → vas a ver si <code>window.api.openInExplorer</code> existe.',
+      '🪵 <strong>Logs en main.js</strong>: <code>[open-in-explorer] called</code>, <code>sent navigate-explorer-to</code> en el terminal/Console del main window.',
+      '🪵 <strong>Logs en renderer.js</strong>: <code>[main] navigate-explorer-to received</code> + alert si no encuentra la pestaña Explorer.',
+      '🛟 <strong>Fallback automático</strong>: si la IPC openInExplorer falla, abre el link en navegador externo (no perdés el click).'
+    ]
+  },
   '3.11.123': {
     title: '🎬 Click en video del Depósito ahora abre en Explorer interno + botón Reparar con feedback',
     features: [
@@ -2958,15 +2969,25 @@ if (referencesBtn) {
 // main.js manda 'navigate-explorer-to'. Cambiamos a la pestaña Explorer y
 // dispatchamos un CustomEvent que explorer-renderer.js escucha para crear
 // una nueva tab.
+console.log('[main] checking onNavigateExplorerTo support:', !!(window.api && window.api.onNavigateExplorerTo));
 if (window.api && window.api.onNavigateExplorerTo) {
   window.api.onNavigateExplorerTo((url) => {
     if (!url) return;
-    console.log('[main] navigate-explorer-to', url);
+    console.log('[main] navigate-explorer-to received:', url);
+    const explorerTab = document.querySelector(`.nav-tab[data-tab="explorer"]`);
+    if (!explorerTab) {
+      console.error('[main] explorer tab element NOT FOUND');
+      alert('No se encontró la pestaña Explorer. Abrí Explorer manualmente y volvé a probar.');
+      return;
+    }
     _goToTab('explorer');
     setTimeout(() => {
+      console.log('[main] dispatching explorer-open-url custom event');
       window.dispatchEvent(new CustomEvent('explorer-open-url', { detail: { url } }));
-    }, 80);
+    }, 150);
   });
+} else {
+  console.warn('[main] window.api.onNavigateExplorerTo not exposed — IPC bridge broken');
 }
 
 // ===== FIRESTORE REAL-TIME =====

@@ -898,29 +898,32 @@ function renderEntries() {
     area.innerHTML = `<div class="entry-grid">${subEntries.map(e => renderEntryHtml(e)).join('')}</div>`;
     lazyFetchCovers(subEntries);
     ensureCoverDimensions(subEntries);
-    // v3.11.123: handler para botón "Reparar portadas" — con error handling visible
+    // v3.11.124: handler para botón "Reparar portadas" — con feedback visible
     const _repairBtn = document.getElementById('repairCoversBtn');
+    console.log('[repair-covers] button render check:', { found: !!_repairBtn, socialEntries: socialEntries.length, needsRepair: needsRepair.length });
     if (_repairBtn) {
-      console.log('[repair-covers] button bound, socialEntries=', socialEntries.length, 'needsRepair=', needsRepair.length);
       _repairBtn.addEventListener('click', async (ev) => {
         ev.stopPropagation();
-        console.log('[repair-covers] CLICK');
+        ev.preventDefault();
+        console.log('[repair-covers] CLICK received');
+        if (socialEntries.length === 0) {
+          alert('No hay entries de IG/TikTok/YouTube/FB en esta subcategoría.');
+          return;
+        }
+        const confirmMsg = `Reparar ${socialEntries.length} entries sociales? \n\nVa a re-fetchear título, descripción y portada de:\n- Instagram (necesitás estar logueado en Explorer)\n- TikTok (oEmbed oficial, no requiere login)\n- YouTube/Facebook\n\nSeguir?`;
+        if (!confirm(confirmMsg)) {
+          console.log('[repair-covers] user cancelled');
+          return;
+        }
         _repairBtn.disabled = true;
-        const originalText = _repairBtn.textContent;
         _repairBtn.textContent = '⏳ Iniciando...';
         try {
-          if (socialEntries.length === 0) {
-            alert('No hay entries de IG/TikTok/YouTube/FB en esta subcategoría.');
-            return;
-          }
           const result = await repairSocialCovers(socialEntries, (done, total, label) => {
-            _repairBtn.textContent = `⏳ ${done}/${total}${label ? ' — ' + label : ''}`;
+            _repairBtn.textContent = `⏳ ${done}/${total}${label ? ' ' + label : ''}`;
           });
-          _repairBtn.textContent = `✅ ${result.ok}/${result.total} actualizadas`;
-          console.log('[repair-covers] result', result);
-          if (result.ok === 0 && result.total > 0) {
-            alert(`Probé ${result.total} entries pero no pude actualizar ninguna.\n\nMotivos comunes:\n• No estás logueado en Instagram dentro del Explorer\n• Microlink free tier no devolvió imagen\n• Red sin conexión\n\nAbrí DevTools (Cmd+Opt+I → Console) y mandame los logs [repair-covers].`);
-          }
+          _repairBtn.textContent = `✅ ${result.ok}/${result.total}`;
+          console.log('[repair-covers] FINAL result', result);
+          alert(`Listo: ${result.ok} de ${result.total} entries actualizadas.\n\n${result.ok === 0 ? 'Motivos comunes si no actualiza ninguna:\n• No logueado en IG dentro del Explorer\n• fetchOgData no devolvió datos\n• Sin internet\n\nAbrí DevTools (Cmd+Opt+I) y revisá Console para los logs [repair-covers].' : 'Refrescando vista...'}`);
         } catch (err) {
           console.error('[repair-covers] FATAL', err);
           _repairBtn.textContent = '❌ Error';
@@ -932,14 +935,24 @@ function renderEntries() {
       });
     }
     area.querySelectorAll('[data-link-open]').forEach(chip => {
-      chip.addEventListener('click', (ev) => {
+      chip.addEventListener('click', async (ev) => {
         ev.stopPropagation();
         const u = chip.dataset.linkOpen;
         if (!u) return;
-        // v3.11.123: video links (IG/TikTok/YouTube/FB) → abren en Explorer interno
         const isVideo = /instagram\.com|tiktok\.com|youtube\.com|youtu\.be|facebook\.com|fb\.watch|twitter\.com|x\.com/i.test(u);
-        if (isVideo && window.api.openInExplorer) {
-          window.api.openInExplorer(u);
+        console.log('[link-open]', { url: u, isVideo, hasOpenInExplorer: !!(window.api && window.api.openInExplorer) });
+        if (isVideo && window.api && window.api.openInExplorer) {
+          try {
+            const ok = await window.api.openInExplorer(u);
+            console.log('[link-open] openInExplorer result:', ok);
+            if (!ok) {
+              console.warn('[link-open] openInExplorer returned false, fallback to external');
+              window.api.openExternal(u);
+            }
+          } catch (e) {
+            console.error('[link-open] openInExplorer failed:', e.message || e);
+            window.api.openExternal(u);
+          }
         } else {
           window.api.openExternal(u);
         }

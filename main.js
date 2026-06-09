@@ -2203,15 +2203,22 @@ function registerIpcHandlers() {
   }
 
   // v3.11.123: abrir URL en el Explorer interno (mainWindow), no en navegador externo.
-  // Foca mainWindow, va a la tab Explorer y crea una nueva pestaña con la URL.
   ipcMain.handle('open-in-explorer', async (_, url) => {
-    if (!url || typeof url !== 'string') return false;
-    if (!mainWindow || mainWindow.isDestroyed()) return false;
+    console.log('[open-in-explorer] called with', url);
+    if (!url || typeof url !== 'string') {
+      console.warn('[open-in-explorer] invalid url');
+      return false;
+    }
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      console.warn('[open-in-explorer] mainWindow not available');
+      return false;
+    }
     try {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.show();
       mainWindow.focus();
       mainWindow.webContents.send('navigate-explorer-to', url);
+      console.log('[open-in-explorer] sent navigate-explorer-to event');
       return true;
     } catch (e) {
       console.warn('[open-in-explorer]', e.message);
