@@ -3362,7 +3362,7 @@
     // corporativa, antivirus, VPN, ISP bloqueando UDP). Sin esto los
     // listeners de Firestore devuelven ERR_QUIC_PROTOCOL_ERROR en masa.
     try {
-      db.settings({ experimentalAutoDetectLongPolling: true, merge: true });
+      db.settings({ experimentalAutoDetectLongPolling: true });
     } catch (e) { console.warn('[firestore-settings]', e.message); }
   </script>
   <script src="renderer.js"></script>

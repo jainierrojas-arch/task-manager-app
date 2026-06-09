@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.119': {
+    title: '🔑 FIX inicio de sesión: db.settings() rechazaba la config y Firestore quedaba en QUIC',
+    features: [
+      '🐞 <strong>Bug</strong>: en los 4 puntos de inicialización de Firestore el call era <code>db.settings({ experimentalAutoDetectLongPolling: true, merge: true })</code>. El key <code>merge</code> NO es válido en el SDK v8 compat → <code>db.settings()</code> tiraba <code>INVALID_ARGUMENT</code> y el try/catch lo silenciaba. Resultado: <strong>experimentalAutoDetectLongPolling NUNCA se aplicaba</strong>.',
+      '🔌 <strong>Síntoma visible</strong>: en redes que bloquean QUIC/UDP (corporativa, antivirus, hotspot, ciertos ISPs), después del login el <code>await db.collection("users").doc(uid).get()</code> se colgaba indefinidamente y la app parecía "no entrar" o "dar error".',
+      '✅ <strong>Fix</strong>: removido <code>merge: true</code> de los 4 settings (index.html, deposit.html, chat.html, chatbot.html). Ahora long polling sí se activa cuando QUIC falla.',
+      '🚀 Inicio de sesión vuelve a entrar instantáneo, y auto-login (sesión persistida) funciona aunque la red bloquee UDP.'
+    ]
+  },
   '3.11.118': {
     title: '🎬 TikTok formato como Instagram + auto-enriquece entries viejas',
     features: [
