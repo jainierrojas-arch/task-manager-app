@@ -2152,11 +2152,76 @@ function registerIpcHandlers() {
       return result;
     };
 
+    // v3.11.114: helper para persistir thumbs con URL firmada en Cloudinary.
+    // Las URLs de TikTok (x-expires=...) e IG (scontent.cdninstagram.com con
+    // tokens HMAC) expiran a días/horas. Sin persistir, las portadas se rompen
+    // solas con el tiempo. Subimos a Cloudinary con unsigned preset y devolvemos
+    // la URL Cloudinary permanente.
+    async function persistToCloudinaryIfSigned(imageUrl) {
+      if (!imageUrl || typeof imageUrl !== 'string') return imageUrl;
+      const lc = imageUrl.toLowerCase();
+      // Detectar URLs con tokens que expiran
+      const hasExpiry = /x-expires=|x-signature=|_nc_ht=|_nc_cat=/.test(lc);
+      const isSignedCdn = /tiktokcdn|cdninstagram|fbcdn|fbsbx/.test(lc);
+      if (!hasExpiry && !isSignedCdn) return imageUrl;
+      const cloudName = store.get('cloudinaryCloudName');
+      const uploadPreset = store.get('cloudinaryUploadPreset');
+      if (!cloudName || !uploadPreset) {
+        console.log('[persist-cover] sin cloudinary configurado, URL original sin persistir');
+        return imageUrl;
+      }
+      try {
+        const apiUrl = `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`;
+        const params = new URLSearchParams({
+          file: imageUrl,
+          upload_preset: uploadPreset,
+          folder: 'task-manager-covers'
+        }).toString();
+        return await new Promise((resolve) => {
+          const lib = require('https');
+          const req = lib.request(apiUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+              'Content-Length': Buffer.byteLength(params)
+            }
+          }, (res) => {
+            let body = '';
+            res.on('data', d => body += d);
+            res.on('end', () => {
+              try {
+                const j = JSON.parse(body);
+                if (j.secure_url) {
+                  console.log('[persist-cover] persisted', imageUrl.substring(0, 60), '->', j.secure_url);
+                  resolve(j.secure_url);
+                } else {
+                  console.warn('[persist-cover] cloudinary response sin secure_url:', body.substring(0, 200));
+                  resolve(imageUrl);
+                }
+              } catch (e) {
+                console.warn('[persist-cover] parse error', e.message);
+                resolve(imageUrl);
+              }
+            });
+          });
+          req.on('error', (e) => {
+            console.warn('[persist-cover] request error', e.message);
+            resolve(imageUrl);
+          });
+          req.setTimeout(15000, () => { try { req.destroy(); } catch (_) {} resolve(imageUrl); });
+          req.write(params);
+          req.end();
+        });
+      } catch (e) {
+        console.warn('[persist-cover] exception', e.message);
+        return imageUrl;
+      }
+    }
+
     // v3.11.111: para TikTok usamos el oEmbed OFICIAL primero.
     // Endpoint: https://www.tiktok.com/oembed?url=...
     // Es público, gratis, sin rate limit, y devuelve `thumbnail_url` con un
-    // JPEG firmado pero con expiración de ~2 años — carga perfecto en Electron.
-    // Probado en vivo: HTTP 200, 720x1280 JPEG válido.
+    // JPEG firmado pero con expiración corta — por eso PERSISTIMOS a Cloudinary.
     // tikwm queda como fallback (suele caerse / dar code:-1 cada tanto).
     if (isTiktok) {
       // 1) oEmbed oficial de TikTok
@@ -2165,8 +2230,10 @@ function registerIpcHandlers() {
         const res = await httpsGetBuffer(oembedUrl, { 'Accept': 'application/json' });
         const json = JSON.parse(res.buf.toString('utf-8'));
         if (json && json.thumbnail_url) {
+          // v3.11.114: persistir a Cloudinary porque la URL firmada expira
+          const persistedImage = await persistToCloudinaryIfSigned(json.thumbnail_url);
           return sanitize({
-            image: json.thumbnail_url,
+            image: persistedImage,
             title: json.title || null,
             description: json.author_name ? '@' + (json.author_unique_id || json.author_name) : null,
             imageWidth: json.thumbnail_width || null,
@@ -2182,8 +2249,9 @@ function registerIpcHandlers() {
         if (tkJson && tkJson.code === 0 && tkJson.data) {
           const cover = tkJson.data.origin_cover || tkJson.data.cover || tkJson.data.ai_dynamic_cover;
           if (cover) {
+            const persistedCover = await persistToCloudinaryIfSigned(cover);
             return sanitize({
-              image: cover,
+              image: persistedCover,
               title: tkJson.data.title || null,
               description: (tkJson.data.author && tkJson.data.author.nickname) ? '@' + tkJson.data.author.unique_id : null
             });
@@ -2212,9 +2280,15 @@ function registerIpcHandlers() {
           if (hasSession) {
             console.log('[og-fetch] IG: usando cookies del user logueado (persist:tm-instagram)');
             const browserAuth = sanitize(await fetchOgViaBrowserWithPartition(url, 'persist:tm-instagram'));
-            if (browserAuth && browserAuth.image) return browserAuth;
+            if (browserAuth && browserAuth.image) {
+              browserAuth.image = await persistToCloudinaryIfSigned(browserAuth.image);
+              return browserAuth;
+            }
             const browserAuthEmbed = sanitize(await fetchOgViaBrowserWithPartition(embedUrl, 'persist:tm-instagram'));
-            if (browserAuthEmbed && browserAuthEmbed.image) return browserAuthEmbed;
+            if (browserAuthEmbed && browserAuthEmbed.image) {
+              browserAuthEmbed.image = await persistToCloudinaryIfSigned(browserAuthEmbed.image);
+              return browserAuthEmbed;
+            }
           }
         } catch (e) { console.warn('[og-fetch] IG cookies check failed:', e.message); }
         // 2) Microlink en la URL original

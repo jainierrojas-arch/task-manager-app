@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.114': {
+    title: '☁️ Portadas PERMANENTES — auto-persist a Cloudinary',
+    features: [
+      '🔍 <strong>Diagnóstico CRÍTICO</strong>: las URLs de portada que devuelve TikTok oEmbed (<code>tiktokcdn-us.com/...?x-expires=...</code>) <strong>expiran a 2 días</strong>. Por eso los TikTok viejos volvían a salir mal con el tiempo. Lo mismo con IG scontent.',
+      '☁️ <strong>Fix</strong>: ahora cuando el fetcher obtiene una URL firmada (TikTok/IG/Facebook con <code>x-expires</code>, <code>x-signature</code> o CDN signed), automáticamente la <strong>descargamos y subimos a Cloudinary</strong> con tu upload preset. Guardamos la URL Cloudinary permanente en lugar de la temporal.',
+      '✅ <strong>Resultado</strong>: las portadas que se vean ahora ya NO se rompen con el tiempo. Cloudinary es nuestro CDN propio.',
+      '🔄 <strong>Migración v12</strong>: re-fetchea automáticamente todas las entries con URLs <code>tiktokcdn</code>/<code>scontent</code> viejas y las persiste a Cloudinary.',
+      '⚠️ <strong>Requisito</strong>: tu Cloud Name y Upload Preset deben estar configurados en Settings → Cloudinary (ya los tenés). Si no, el fetcher devuelve la URL firmada original y la portada igual va a expirar.'
+    ]
+  },
   '3.11.113': {
     title: '🖼 Preview de link al pegar — unificado con cards (sin cuadro negro)',
     features: [
