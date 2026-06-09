@@ -1385,11 +1385,48 @@ async function migrateCovers(visibleEntries) {
   }
 }
 
+// v3.11.118: detecta si una entry tiene metadata pobre (sin descripción y/o
+// con título genérico tipo "Instagram", "TikTok", o el hostname). Esas entries
+// se benefician de un re-fetch que les ponga título y descripción reales.
+function hasGenericMetadata(entry) {
+  const desc = (entry.description || '').trim();
+  const title = (entry.title || '').trim();
+  if (!desc) return true; // sin descripción → re-fetch
+  if (title.length < 3) return true;
+  if (/^(instagram|tiktok|youtube|facebook|x|twitter)\b/i.test(title)) return true;
+  if (/^https?:\/\//.test(title)) return true; // título es solo el URL
+  return false;
+}
+
 async function lazyFetchCovers(visibleEntries) {
   // Antes de re-fetchear lo que falta, migrar covers viejos (logos de marca,
   // carruseles 1:1 recortados, etc.) — los limpia para que se re-descarguen
   migrateCovers(visibleEntries);
   for (const entry of visibleEntries) {
+    // v3.11.118: si la entry YA tiene cover pero metadata pobre (sin descripción
+    // o título genérico) Y el link es de TikTok/IG, re-fetch para enriquecer.
+    if (entry.coverImage && hasGenericMetadata(entry)) {
+      const url = (entry.links && entry.links[0] && entry.links[0].url) || '';
+      const isSocial = /tiktok\.com|instagram\.com/i.test(url);
+      if (isSocial && !ogFetchInFlight.has(entry.id) && !ogFetchedThisSession.has(entry.id)) {
+        ogFetchInFlight.add(entry.id);
+        try {
+          const og = await window.api.fetchOgData(url);
+          if (og && (og.title || og.description)) {
+            const update = {};
+            if (og.title && hasGenericMetadata(entry)) update.title = og.title.slice(0, 200);
+            if (og.description && !entry.description) update.description = og.description.slice(0, 2000);
+            if (Object.keys(update).length > 0) {
+              console.log('[lazy-meta] enriching entry', entry.id, Object.keys(update));
+              await db.collection('depositEntries').doc(entry.id).update(update);
+            }
+          }
+        } catch (e) { /* ignore */ }
+        ogFetchInFlight.delete(entry.id);
+        ogFetchedThisSession.add(entry.id);
+      }
+      continue;
+    }
     if (entry.coverImage) continue; // ya tiene imagen real, no reintentamos
     const links = entry.links || [];
     if (links.length === 0) continue;

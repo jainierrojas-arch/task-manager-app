@@ -2372,10 +2372,22 @@ function registerIpcHandlers() {
         if (json && json.thumbnail_url) {
           // v3.11.114: persistir a Cloudinary porque la URL firmada expira
           const persistedImage = await persistToCloudinaryIfSigned(json.thumbnail_url);
+          // v3.11.118: formato como Instagram — title = "Autor en TikTok", description = caption real
+          const authorHandle = json.author_unique_id || (json.author_url ? (json.author_url.split('/@')[1] || '').replace(/[/?#].*$/, '') : '');
+          const authorName = json.author_name || authorHandle;
+          let formattedTitle = null;
+          if (authorName && json.title) {
+            const captionShort = json.title.length > 80 ? json.title.slice(0, 80) + '…' : json.title;
+            formattedTitle = `${authorName} en TikTok: "${captionShort}"`;
+          } else if (authorName) {
+            formattedTitle = `${authorName} en TikTok`;
+          } else if (json.title) {
+            formattedTitle = json.title;
+          }
           return sanitize({
             image: persistedImage,
-            title: json.title || null,
-            description: json.author_name ? '@' + (json.author_unique_id || json.author_name) : null,
+            title: formattedTitle,
+            description: json.title || null,
             imageWidth: json.thumbnail_width || null,
             imageHeight: json.thumbnail_height || null
           });
@@ -2390,10 +2402,22 @@ function registerIpcHandlers() {
           const cover = tkJson.data.origin_cover || tkJson.data.cover || tkJson.data.ai_dynamic_cover;
           if (cover) {
             const persistedCover = await persistToCloudinaryIfSigned(cover);
+            const author = tkJson.data.author || {};
+            const authorName = author.nickname || author.unique_id || '';
+            const caption = tkJson.data.title || '';
+            let formattedTitle = null;
+            if (authorName && caption) {
+              const captionShort = caption.length > 80 ? caption.slice(0, 80) + '…' : caption;
+              formattedTitle = `${authorName} en TikTok: "${captionShort}"`;
+            } else if (authorName) {
+              formattedTitle = `${authorName} en TikTok`;
+            } else if (caption) {
+              formattedTitle = caption;
+            }
             return sanitize({
               image: persistedCover,
-              title: tkJson.data.title || null,
-              description: (tkJson.data.author && tkJson.data.author.nickname) ? '@' + tkJson.data.author.unique_id : null
+              title: formattedTitle,
+              description: caption || null
             });
           }
         }

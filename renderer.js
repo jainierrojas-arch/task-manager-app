@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.118': {
+    title: '🎬 TikTok formato como Instagram + auto-enriquece entries viejas',
+    features: [
+      '🎬 <strong>TikTok ahora se ve como Instagram</strong>: title con formato <code>"Scout, Suki & Stella en TikTok: \\"Scramble up ur name & I\\'ll try to guess it 😍…\\""</code> + description con el caption completo + portada real del video. Idéntico al estilo IG.',
+      '🪄 <strong>Auto-enriquece entries viejas</strong>: si una entry del Depósito tiene cover pero metadata pobre (sin descripción o título genérico tipo "Instagram"/"TikTok"/URL crudo), al abrir el Depósito el fetcher la enriquece automáticamente con el nuevo formato.',
+      '🔄 <strong>No hay que apretar nada</strong>: la magia pasa sola al cargar las cards. Los IG/TikTok viejos van a actualizarse a medida que los veas.',
+      '🪵 Log en Console: <code>[lazy-meta] enriching entry XXX [title, description]</code> cada vez que se enriquece una.',
+      '✅ Combinado con v3.11.117 (persist a Cloudinary), las cards van a quedar bonitas Y permanentes.'
+    ]
+  },
   '3.11.117': {
     title: '🔥 BUG RAÍZ encontrado: Explorer guardaba URL firmada que expiraba',
     features: [
