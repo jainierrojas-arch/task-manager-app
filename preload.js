@@ -4,6 +4,9 @@ contextBridge.exposeInMainWorld('api', {
   // v3.11.88: plataforma (mac usa custom updater, windows usa el de electron-updater)
   platform: process.platform,
 
+  // v3.11.117: persistir URL firmada a Cloudinary, devuelve URL permanente
+  persistCoverUrl: (url) => ipcRenderer.invoke('persist-cover-url', url),
+
   // Window controls
   minimizeWindow: () => ipcRenderer.invoke('minimize-window'),
   maximizeWindow: () => ipcRenderer.invoke('maximize-window'),

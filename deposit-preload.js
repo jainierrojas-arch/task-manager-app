@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('api', {
   closeWindow: () => ipcRenderer.invoke('deposit-close'),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   fetchOgData: (url) => ipcRenderer.invoke('fetch-og-data', url),
+  persistCoverUrl: (url) => ipcRenderer.invoke('persist-cover-url', url),
   refreshAllWindows: () => ipcRenderer.invoke('refresh-all-windows'),
   // Programar una entry del deposito: envia data al main window que abre el modal
   openScheduleFromEntry: (data) => ipcRenderer.invoke('open-schedule-from-entry', data),

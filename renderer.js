@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.117': {
+    title: '🔥 BUG RAÍZ encontrado: Explorer guardaba URL firmada que expiraba',
+    features: [
+      '🕵️ <strong>Diagnóstico final</strong>: cuando vos guardás un link desde el Explorer (logueado en IG), el código extrae el cover del DOM o del fetch — pero esa URL es <code>scontent.cdninstagram.com/...?_nc_ht=...</code> <strong>firmada con tokens que expiran en horas/días</strong>. La primera vez carga OK porque estás logueado. Después expira → placeholder.',
+      '☁️ <strong>Fix</strong>: el Explorer ahora persiste el cover a Cloudinary ANTES de guardar en Firestore. <code>window.api.persistCoverUrl(url)</code> → IPC a main.js → sube a Cloudinary → devuelve URL permanente <code>res.cloudinary.com/...</code>',
+      '🔄 <strong>Migración v14</strong>: TODAS las entries existentes con URLs scontent/cdninstagram/tiktokcdn firmadas se re-fetchean y persisten a Cloudinary automáticamente al abrir el Depósito.',
+      '✅ <strong>Resultado</strong>: una vez que las portadas aparezcan, NUNCA MÁS se rompen.',
+      '🪵 Logs en Console: <code>[explorer] cover persisted to Cloudinary: https://res.cloudinary.com/...</code>'
+    ]
+  },
   '3.11.116': {
     title: '🔑 Portadas IG REALES — usa sesión del Explorer (Chrome 124 UA)',
     features: [

@@ -2202,6 +2202,60 @@ function registerIpcHandlers() {
     });
   }
 
+  // v3.11.117: IPC para que el Explorer (o cualquier renderer) persista
+  // covers con URL firmada al Cloudinary del user, devolviendo URL permanente.
+  ipcMain.handle('persist-cover-url', async (_, imageUrl) => {
+    if (!imageUrl || typeof imageUrl !== 'string') return imageUrl;
+    const lc = imageUrl.toLowerCase();
+    const hasExpiry = /x-expires=|x-signature=|_nc_ht=|_nc_cat=/.test(lc);
+    const isSignedCdn = /tiktokcdn|cdninstagram|fbcdn|fbsbx/.test(lc);
+    if (!hasExpiry && !isSignedCdn) return imageUrl;
+    const cloudName = store.get('cloudinaryCloudName');
+    const uploadPreset = store.get('cloudinaryUploadPreset');
+    if (!cloudName || !uploadPreset) return imageUrl;
+    try {
+      const apiUrl = `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`;
+      const params = new URLSearchParams({
+        file: imageUrl,
+        upload_preset: uploadPreset,
+        folder: 'task-manager-covers'
+      }).toString();
+      return await new Promise((resolve) => {
+        const lib = require('https');
+        const req = lib.request(apiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Content-Length': Buffer.byteLength(params)
+          }
+        }, (res) => {
+          let body = '';
+          res.on('data', d => body += d);
+          res.on('end', () => {
+            try {
+              const j = JSON.parse(body);
+              if (j.secure_url) {
+                console.log('[persist-cover-ipc] persisted', imageUrl.substring(0, 60), '->', j.secure_url);
+                resolve(j.secure_url);
+              } else {
+                console.warn('[persist-cover-ipc] no secure_url:', body.substring(0, 200));
+                resolve(imageUrl);
+              }
+            } catch (e) {
+              resolve(imageUrl);
+            }
+          });
+        });
+        req.on('error', () => resolve(imageUrl));
+        req.setTimeout(15000, () => { try { req.destroy(); } catch (_) {} resolve(imageUrl); });
+        req.write(params);
+        req.end();
+      });
+    } catch (e) {
+      return imageUrl;
+    }
+  });
+
   ipcMain.handle('fetch-og-data', async (_, url) => {
     if (!url || typeof url !== 'string' || !/^https?:\/\//i.test(url)) {
       return { image: null, title: null, description: null };

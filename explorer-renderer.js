@@ -686,8 +686,22 @@
         if (coverImage.length > 700 * 1024) {
           console.warn('[explorer] coverImage too large, dropping', coverImage.length);
         } else {
+          // v3.11.117: si la URL es firmada (scontent.cdninstagram, tiktokcdn, fbcdn
+          // con x-expires), persistir a Cloudinary para que NO expire. La URL
+          // original carga UNA vez mientras tu session es válida, después da 403
+          // y la card queda con placeholder. Cloudinary la deja permanente.
+          if (coverImage.startsWith('http') && window.api && window.api.persistCoverUrl) {
+            try {
+              const persisted = await window.api.persistCoverUrl(coverImage);
+              if (persisted && persisted !== coverImage) {
+                console.log('[explorer] cover persisted to Cloudinary:', persisted.substring(0, 80));
+                coverImage = persisted;
+                coverSource = (coverSource || 'unknown') + '+cloudinary';
+              }
+            } catch (e) { console.warn('[explorer] persistCoverUrl failed:', e.message); }
+          }
           data.coverImage = coverImage;
-          data.coverFetcherV = 6;
+          data.coverFetcherV = 14;
         }
       }
       if (categoryId) {
