@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.123': {
+    title: '🎬 Click en video del Depósito ahora abre en Explorer interno + botón Reparar con feedback',
+    features: [
+      '🎬 <strong>Click en la portada de un video</strong> (IG/TikTok/YouTube/FB) en el Depósito ahora abre el link en el Explorer interno (nueva pestaña). Links que no son video siguen abriendo en navegador externo.',
+      '🔄 <strong>Botón "Reparar portadas (X/Y)"</strong> más permissivo: aparece SIEMPRE que haya entries sociales en la subcategoría. Muestra cuántas necesitan reparar vs. total social.',
+      '📣 <strong>Feedback visible</strong>: ahora con <code>alert()</code> si no actualiza nada (con motivos comunes) o si hay error. Progreso en vivo: <code>⏳ 12/57 — IG</code>.',
+      '🪵 Logs detallados en Console: <code>[repair-covers] CLICK</code>, <code>fetching ID URL</code>, <code>got og for ID: {hasImage, hasTitle, hasDesc}</code>, <code>updated ID</code> o <code>no useful data</code>.',
+      '⚠️ Para Instagram el repair requiere estar logueado en IG dentro del Explorer (la pestaña ya carga cookies de <code>persist:explorer</code>).'
+    ]
+  },
   '3.11.122': {
     title: '🔄 Botón "Reparar portadas" para IG/TikTok viejos',
     features: [
@@ -2942,6 +2952,21 @@ if (depositBtn) {
 const referencesBtn = document.getElementById('referencesBtn');
 if (referencesBtn) {
   referencesBtn.addEventListener('click', async () => _goToTab('references'));
+}
+
+// v3.11.123: cuando deposit pide abrir un URL en el Explorer interno,
+// main.js manda 'navigate-explorer-to'. Cambiamos a la pestaña Explorer y
+// dispatchamos un CustomEvent que explorer-renderer.js escucha para crear
+// una nueva tab.
+if (window.api && window.api.onNavigateExplorerTo) {
+  window.api.onNavigateExplorerTo((url) => {
+    if (!url) return;
+    console.log('[main] navigate-explorer-to', url);
+    _goToTab('explorer');
+    setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('explorer-open-url', { detail: { url } }));
+    }, 80);
+  });
 }
 
 // ===== FIRESTORE REAL-TIME =====

@@ -2202,6 +2202,23 @@ function registerIpcHandlers() {
     });
   }
 
+  // v3.11.123: abrir URL en el Explorer interno (mainWindow), no en navegador externo.
+  // Foca mainWindow, va a la tab Explorer y crea una nueva pestaña con la URL.
+  ipcMain.handle('open-in-explorer', async (_, url) => {
+    if (!url || typeof url !== 'string') return false;
+    if (!mainWindow || mainWindow.isDestroyed()) return false;
+    try {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+      mainWindow.webContents.send('navigate-explorer-to', url);
+      return true;
+    } catch (e) {
+      console.warn('[open-in-explorer]', e.message);
+      return false;
+    }
+  });
+
   // v3.11.117: IPC para que el Explorer (o cualquier renderer) persista
   // covers con URL firmada al Cloudinary del user, devolviendo URL permanente.
   ipcMain.handle('persist-cover-url', async (_, imageUrl) => {

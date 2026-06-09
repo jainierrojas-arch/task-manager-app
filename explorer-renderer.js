@@ -737,6 +737,15 @@
 
   // ===== Initial tab =====
   createTab('https://www.google.com/');
+
+  // v3.11.123: cuando el Deposito pide abrir un link en el Explorer,
+  // renderer.js dispatcha 'explorer-open-url'. Creamos una nueva tab con esa URL.
+  window.addEventListener('explorer-open-url', (e) => {
+    const url = e.detail && e.detail.url;
+    if (!url) return;
+    console.log('[explorer] open-url', url);
+    createTab(url);
+  });
 })();
 
 // ===== ManyChat embed via webview (v3.11.9) =====

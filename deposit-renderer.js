@@ -870,17 +870,19 @@ function renderEntries() {
   const subName = isUnsorted ? 'Sin clasificar' : (categories.find(c => c.id === selectedSubcategoryId)?.name || '?');
   const subEntries = entriesIn(selectedCategoryId, selectedSubcategoryId);
   title.innerHTML = `<button class="back-btn" id="backToSubs" title="Volver a subcategorias">&#8592;</button> ${esc(cat.name)} <span style="opacity:0.5">/</span> ${esc(subName)}`;
-  // v3.11.122: contador de entries que necesitan reparar portada (IG/TikTok sin cover real)
-  const needsRepairCount = subEntries.filter(e => {
+  // v3.11.123: contador permissivo — incluye CUALQUIER entry de IG/TikTok/YouTube/FB que tenga cover problemático o sin cover.
+  const socialEntries = subEntries.filter(e => {
+    const firstUrl = (e.links && e.links[0] && e.links[0].url) || '';
+    return /tiktok\.com|instagram\.com|youtube\.com|youtu\.be|facebook\.com|fb\.watch/i.test(firstUrl);
+  });
+  const needsRepair = socialEntries.filter(e => {
     const cover = e.coverImage || '';
-    if (!cover || /lookaside\.instagram\.com|static.*cdninstagram\.com\/rsrc\.php|static\.xx\.fbcdn\.net\/rsrc\.php/i.test(cover)) {
-      const firstUrl = (e.links && e.links[0] && e.links[0].url) || '';
-      return /tiktok\.com|instagram\.com/i.test(firstUrl);
-    }
+    if (!cover) return true;
+    if (/lookaside\.instagram\.com|cdninstagram\.com\/rsrc|fbcdn\.net\/rsrc|^data:/i.test(cover)) return true;
     return false;
-  }).length;
-  const repairBtn = needsRepairCount > 0
-    ? ` <button id="repairCoversBtn" class="btn btn-ghost btn-small" style="margin-left:10px;font-size:11px;background:rgba(255,128,64,0.15);border:1px solid rgba(255,128,64,0.4);color:#ff9866;font-weight:600" title="Re-fetch de portadas + título + descripción para entries de Instagram/TikTok que se ven sin imagen">🔄 Reparar ${needsRepairCount} portada${needsRepairCount === 1 ? '' : 's'}</button>`
+  });
+  const repairBtn = socialEntries.length > 0
+    ? ` <button id="repairCoversBtn" class="btn btn-ghost btn-small" style="margin-left:10px;font-size:11px;background:rgba(255,128,64,0.15);border:1px solid rgba(255,128,64,0.4);color:#ff9866;font-weight:600;cursor:pointer" title="Re-fetch portadas + título + descripción">🔄 Reparar portadas (${needsRepair.length}/${socialEntries.length})</button>`
     : '';
   sub.innerHTML = `${subEntries.length} idea${subEntries.length === 1 ? '' : 's'} aqui${repairBtn}`;
   newBtn.style.display = 'inline-flex';
@@ -896,24 +898,51 @@ function renderEntries() {
     area.innerHTML = `<div class="entry-grid">${subEntries.map(e => renderEntryHtml(e)).join('')}</div>`;
     lazyFetchCovers(subEntries);
     ensureCoverDimensions(subEntries);
-    // v3.11.122: handler para botón "Reparar portadas"
+    // v3.11.123: handler para botón "Reparar portadas" — con error handling visible
     const _repairBtn = document.getElementById('repairCoversBtn');
     if (_repairBtn) {
-      _repairBtn.addEventListener('click', async () => {
+      console.log('[repair-covers] button bound, socialEntries=', socialEntries.length, 'needsRepair=', needsRepair.length);
+      _repairBtn.addEventListener('click', async (ev) => {
+        ev.stopPropagation();
+        console.log('[repair-covers] CLICK');
         _repairBtn.disabled = true;
-        _repairBtn.textContent = '⏳ Reparando...';
-        await repairSocialCovers(subEntries, (done, total) => {
-          _repairBtn.textContent = `⏳ ${done}/${total}...`;
-        });
-        _repairBtn.textContent = '✅ Listo';
-        setTimeout(() => renderEntries(), 800);
+        const originalText = _repairBtn.textContent;
+        _repairBtn.textContent = '⏳ Iniciando...';
+        try {
+          if (socialEntries.length === 0) {
+            alert('No hay entries de IG/TikTok/YouTube/FB en esta subcategoría.');
+            return;
+          }
+          const result = await repairSocialCovers(socialEntries, (done, total, label) => {
+            _repairBtn.textContent = `⏳ ${done}/${total}${label ? ' — ' + label : ''}`;
+          });
+          _repairBtn.textContent = `✅ ${result.ok}/${result.total} actualizadas`;
+          console.log('[repair-covers] result', result);
+          if (result.ok === 0 && result.total > 0) {
+            alert(`Probé ${result.total} entries pero no pude actualizar ninguna.\n\nMotivos comunes:\n• No estás logueado en Instagram dentro del Explorer\n• Microlink free tier no devolvió imagen\n• Red sin conexión\n\nAbrí DevTools (Cmd+Opt+I → Console) y mandame los logs [repair-covers].`);
+          }
+        } catch (err) {
+          console.error('[repair-covers] FATAL', err);
+          _repairBtn.textContent = '❌ Error';
+          alert('Error reparando portadas: ' + (err.message || err));
+        } finally {
+          _repairBtn.disabled = false;
+          setTimeout(() => renderEntries(), 1500);
+        }
       });
     }
     area.querySelectorAll('[data-link-open]').forEach(chip => {
       chip.addEventListener('click', (ev) => {
         ev.stopPropagation();
         const u = chip.dataset.linkOpen;
-        if (u) window.api.openExternal(u);
+        if (!u) return;
+        // v3.11.123: video links (IG/TikTok/YouTube/FB) → abren en Explorer interno
+        const isVideo = /instagram\.com|tiktok\.com|youtube\.com|youtu\.be|facebook\.com|fb\.watch|twitter\.com|x\.com/i.test(u);
+        if (isVideo && window.api.openInExplorer) {
+          window.api.openInExplorer(u);
+        } else {
+          window.api.openExternal(u);
+        }
       });
     });
     area.querySelectorAll('[data-edit]').forEach(btn => {
@@ -1415,21 +1444,19 @@ async function migrateCovers(visibleEntries) {
 // lookaside/rsrc.php) y fuerza un re-fetch via fetchOgData (que ya persiste
 // a Cloudinary internamente). Bypassa ogFetchedThisSession.
 async function repairSocialCovers(entries, onProgress) {
-  const targets = entries.filter(e => {
-    const cover = e.coverImage || '';
-    if (!cover || /lookaside\.instagram\.com|static.*cdninstagram\.com\/rsrc\.php|static\.xx\.fbcdn\.net\/rsrc\.php/i.test(cover)) {
-      const firstUrl = (e.links && e.links[0] && e.links[0].url) || '';
-      return /tiktok\.com|instagram\.com/i.test(firstUrl);
-    }
-    return false;
-  });
-  console.log(`[repair-covers] ${targets.length} entries a reparar`);
+  // entries ya filtradas como sociales — procesamos TODAS (cover ok o no)
+  console.log(`[repair-covers] start - ${entries.length} social entries`);
   let done = 0;
-  for (const entry of targets) {
-    const url = entry.links[0].url;
+  let okCount = 0;
+  for (const entry of entries) {
+    const url = entry.links && entry.links[0] && entry.links[0].url;
+    if (!url) { done++; continue; }
+    const label = url.includes('instagram') ? 'IG' : url.includes('tiktok') ? 'TT' : url.includes('youtube') || url.includes('youtu.be') ? 'YT' : 'FB';
+    if (onProgress) onProgress(done, entries.length, label);
     try {
       console.log(`[repair-covers] fetching`, entry.id, url);
       const og = await window.api.fetchOgData(url);
+      console.log(`[repair-covers] got og for ${entry.id}:`, og ? { hasImage: !!og.image, hasTitle: !!og.title, hasDesc: !!og.description } : 'NULL');
       const update = {};
       if (og && og.image) {
         update.coverImage = og.image;
@@ -1439,10 +1466,11 @@ async function repairSocialCovers(entries, onProgress) {
       if (og && og.title) update.title = og.title.slice(0, 200);
       if (og && og.description) update.description = og.description.slice(0, 2000);
       update.coverFetcherV = 15;
-      if (Object.keys(update).length > 1) {
+      const hasUpdate = Object.keys(update).length > 1;
+      if (hasUpdate) {
         await db.collection('depositEntries').doc(entry.id).update(update);
         console.log(`[repair-covers] updated`, entry.id, Object.keys(update));
-        // Propagar a tareas vinculadas
+        okCount++;
         if (update.coverImage) {
           try {
             const tasksSnap = await db.collection('tasks').where('depositEntryId', '==', entry.id).get();
@@ -1459,15 +1487,17 @@ async function repairSocialCovers(entries, onProgress) {
           } catch (_) {}
         }
       } else {
-        console.warn(`[repair-covers] no data returned for`, entry.id);
+        console.warn(`[repair-covers] no useful data returned for`, entry.id);
       }
     } catch (e) {
-      console.error(`[repair-covers] failed for`, entry.id, e.message);
+      console.error(`[repair-covers] failed for`, entry.id, e.message || e);
     }
     done++;
-    if (onProgress) onProgress(done, targets.length);
+    if (onProgress) onProgress(done, entries.length, label);
     await new Promise(r => setTimeout(r, 150));
   }
+  console.log(`[repair-covers] done - ${okCount}/${entries.length} ok`);
+  return { ok: okCount, total: entries.length };
 }
 
 // v3.11.118: detecta si una entry tiene metadata pobre (sin descripción y/o

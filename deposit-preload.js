@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('api', {
   minimizeWindow: () => ipcRenderer.invoke('deposit-minimize'),
   closeWindow: () => ipcRenderer.invoke('deposit-close'),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
+  openInExplorer: (url) => ipcRenderer.invoke('open-in-explorer', url),
   fetchOgData: (url) => ipcRenderer.invoke('fetch-og-data', url),
   persistCoverUrl: (url) => ipcRenderer.invoke('persist-cover-url', url),
   refreshAllWindows: () => ipcRenderer.invoke('refresh-all-windows'),

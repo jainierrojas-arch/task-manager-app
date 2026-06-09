@@ -48,6 +48,9 @@ contextBridge.exposeInMainWorld('api', {
   // External links
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
 
+  // v3.11.123: navegar Explorer interno a una URL (notificacion desde main)
+  onNavigateExplorerTo: (cb) => ipcRenderer.on('navigate-explorer-to', (_, url) => cb(url)),
+
   // Tabs view mode
   getTabsMultirow: () => ipcRenderer.invoke('get-tabs-multirow'),
   setTabsMultirow: (v) => ipcRenderer.invoke('set-tabs-multirow', v),
