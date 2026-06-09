@@ -870,7 +870,19 @@ function renderEntries() {
   const subName = isUnsorted ? 'Sin clasificar' : (categories.find(c => c.id === selectedSubcategoryId)?.name || '?');
   const subEntries = entriesIn(selectedCategoryId, selectedSubcategoryId);
   title.innerHTML = `<button class="back-btn" id="backToSubs" title="Volver a subcategorias">&#8592;</button> ${esc(cat.name)} <span style="opacity:0.5">/</span> ${esc(subName)}`;
-  sub.textContent = `${subEntries.length} idea${subEntries.length === 1 ? '' : 's'} aqui`;
+  // v3.11.122: contador de entries que necesitan reparar portada (IG/TikTok sin cover real)
+  const needsRepairCount = subEntries.filter(e => {
+    const cover = e.coverImage || '';
+    if (!cover || /lookaside\.instagram\.com|static.*cdninstagram\.com\/rsrc\.php|static\.xx\.fbcdn\.net\/rsrc\.php/i.test(cover)) {
+      const firstUrl = (e.links && e.links[0] && e.links[0].url) || '';
+      return /tiktok\.com|instagram\.com/i.test(firstUrl);
+    }
+    return false;
+  }).length;
+  const repairBtn = needsRepairCount > 0
+    ? ` <button id="repairCoversBtn" class="btn btn-ghost btn-small" style="margin-left:10px;font-size:11px;background:rgba(255,128,64,0.15);border:1px solid rgba(255,128,64,0.4);color:#ff9866;font-weight:600" title="Re-fetch de portadas + título + descripción para entries de Instagram/TikTok que se ven sin imagen">🔄 Reparar ${needsRepairCount} portada${needsRepairCount === 1 ? '' : 's'}</button>`
+    : '';
+  sub.innerHTML = `${subEntries.length} idea${subEntries.length === 1 ? '' : 's'} aqui${repairBtn}`;
   newBtn.style.display = 'inline-flex';
 
   if (subEntries.length === 0) {
@@ -884,6 +896,19 @@ function renderEntries() {
     area.innerHTML = `<div class="entry-grid">${subEntries.map(e => renderEntryHtml(e)).join('')}</div>`;
     lazyFetchCovers(subEntries);
     ensureCoverDimensions(subEntries);
+    // v3.11.122: handler para botón "Reparar portadas"
+    const _repairBtn = document.getElementById('repairCoversBtn');
+    if (_repairBtn) {
+      _repairBtn.addEventListener('click', async () => {
+        _repairBtn.disabled = true;
+        _repairBtn.textContent = '⏳ Reparando...';
+        await repairSocialCovers(subEntries, (done, total) => {
+          _repairBtn.textContent = `⏳ ${done}/${total}...`;
+        });
+        _repairBtn.textContent = '✅ Listo';
+        setTimeout(() => renderEntries(), 800);
+      });
+    }
     area.querySelectorAll('[data-link-open]').forEach(chip => {
       chip.addEventListener('click', (ev) => {
         ev.stopPropagation();
@@ -1382,6 +1407,66 @@ async function migrateCovers(visibleEntries) {
     } else {
       try { await db.collection('depositEntries').doc(entry.id).update({ coverFetcherV: 14 }); } catch (_) {}
     }
+  }
+}
+
+// v3.11.122: reparación manual disparada por botón "Reparar portadas".
+// Itera entries de IG/TikTok sin cover real (o con cover broken tipo
+// lookaside/rsrc.php) y fuerza un re-fetch via fetchOgData (que ya persiste
+// a Cloudinary internamente). Bypassa ogFetchedThisSession.
+async function repairSocialCovers(entries, onProgress) {
+  const targets = entries.filter(e => {
+    const cover = e.coverImage || '';
+    if (!cover || /lookaside\.instagram\.com|static.*cdninstagram\.com\/rsrc\.php|static\.xx\.fbcdn\.net\/rsrc\.php/i.test(cover)) {
+      const firstUrl = (e.links && e.links[0] && e.links[0].url) || '';
+      return /tiktok\.com|instagram\.com/i.test(firstUrl);
+    }
+    return false;
+  });
+  console.log(`[repair-covers] ${targets.length} entries a reparar`);
+  let done = 0;
+  for (const entry of targets) {
+    const url = entry.links[0].url;
+    try {
+      console.log(`[repair-covers] fetching`, entry.id, url);
+      const og = await window.api.fetchOgData(url);
+      const update = {};
+      if (og && og.image) {
+        update.coverImage = og.image;
+        if (og.imageWidth) update.coverWidth = og.imageWidth;
+        if (og.imageHeight) update.coverHeight = og.imageHeight;
+      }
+      if (og && og.title) update.title = og.title.slice(0, 200);
+      if (og && og.description) update.description = og.description.slice(0, 2000);
+      update.coverFetcherV = 15;
+      if (Object.keys(update).length > 1) {
+        await db.collection('depositEntries').doc(entry.id).update(update);
+        console.log(`[repair-covers] updated`, entry.id, Object.keys(update));
+        // Propagar a tareas vinculadas
+        if (update.coverImage) {
+          try {
+            const tasksSnap = await db.collection('tasks').where('depositEntryId', '==', entry.id).get();
+            const batch = db.batch();
+            let count = 0;
+            tasksSnap.forEach(d => {
+              const taskUpdate = { coverImage: update.coverImage };
+              if (update.coverWidth) taskUpdate.coverWidth = update.coverWidth;
+              if (update.coverHeight) taskUpdate.coverHeight = update.coverHeight;
+              batch.update(d.ref, taskUpdate);
+              count++;
+            });
+            if (count > 0) await batch.commit();
+          } catch (_) {}
+        }
+      } else {
+        console.warn(`[repair-covers] no data returned for`, entry.id);
+      }
+    } catch (e) {
+      console.error(`[repair-covers] failed for`, entry.id, e.message);
+    }
+    done++;
+    if (onProgress) onProgress(done, targets.length);
+    await new Promise(r => setTimeout(r, 150));
   }
 }
 

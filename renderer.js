@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.122': {
+    title: '🔄 Botón "Reparar portadas" para IG/TikTok viejos',
+    features: [
+      '🆕 <strong>Botón "Reparar N portadas"</strong> aparece al lado del contador de ideas en cada subcategoría — solo si hay entries de IG/TikTok sin cover real (o con cover broken tipo lookaside/rsrc.php).',
+      '⚡ Al click: itera cada entry afectada, llama a <code>fetchOgData</code> (que ya persiste a Cloudinary internamente), y actualiza cover + título + descripción in-place.',
+      '🪵 Logs en Console: <code>[repair-covers] fetching ID URL</code> y <code>[repair-covers] updated ID</code>.',
+      '🪪 También propaga la nueva portada a las tareas vinculadas (depositEntryId).',
+      '📌 Importante: para que funcione con Instagram necesitás estar logueado en IG dentro del Explorer (usa la sesión de <code>persist:explorer</code>).'
+    ]
+  },
   '3.11.121': {
     title: '🚨 BUG CRÍTICO: renderer.js tenía SyntaxError desde v3.11.118 — TODOS los botones del login estaban muertos',
     features: [
