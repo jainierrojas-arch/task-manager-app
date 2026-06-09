@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.120': {
+    title: '🔐 Recuperar contraseña + mejor manejo de errores en login/registro',
+    features: [
+      '🔐 <strong>Nuevo: link "¿Olvidaste tu contraseña?"</strong> en la pantalla de login. Pones el email arriba, tocas el link y Firebase te manda email con link de reset. (Asegurate de revisar también spam.)',
+      '🪪 <strong>Validación al registrarse</strong>: ahora se valida contraseña ≥ 6 caracteres ANTES de mandar al servidor (no más "weak-password" después de spinner).',
+      '📣 <strong>Errores más claros</strong>: si el email ya está registrado el botón sugiere usar "Olvidaste tu contraseña?" en vez del genérico. También se muestra el código de error de Firebase para diagnóstico.',
+      '🪵 Logs en Console: <code>[login-toggle]</code> al cambiar entre login/registro y <code>[handleAuth]</code> en cada intento. Si el botón "no funciona" abrí DevTools (Cmd+Opt+I) y mandame lo que veas.',
+      '🎯 Foco automático: al tocar "Registrate" el cursor salta al campo Nombre.'
+    ]
+  },
   '3.11.119': {
     title: '🔑 FIX inicio de sesión: db.settings() rechazaba la config y Firestore quedaba en QUIC',
     features: [
@@ -2272,7 +2282,9 @@ const el = {
   trashList: document.getElementById('trashList'),
   trashBadge: document.getElementById('trashBadge'),
   emptyTrashBtn: document.getElementById('emptyTrashBtn'),
-  rememberMe: document.getElementById('rememberMe')
+  rememberMe: document.getElementById('rememberMe'),
+  loginForgot: document.getElementById('loginForgot'),
+  loginInfo: document.getElementById('loginInfo')
 };
 
 // ===== AUTH =====
@@ -2303,6 +2315,7 @@ try {
 
 el.loginToggle.addEventListener('click', () => {
   isRegistering = !isRegistering;
+  console.log('[login-toggle] isRegistering ->', isRegistering);
   el.loginName.style.display = isRegistering ? 'block' : 'none';
   const inviteInput = document.getElementById('loginInviteCode');
   const inviteHint = document.getElementById('loginInviteHint');
@@ -2313,18 +2326,57 @@ el.loginToggle.addEventListener('click', () => {
     ? 'Ya tienes cuenta? <span>Inicia sesion</span>'
     : 'No tienes cuenta? <span>Registrate</span>';
   hideError();
+  if (el.loginInfo) el.loginInfo.style.display = 'none';
+  if (isRegistering) { try { el.loginName.focus(); } catch(_) {} }
 });
 
 el.loginBtn.addEventListener('click', handleAuth);
 el.loginPassword.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleAuth(); });
 
+// v3.11.120: link "Olvidaste tu contrasena?"
+if (el.loginForgot) {
+  el.loginForgot.addEventListener('click', async (e) => {
+    e.preventDefault();
+    hideError();
+    if (el.loginInfo) el.loginInfo.style.display = 'none';
+    const email = (el.loginEmail.value || '').trim();
+    if (!email) {
+      showError('Ingresa tu email arriba y volvé a tocar el link');
+      try { el.loginEmail.focus(); } catch(_) {}
+      return;
+    }
+    try {
+      el.loginForgot.style.pointerEvents = 'none';
+      el.loginForgot.style.opacity = '0.5';
+      await auth.sendPasswordResetEmail(email);
+      if (el.loginInfo) {
+        el.loginInfo.innerHTML = `Te enviamos un email a <strong>${email}</strong> con el link para resetear la contrase&ntilde;a. Revis&aacute; tu bandeja (y spam).`;
+        el.loginInfo.style.display = 'block';
+      }
+    } catch (err) {
+      let msg = 'No se pudo enviar el email de recuperacion';
+      if (err.code === 'auth/invalid-email') msg = 'El email no es valido';
+      else if (err.code === 'auth/user-not-found') msg = 'No existe una cuenta con ese email';
+      else if (err.code === 'auth/network-request-failed') msg = 'Sin conexion a internet';
+      else if (err.message) msg = `Error: ${err.message}`;
+      showError(msg);
+      console.error('[forgot-password] error', err);
+    } finally {
+      el.loginForgot.style.pointerEvents = '';
+      el.loginForgot.style.opacity = '';
+    }
+  });
+}
+
 async function handleAuth() {
+  console.log('[handleAuth] click - isRegistering=', isRegistering);
   const email = el.loginEmail.value.trim();
   const password = el.loginPassword.value.trim();
   const name = el.loginName.value.trim();
 
   if (!email || !password) { showError('Ingresa email y contrasena'); return; }
   if (isRegistering && !name) { showError('Ingresa tu nombre'); return; }
+  if (isRegistering && password.length < 6) { showError('La contrasena debe tener al menos 6 caracteres'); return; }
 
   // Guardar email para auto-rellenar la proxima vez (si la sesion se pierde)
   try {
@@ -2384,13 +2436,17 @@ async function handleAuth() {
       await auth.signInWithEmailAndPassword(email, password);
     }
   } catch (error) {
-    let msg = 'Error desconocido';
+    console.error('[handleAuth] error', error);
+    let msg = error.message || 'Error desconocido';
     if (error.code === 'auth/user-not-found') msg = 'Usuario no encontrado';
     else if (error.code === 'auth/wrong-password') msg = 'Contrasena incorrecta';
     else if (error.code === 'auth/invalid-credential') msg = 'Email o contrasena incorrectos';
-    else if (error.code === 'auth/email-already-in-use') msg = 'Ese email ya esta registrado';
+    else if (error.code === 'auth/email-already-in-use') msg = 'Ese email ya esta registrado. Usa "Olvidaste tu contrasena?" para recuperarla';
     else if (error.code === 'auth/weak-password') msg = 'La contrasena debe tener al menos 6 caracteres';
     else if (error.code === 'auth/invalid-email') msg = 'Email no valido';
+    else if (error.code === 'auth/network-request-failed') msg = 'Sin conexion - revisa tu internet';
+    else if (error.code === 'auth/too-many-requests') msg = 'Demasiados intentos. Espera unos minutos y volve a probar';
+    else if (error.code) msg = `${msg} (${error.code})`;
     showError(msg);
   }
 
