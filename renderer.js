@@ -75,6 +75,17 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.115': {
+    title: '🎯 Portadas IG REALES — re-aplicado el fix de v3.11.15 (auth fetch)',
+    features: [
+      '🔍 <strong>Encontré el fix viejo que SÍ funcionaba</strong>: v3.11.15 hacía <code>fetch()</code> desde DENTRO de un webview de IG logueado. Same-origin (instagram.com → instagram.com), sin CORS, con cookies. IG sirve HTML real con todos los meta tags.',
+      '🌐 <strong>Nueva función fetchOgViaAuthenticatedFetch</strong>: abre BrowserWindow oculto con tu sesión IG (<code>persist:tm-instagram</code>), carga <code>instagram.com</code> base, espera 800ms a que la session esté activa, y desde adentro ejecuta <code>fetch(postUrl, {credentials:include})</code>. Same-origin garantizado.',
+      '☁️ <strong>+ Combinado con persist a Cloudinary</strong>: si IG devuelve la URL scontent firmada, la subimos a Cloudinary para que sea permanente.',
+      '🔄 <strong>Migración v13</strong> re-fetchea automáticamente todos los IG viejos con el nuevo approach.',
+      '⚠️ <strong>Requiere</strong>: estar logueado en IG via Settings → "Conectar Instagram". Si no lo hiciste, cae a placeholder.',
+      '🪵 Logs en Console: <code>[og-fetch IG auth] result: GOT IMAGE...</code> cuando funciona.'
+    ]
+  },
   '3.11.114': {
     title: '☁️ Portadas PERMANENTES — auto-persist a Cloudinary',
     features: [

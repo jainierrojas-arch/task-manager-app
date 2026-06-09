@@ -1357,7 +1357,7 @@ async function migrateCovers(visibleEntries) {
     // v3.11.96: bumped a 8 — fuerza re-fetch de TODAS las entries de Instagram
     // porque las URLs de scontent.cdninstagram.com tienen tokens firmados que
     // vencen tras días/semanas y la portada queda muerta (sale negra).
-    if (entry.coverFetcherV >= 12) continue;
+    if (entry.coverFetcherV >= 13) continue;
     coverMigratedThisSession.add(entry.id);
 
     const isInstagramLink = (entry.links || []).some(l => /instagram\.com\//.test(l.url || ''));
@@ -1375,12 +1375,12 @@ async function migrateCovers(visibleEntries) {
           coverImage: firebase.firestore.FieldValue.delete(),
           coverWidth: firebase.firestore.FieldValue.delete(),
           coverHeight: firebase.firestore.FieldValue.delete(),
-          coverFetcherV: 12
+          coverFetcherV: 13
         });
       } catch (_) {}
       await new Promise(r => setTimeout(r, 100));
     } else {
-      try { await db.collection('depositEntries').doc(entry.id).update({ coverFetcherV: 12 }); } catch (_) {}
+      try { await db.collection('depositEntries').doc(entry.id).update({ coverFetcherV: 13 }); } catch (_) {}
     }
   }
 }
@@ -1406,7 +1406,7 @@ async function lazyFetchCovers(visibleEntries) {
           coverImage: cdnThumb,
           coverWidth: 1080,
           coverHeight: 1920,
-          coverFetcherV: 12
+          coverFetcherV: 13
         });
         try {
           const tasksSnap = await db.collection('tasks').where('depositEntryId', '==', entry.id).get();
@@ -1425,7 +1425,7 @@ async function lazyFetchCovers(visibleEntries) {
     }
     try {
       const og = await window.api.fetchOgData(url);
-      const update = { coverImage: og.image || null, coverFetcherV: 12 };
+      const update = { coverImage: og.image || null, coverFetcherV: 13 };
       if (og.imageWidth && og.imageHeight) {
         update.coverWidth = og.imageWidth;
         update.coverHeight = og.imageHeight;
@@ -2676,7 +2676,7 @@ async function refetchEntryCover(entryId, btn) {
         coverImage: cdn,
         coverWidth: 1080,
         coverHeight: 1920,
-        coverFetcherV: 129
+        coverFetcherV: 139
       });
       console.log('[refetch-cover] DONE (cloudinary path)');
       return;
@@ -2689,7 +2689,7 @@ async function refetchEntryCover(entryId, btn) {
       alert('No se pudo obtener portada del link.\n\nURL: ' + url + '\n\nProbablemente la red bloquea Instagram embed o el link no es público. Mirá la consola para detalles.');
       return;
     }
-    const update = { coverImage: og.image, coverFetcherV: 129 };
+    const update = { coverImage: og.image, coverFetcherV: 139 };
     if (og.imageWidth && og.imageHeight) {
       update.coverWidth = og.imageWidth;
       update.coverHeight = og.imageHeight;

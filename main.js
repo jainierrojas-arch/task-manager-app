@@ -1929,6 +1929,90 @@ function registerIpcHandlers() {
     });
   }
 
+  // v3.11.115: el approach que SÍ funcionó en v3.11.15 — fetch desde DENTRO
+  // de un webview que está navegando instagram.com (same-origin + cookies).
+  // 1. Abrir BrowserWindow oculto con persist:tm-instagram
+  // 2. Cargar instagram.com BASE (no el post directo)
+  // 3. Ejecutar fetch(postUrl, {credentials:'include'}) desde adentro
+  // 4. Same-origin: las cookies se mandan, IG sirve HTML real con meta tags
+  // 5. Regex extrae og:image/og:title/og:description
+  function fetchOgViaAuthenticatedFetch(targetUrl, partitionName) {
+    return new Promise((resolve) => {
+      let win = null;
+      let done = false;
+      const cleanup = () => { try { if (win && !win.isDestroyed()) win.close(); } catch (_) {} };
+      const finish = (data) => {
+        if (done) return; done = true;
+        cleanup();
+        resolve(data || { image: null, title: null, description: null });
+      };
+      try {
+        win = new BrowserWindow({
+          show: false,
+          width: 1024,
+          height: 768,
+          webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true,
+            sandbox: false,
+            partition: partitionName || 'persist:tm-instagram'
+          }
+        });
+        const timeout = setTimeout(() => finish(null), 15000);
+        win.webContents.once('did-finish-load', async () => {
+          try {
+            // Esperar 800ms a que la sesión esté completamente activa
+            await new Promise(r => setTimeout(r, 800));
+            const script = `
+              (async () => {
+                try {
+                  const res = await fetch(${JSON.stringify(targetUrl)}, { credentials: 'include' });
+                  if (!res.ok) return { error: 'http ' + res.status };
+                  const html = await res.text();
+                  function meta(prop) {
+                    const re1 = new RegExp('<meta[^>]+property=["\\\\\\']' + prop + '["\\\\\\'][^>]+content=["\\\\\\']([^"\\\\\\']*)["\\\\\\']', 'i');
+                    const re2 = new RegExp('<meta[^>]+content=["\\\\\\']([^"\\\\\\']*)["\\\\\\'][^>]+property=["\\\\\\']' + prop + '["\\\\\\']', 'i');
+                    const re3 = new RegExp('<meta[^>]+name=["\\\\\\']' + prop + '["\\\\\\'][^>]+content=["\\\\\\']([^"\\\\\\']*)["\\\\\\']', 'i');
+                    const m = html.match(re1) || html.match(re2) || html.match(re3);
+                    return m ? m[1] : '';
+                  }
+                  function decode(s) {
+                    if (!s) return '';
+                    return s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#x27;/g, "'").replace(/&#x2F;/g, '/');
+                  }
+                  return {
+                    image: meta('og:image') || meta('twitter:image'),
+                    title: decode(meta('og:title') || meta('twitter:title')),
+                    description: decode(meta('og:description') || meta('twitter:description') || meta('description'))
+                  };
+                } catch (e) { return { error: e.message }; }
+              })()
+            `;
+            const data = await win.webContents.executeJavaScript(script, true);
+            console.log('[og-fetch IG auth] result:', data && data.image ? 'GOT IMAGE: ' + data.image.substring(0, 60) : 'no image', data && data.error ? '(err: ' + data.error + ')' : '');
+            clearTimeout(timeout);
+            if (data && data.image) {
+              finish({ image: data.image, title: data.title || null, description: data.description || null });
+            } else {
+              finish(null);
+            }
+          } catch (e) {
+            console.warn('[og-fetch IG auth] exception:', e.message);
+            clearTimeout(timeout);
+            finish(null);
+          }
+        });
+        win.webContents.once('did-fail-load', () => { clearTimeout(timeout); finish(null); });
+        // CARGAR INSTAGRAM.COM BASE, no el post directo — para tener la session activa
+        win.loadURL('https://www.instagram.com/', {
+          userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }).catch(() => { finish(null); });
+      } catch (e) {
+        finish(null);
+      }
+    });
+  }
+
   // v3.11.112: variante de fetchOgViaBrowser que acepta partition custom.
   // Permite usar cookies del user logueado en IG (persist:tm-instagram).
   function fetchOgViaBrowserWithPartition(url, partitionName) {
@@ -2279,6 +2363,15 @@ function registerIpcHandlers() {
           const hasSession = cookies.some(c => c.name === 'sessionid' && c.value);
           if (hasSession) {
             console.log('[og-fetch] IG: usando cookies del user logueado (persist:tm-instagram)');
+            // v3.11.115: PRIMERO el authenticated fetch (replica del fix v3.11.15)
+            // — abre instagram.com BASE en BrowserWindow oculto + fetch same-origin
+            // con cookies del user. Devuelve HTML real con og:image lleno.
+            const authFetch = sanitize(await fetchOgViaAuthenticatedFetch(url, 'persist:tm-instagram'));
+            if (authFetch && authFetch.image) {
+              authFetch.image = await persistToCloudinaryIfSigned(authFetch.image);
+              return authFetch;
+            }
+            // Fallback: Browser navegando directamente al post
             const browserAuth = sanitize(await fetchOgViaBrowserWithPartition(url, 'persist:tm-instagram'));
             if (browserAuth && browserAuth.image) {
               browserAuth.image = await persistToCloudinaryIfSigned(browserAuth.image);
