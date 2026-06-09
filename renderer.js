@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.121': {
+    title: '🚨 BUG CRÍTICO: renderer.js tenía SyntaxError desde v3.11.118 — TODOS los botones del login estaban muertos',
+    features: [
+      '💀 <strong>El bug</strong>: en el changelog de v3.11.118 había una secuencia <code>I\\\\\'ll</code> dentro de un string single-quoted. El primer <code>\\\\</code> se interpretaba como backslash literal y el <code>\'</code> CERRABA el string → SyntaxError en parse-time → <strong>renderer.js NO se cargaba</strong>.',
+      '🔌 <strong>Consecuencia</strong>: ningún event listener del login (toggle de Registrate, botón Login, link Olvidaste contraseña) se bindeaba. La pantalla cargaba pero los botones no respondían a nada.',
+      '✅ <strong>Fix</strong>: reescribí el bloque de changelog problemático sin caracteres conflictivos. Validé con <code>node -c renderer.js</code> que parsea limpio.',
+      '🔐 Ahora SÍ funcionan: Login, Registrate y "¿Olvidaste tu contraseña?". Si no recordás la pass, usá el link.'
+    ]
+  },
   '3.11.120': {
     title: '🔐 Recuperar contraseña + mejor manejo de errores en login/registro',
     features: [
@@ -97,7 +106,7 @@ const APP_CHANGELOG = {
   '3.11.118': {
     title: '🎬 TikTok formato como Instagram + auto-enriquece entries viejas',
     features: [
-      '🎬 <strong>TikTok ahora se ve como Instagram</strong>: title con formato <code>"Scout, Suki & Stella en TikTok: \\"Scramble up ur name & I\\'ll try to guess it 😍…\\""</code> + description con el caption completo + portada real del video. Idéntico al estilo IG.',
+      '🎬 <strong>TikTok ahora se ve como Instagram</strong>: title con formato <code>Autor en TikTok: caption corto</code> + description con el caption completo + portada real del video. Idéntico al estilo IG.',
       '🪄 <strong>Auto-enriquece entries viejas</strong>: si una entry del Depósito tiene cover pero metadata pobre (sin descripción o título genérico tipo "Instagram"/"TikTok"/URL crudo), al abrir el Depósito el fetcher la enriquece automáticamente con el nuevo formato.',
       '🔄 <strong>No hay que apretar nada</strong>: la magia pasa sola al cargar las cards. Los IG/TikTok viejos van a actualizarse a medida que los veas.',
       '🪵 Log en Console: <code>[lazy-meta] enriching entry XXX [title, description]</code> cada vez que se enriquece una.',
