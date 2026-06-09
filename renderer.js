@@ -75,6 +75,17 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.116': {
+    title: '🔑 Portadas IG REALES — usa sesión del Explorer (Chrome 124 UA)',
+    features: [
+      '🕵️ <strong>Detalle CRÍTICO encontrado</strong>: en v3.11.53 se eliminó el feature "Conectar Instagram" porque IG detectaba la ventana como Electron y rechazaba las cookies. PERO el Explorer embebido SÍ funciona porque usa UA <code>Chrome/124</code> real — IG lo acepta como navegador legítimo.',
+      '✅ <strong>Fix</strong>: el fetcher ahora busca cookies en <strong>ambas sessions</strong> (<code>persist:explorer</code> primero, después <code>persist:tm-instagram</code>) y usa la primera con <code>sessionid</code> válido.',
+      '🎯 <strong>Para activar las portadas IG REALES</strong>:<br>1. Abrí el <strong>Explorer</strong> dentro de la app<br>2. Andá a <code>instagram.com</code> y logueate normalmente (como en Chrome)<br>3. Listo — las cookies quedan guardadas en <code>persist:explorer</code><br>4. Cualquier link de IG que pegues va a usar esas cookies, igual que WhatsApp',
+      '☁️ <strong>+ Combinado con persist a Cloudinary</strong>: el thumb real se sube a tu Cloudinary → URL permanente que nunca expira.',
+      '🔄 <strong>Migración v14</strong>: re-fetchea todas las entries con el nuevo flujo.',
+      '🪵 Log claro: <code>[og-fetch] IG: cookies encontradas en persist:explorer</code> si funciona. <code>SIN cookies en explorer ni tm-instagram</code> si no estás logueado.'
+    ]
+  },
   '3.11.115': {
     title: '🎯 Portadas IG REALES — re-aplicado el fix de v3.11.15 (auth fetch)',
     features: [

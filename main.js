@@ -2003,9 +2003,11 @@ function registerIpcHandlers() {
           }
         });
         win.webContents.once('did-fail-load', () => { clearTimeout(timeout); finish(null); });
-        // CARGAR INSTAGRAM.COM BASE, no el post directo — para tener la session activa
+        // v3.11.116: usar EXACTAMENTE el mismo UA que el Explorer (Chrome 124).
+        // IG detecta UA de Electron y rechaza cookies — pero acepta Chrome real.
+        // CARGAR INSTAGRAM.COM BASE para activar la session (no el post directo).
         win.loadURL('https://www.instagram.com/', {
-          userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+          userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
         }).catch(() => { finish(null); });
       } catch (e) {
         finish(null);
@@ -2084,7 +2086,7 @@ function registerIpcHandlers() {
         win.webContents.once('did-finish-load', () => setTimeout(startPoll, 600));
         win.webContents.once('did-fail-load', () => { clearTimeout(timeout); finish(null); });
         win.loadURL(url, {
-          userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+          userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
         }).catch(() => { finish(null); });
       } catch (e) {
         finish(null);
@@ -2345,49 +2347,51 @@ function registerIpcHandlers() {
       // Si los dos cayeron, sigue a Microlink (needsMicrolink)
     }
 
-    // v3.11.112: cascada Instagram con cookies del user si está logueado.
-    // Si el user conectó IG via "Conectar Instagram", existe la session
-    // persist:tm-instagram con cookies sessionid de Instagram. Con esas cookies
-    // el Browser oculto recibe URLs scontent firmadas que SÍ cargan en el
-    // renderer (porque comparten la misma session/cookies).
-    // Si NO hay cookies, caemos a Microlink (que devuelve placeholder pero
-    // no rompe), y en última instancia placeholder de marca.
+    // v3.11.116: cascada IG usando session del EXPLORER (persist:explorer).
+    // El Explorer embebido usa UA de Chrome 124 real (no Electron), por eso IG
+    // acepta sus cookies. Esta es la session que SÍ funcionaba en v3.11.15.
+    // El user logueó IG en el Explorer al menos una vez → cookies guardadas.
     if (needsMicrolink) {
       const igMatch = url.match(/instagram\.com\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
       if (igMatch) {
         const embedUrl = `https://www.instagram.com/p/${igMatch[1]}/embed/captioned/`;
-        // 1) Browser oculto con cookies del user logueado en IG
+        // Buscar cookies de IG en ambas sessions (explorer y tm-instagram)
+        let activePartition = null;
         try {
-          const igSession = session.fromPartition('persist:tm-instagram');
-          const cookies = await igSession.cookies.get({ domain: '.instagram.com' });
-          const hasSession = cookies.some(c => c.name === 'sessionid' && c.value);
-          if (hasSession) {
-            console.log('[og-fetch] IG: usando cookies del user logueado (persist:tm-instagram)');
-            // v3.11.115: PRIMERO el authenticated fetch (replica del fix v3.11.15)
-            // — abre instagram.com BASE en BrowserWindow oculto + fetch same-origin
-            // con cookies del user. Devuelve HTML real con og:image lleno.
-            const authFetch = sanitize(await fetchOgViaAuthenticatedFetch(url, 'persist:tm-instagram'));
-            if (authFetch && authFetch.image) {
-              authFetch.image = await persistToCloudinaryIfSigned(authFetch.image);
-              return authFetch;
-            }
-            // Fallback: Browser navegando directamente al post
-            const browserAuth = sanitize(await fetchOgViaBrowserWithPartition(url, 'persist:tm-instagram'));
-            if (browserAuth && browserAuth.image) {
-              browserAuth.image = await persistToCloudinaryIfSigned(browserAuth.image);
-              return browserAuth;
-            }
-            const browserAuthEmbed = sanitize(await fetchOgViaBrowserWithPartition(embedUrl, 'persist:tm-instagram'));
-            if (browserAuthEmbed && browserAuthEmbed.image) {
-              browserAuthEmbed.image = await persistToCloudinaryIfSigned(browserAuthEmbed.image);
-              return browserAuthEmbed;
-            }
+          for (const part of ['persist:explorer', 'persist:tm-instagram']) {
+            const s = session.fromPartition(part);
+            const cookies = await s.cookies.get({ domain: '.instagram.com' });
+            const hasSession = cookies.some(c => c.name === 'sessionid' && c.value);
+            if (hasSession) { activePartition = part; break; }
           }
         } catch (e) { console.warn('[og-fetch] IG cookies check failed:', e.message); }
-        // 2) Microlink en la URL original
+
+        if (activePartition) {
+          console.log('[og-fetch] IG: cookies encontradas en', activePartition);
+          // 1) Authenticated fetch: instagram.com base + fetch same-origin
+          const authFetch = sanitize(await fetchOgViaAuthenticatedFetch(url, activePartition));
+          if (authFetch && authFetch.image) {
+            authFetch.image = await persistToCloudinaryIfSigned(authFetch.image);
+            return authFetch;
+          }
+          // 2) Browser navegando directo al post con cookies
+          const browserAuth = sanitize(await fetchOgViaBrowserWithPartition(url, activePartition));
+          if (browserAuth && browserAuth.image) {
+            browserAuth.image = await persistToCloudinaryIfSigned(browserAuth.image);
+            return browserAuth;
+          }
+          const browserAuthEmbed = sanitize(await fetchOgViaBrowserWithPartition(embedUrl, activePartition));
+          if (browserAuthEmbed && browserAuthEmbed.image) {
+            browserAuthEmbed.image = await persistToCloudinaryIfSigned(browserAuthEmbed.image);
+            return browserAuthEmbed;
+          }
+        } else {
+          console.log('[og-fetch] IG: SIN cookies en explorer ni tm-instagram — abrí el Explorer y logueate en IG');
+        }
+        // 3) Microlink en la URL original
         const ml = sanitize(await fetchOgViaMicrolink(url));
         if (ml && ml.image) return ml;
-        // 3) Microlink en la URL del embed
+        // 4) Microlink en la URL del embed
         const mlEmbed = sanitize(await fetchOgViaMicrolink(embedUrl));
         if (mlEmbed && mlEmbed.image) return mlEmbed;
       } else {
