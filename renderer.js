@@ -75,6 +75,17 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.153': {
+    title: '🌐 Skills POTENCIADOS: Claude lee TODO el skill + genera Super Prompt Global + instrucciones por escena RICAS',
+    features: [
+      '🌐 <strong>Super Prompt Global</strong>: aparte de las instrucciones por escena, Claude genera ahora un "super prompt" universal que aplica a TODAS las escenas. Se muestra en un panel destacado morado arriba de las escenas. Resume el contexto del skill aplicado a toda la variación.',
+      '🔬 <strong>Proceso obligatorio paso-a-paso</strong>: el prompt fuerza a Claude a (1) ANALIZAR el skill exhaustivamente — cada regla, objetivo, restricción, ejemplo. (2) Aplicar TODAS las reglas SIMULTÁNEAMENTE a cada escena. (3) Generar el super prompt global. Sin saltar pasos.',
+      '⚠️ <strong>Regla crítica nueva</strong>: "Si el skill tiene 5 reglas, cada instrucción DEBE incluir las 5 — no podés dejar ninguna afuera. Si saltas alguna, fallás la tarea."',
+      '🎬 <strong>Instrucciones por escena ahora son RICAS</strong>: no más one-liners. Cada instrucción es comprehensiva, ejecutable, lista para que el productor sepa exactamente qué hacer.',
+      '📋 <strong>Botón "Copiar global"</strong>: en el panel del super prompt, click → copia solo el super prompt. Útil para pegarlo aparte como contexto en HeyGen / Veo / Flash Omni / etc.',
+      '📋 <strong>"Copiar todo"</strong>: ahora incluye el super prompt al tope + cada escena con su instrucción específica. Pegás en tu generador y tiene todo el contexto.'
+    ]
+  },
   '3.11.152': {
     title: '📥 Entries nuevas van al PRIMER lugar (no al último)',
     features: [

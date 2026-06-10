@@ -3309,8 +3309,12 @@ function _renderTranscriptionModalContent(entryId) {
         // específica generada por Claude basada en el skill.
         const perSceneInstr = Array.isArray(v.perSceneInstructions) ? v.perSceneInstructions : null;
         const appliedSkillName = v.appliedSkillName || '';
+        const globalPromptText = v.skillGlobalPrompt || '';
         const skillBanner = perSceneInstr && appliedSkillName
           ? `<div style="background:rgba(167,139,250,0.12);border:1px solid rgba(167,139,250,0.35);border-radius:6px;padding:6px 10px;font-size:10.5px;color:#c4b5fd;margin-bottom:8px;display:flex;align-items:center;gap:6px"><span style="font-weight:700">⚡ Skill aplicado:</span> ${esc(appliedSkillName)} <span style="margin-left:auto;font-size:9.5px;opacity:0.7">click en la pill de nuevo para quitar</span></div>`
+          : '';
+        const globalPromptHtml = globalPromptText
+          ? `<div style="background:linear-gradient(135deg,rgba(167,139,250,0.15),rgba(139,92,246,0.1));border:1px solid rgba(167,139,250,0.4);border-left:4px solid #a78bfa;border-radius:6px;padding:10px 12px;margin-bottom:10px"><div style="font-size:10px;color:#c4b5fd;font-weight:700;letter-spacing:0.3px;text-transform:uppercase;margin-bottom:6px;display:flex;align-items:center;gap:6px">🌐 Super Prompt Global (aplica a TODAS las escenas) <button data-copy-global-prompt="${i}" class="btn btn-ghost btn-small" style="margin-left:auto;padding:2px 6px;font-size:9.5px;background:rgba(167,139,250,0.2);border:1px solid rgba(167,139,250,0.4);color:#c4b5fd">📋 Copiar global</button></div><div style="font-size:11.5px;line-height:1.5;color:var(--text-primary);white-space:pre-wrap">${esc(globalPromptText)}</div></div>`
           : '';
         const scenesHtml = scenes.length === 0 ? '' : `
           <div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border)">
@@ -3319,6 +3323,7 @@ function _renderTranscriptionModalContent(entryId) {
               <button class="btn btn-danger btn-small" data-clear-var-scenes="${i}" style="padding:2px 8px;font-size:10px">🗑</button>
             </div>
             ${skillBanner}
+            ${globalPromptHtml}
             <div style="display:flex;flex-direction:column;gap:6px">
               ${scenes.map((sc, sIdx) => {
                 const sceneInstr = perSceneInstr ? (perSceneInstr[sIdx] || '') : instructions;
@@ -3397,6 +3402,18 @@ function _renderTranscriptionModalContent(entryId) {
         openSkillModalForCreate();
       });
     });
+    // v3.11.153: copiar super prompt global solo
+    list.querySelectorAll('[data-copy-global-prompt]').forEach(btn => {
+      btn.addEventListener('click', async (ev) => {
+        ev.stopPropagation();
+        const idx = parseInt(btn.dataset.copyGlobalPrompt, 10);
+        const v = variations[idx];
+        if (!v || !v.skillGlobalPrompt) return;
+        const ok = await copyToClipboardRobust(v.skillGlobalPrompt);
+        btn.textContent = ok ? '✓ Copiado' : '⚠ Error';
+        setTimeout(() => { btn.textContent = '📋 Copiar global'; }, 1500);
+      });
+    });
     list.querySelectorAll('[data-tp-variation]').forEach(b => b.addEventListener('click', () => {
       openTeleprompter(variations[parseInt(b.dataset.tpVariation)].text, entryId);
     }));
@@ -3410,10 +3427,11 @@ function _renderTranscriptionModalContent(entryId) {
       if (Array.isArray(v.scenes) && v.scenes.length > 0) {
         const dur = v.sceneDuration || 15;
         const instr = v.sceneInstructions || '';
-        // v3.11.148: si hay perSceneInstructions (skill aplicado), usar la de cada escena.
-        // Sino, fallback a la instrucción compartida.
         const perScene = Array.isArray(v.perSceneInstructions) ? v.perSceneInstructions : null;
-        text = v.scenes.map((s, i) => {
+        const globalP = (v.skillGlobalPrompt || '').trim();
+        // v3.11.153: si hay super prompt global, lo ponemos al tope del copy
+        const header = globalP ? `🌐 SUPER PROMPT GLOBAL (aplica a TODAS las escenas)\n${'='.repeat(60)}\n${globalP}\n${'='.repeat(60)}\n\n` : '';
+        text = header + v.scenes.map((s, i) => {
           const sceneInstr = perScene ? (perScene[i] || '') : instr;
           return `=== Escena ${i + 1} (${dur}s) ===\n${formatSceneForCopy(s, sceneInstr)}`;
         }).join('\n\n');
@@ -3863,6 +3881,7 @@ async function applySkillToScenes(entryId, variationIdx, skillId) {
       // Firestore FieldValue.delete() en array de objetos no funciona, hacemos limpieza local
       const cleanVar = { ...v };
       delete cleanVar.perSceneInstructions;
+      delete cleanVar.skillGlobalPrompt;
       delete cleanVar.appliedSkillId;
       delete cleanVar.appliedSkillName;
       newVars[variationIdx] = cleanVar;
@@ -3877,31 +3896,57 @@ async function applySkillToScenes(entryId, variationIdx, skillId) {
 
   _setTranscriptionStatus(`⏳ Claude aplicando skill "${skill.name}" a ${v.scenes.length} escenas...`);
 
-  const scenesList = v.scenes.map((text, i) => `Escena ${i + 1}: ${text}`).join('\n\n');
+  const scenesList = v.scenes.map((text, i) => `═══ ESCENA ${i + 1} ═══\n${text}`).join('\n\n');
 
-  const prompt = `Te paso ${v.scenes.length} escenas ya divididas de un guion. NO modifiques el texto de las escenas — solo genera UNA INSTRUCCIÓN ESPECÍFICA para cada escena siguiendo el skill que te indico abajo.
+  const prompt = `Eres un experto en producción de contenido para video. Tu trabajo es LEER COMPLETAMENTE un skill (conjunto de instrucciones reutilizables) y aplicar TODAS sus reglas a una serie de escenas ya divididas, generando para cada una un PROMPT RICO Y COMPLETO listo para ejecutar.
 
-🎯 SKILL A APLICAR — "${skill.name}":
+🎯 SKILL A APLICAR — "${skill.name}"
+═══════════════════════════════════════════════════════════════
 ${skill.text}
+═══════════════════════════════════════════════════════════════
 
-REGLAS:
-1. NO cambies el texto de las escenas, solo genera la instrucción que va ENCIMA de cada una.
-2. Cada instrucción debe ser DIFERENTE para cada escena (varía según el skill).
-3. La instrucción debe ser corta y específica, lista para ejecutar (no explicaciones genéricas).
-4. Si el skill dice "varía planos de cámara", entonces escena 1 una indicación de plano, escena 2 OTRA distinta, etc.
-5. Idioma: español neutro internacional (sin voseo, sin España, sin regionalismos).
+⚠️ PROCESO OBLIGATORIO (no saltes ningún paso):
 
-ESCENAS YA DIVIDIDAS (NO LAS TOQUES):
+PASO 1 — ANÁLISIS EXHAUSTIVO DEL SKILL:
+Lee el skill ENTERO de pies a cabeza, varias veces si hace falta. Identifica:
+- Cada REGLA mencionada (sea explícita o implícita).
+- Cada OBJETIVO que el skill busca lograr.
+- Cada RESTRICCIÓN (qué NO hacer).
+- Cada EJEMPLO mencionado (lo usás como guía de estilo).
+- El TONO y CONTEXTO general que el skill pide.
+
+PASO 2 — APLICAR CADA REGLA A CADA ESCENA:
+Para cada escena, generá una instrucción RICA y COMPREHENSIVA que respete SIMULTÁNEAMENTE TODAS las reglas del skill. No es suficiente respetar una o dos — TODAS deben estar presentes en cada instrucción.
+
+Si el skill tiene 5 reglas, la instrucción de cada escena DEBE incluir las 5 reglas aplicadas a esa escena específica. Si una regla dice "X" y otra dice "Y", AMBAS deben aparecer en cada instrucción, no una u otra.
+
+PASO 3 — SUPER PROMPT GLOBAL:
+Generá un "super prompt" que sintetiza el CONTEXTO UNIVERSAL del skill aplicado a toda la variación. Este prompt va arriba de TODAS las escenas y establece reglas globales que se respetan en cada una (vestuario del personaje, paleta de colores, tono musical, estilo visual general, etc.). Debe ser de 1-3 párrafos cortos, denso en información.
+
+⚠️ REGLAS CRÍTICAS:
+1. NO cambies el texto de las escenas — solo generás los prompts que van ARRIBA.
+2. Si el skill pide VARIACIÓN (ej. "cambia planos de cámara escena a escena"), efectivamente VARIÁ — no repitas misma cosa en escenas consecutivas.
+3. Las instrucciones deben ser RICAS y EJECUTABLES — no genéricas. El productor lee tu instrucción y sabe exactamente qué hacer.
+4. Idioma: español neutro internacional. PROHIBIDO voseo (vos/tenés), España (vosotros/os/tío), regionalismos (wey/chido/parcero). Usá "tú" universal.
+5. Cada instrucción debe ser COHERENTE con el super prompt global — no se contradigan.
+6. Si hay MENCIONES TÉCNICAS específicas en el skill (formatos, ratios, plataformas, software), incluilas literalmente.
+
+ESCENAS YA DIVIDIDAS (NO LAS MODIFIQUES, solo generás los prompts ARRIBA):
 ${scenesList}
 
-FORMATO de salida — JSON válido, SIN nada antes o después:
-{"instructions":[
-  "instrucción específica para escena 1, basada en el skill",
-  "instrucción específica para escena 2, distinta a la anterior",
-  ...
-]}
+══════════════════════════════════════════════════════════════
+FORMATO DE SALIDA — JSON estricto, SIN nada antes o después, SIN markdown:
 
-Debe haber EXACTAMENTE ${v.scenes.length} instrucciones, una por escena.`;
+{
+  "globalPrompt": "Super prompt de 1-3 párrafos cortos que sintetiza el CONTEXTO UNIVERSAL del skill aplicado a toda la variación. Esto va arriba de TODAS las escenas.",
+  "instructions": [
+    "Instrucción RICA y COMPLETA para escena 1 — respeta TODAS las reglas del skill aplicadas específicamente a esta escena.",
+    "Instrucción para escena 2 — distinta a la 1 si el skill pide variación, pero respetando TODAS las reglas.",
+    "...EXACTAMENTE ${v.scenes.length} instrucciones, una por escena, ninguna salteada."
+  ]
+}
+
+Debe haber EXACTAMENTE ${v.scenes.length} instrucciones, una por escena. Si saltas alguna o devolvés menos, fallás la tarea.`;
 
   try {
     const result = await window.api.generateWithClaude({
@@ -3920,11 +3965,11 @@ Debe haber EXACTAMENTE ${v.scenes.length} instrucciones, una por escena.`;
     if (!parsed || !Array.isArray(parsed.instructions) || parsed.instructions.length === 0) {
       throw new Error('Claude no devolvió instrucciones');
     }
+    const globalPrompt = (parsed.globalPrompt || '').trim();
     // Pad o trim para matchear cantidad de escenas
-    const perScene = v.scenes.map((_, i) => (parsed.instructions[i] || '').trim()).filter(x => x !== '');
-    if (perScene.length !== v.scenes.length) {
-      console.warn('[apply-skill] count mismatch — pad with empty');
-      while (perScene.length < v.scenes.length) perScene.push('');
+    const perScene = v.scenes.map((_, i) => (parsed.instructions[i] || '').trim());
+    if (perScene.filter(x => x).length !== v.scenes.length) {
+      console.warn('[apply-skill] count mismatch — got', perScene.filter(x => x).length, 'expected', v.scenes.length);
     }
 
     const currentEntry = entries.find(e => e.id === entryId);
@@ -3932,6 +3977,7 @@ Debe haber EXACTAMENTE ${v.scenes.length} instrucciones, una por escena.`;
     newVars[variationIdx] = {
       ...v,
       perSceneInstructions: perScene,
+      skillGlobalPrompt: globalPrompt,
       appliedSkillId: skillId,
       appliedSkillName: skill.name
     };
