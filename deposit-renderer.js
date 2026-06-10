@@ -3901,55 +3901,49 @@ async function applySkillToScenes(entryId, variationIdx, skillId) {
 
   const scenesList = v.scenes.map((text, i) => `═══ ESCENA ${i + 1} ═══\n${text}`).join('\n\n');
 
-  const prompt = `Eres un experto en producción de contenido para video. Tu trabajo es LEER COMPLETAMENTE un skill (conjunto de instrucciones reutilizables) y aplicar TODAS sus reglas a una serie de escenas ya divididas, generando para cada una un PROMPT RICO Y COMPLETO listo para ejecutar.
+  const prompt = `Te paso un skill y N escenas ya divididas. Tu trabajo: leer TODAS las reglas del skill y generar instrucciones CONCISAS para cada escena.
 
-🎯 SKILL A APLICAR — "${skill.name}"
+🎯 SKILL — "${skill.name}"
 ═══════════════════════════════════════════════════════════════
 ${skill.text}
 ═══════════════════════════════════════════════════════════════
 
-⚠️ PROCESO OBLIGATORIO (no saltes ningún paso):
+PROCESO:
+1. ANALIZA el skill: identificá cada regla, objetivo y restricción. Lista mental: regla A, regla B, regla C...
+2. Para cada escena, generá una instrucción CONCISA que respete TODAS las reglas. Si el skill tiene 5 reglas, las 5 aparecen — pero EN FORMATO COMPACTO, no en párrafos largos.
+3. Generá un super prompt global CORTO (1 párrafo de 3-5 líneas máximo) que resuma el contexto universal del skill.
 
-PASO 1 — ANÁLISIS EXHAUSTIVO DEL SKILL:
-Lee el skill ENTERO de pies a cabeza, varias veces si hace falta. Identifica:
-- Cada REGLA mencionada (sea explícita o implícita).
-- Cada OBJETIVO que el skill busca lograr.
-- Cada RESTRICCIÓN (qué NO hacer).
-- Cada EJEMPLO mencionado (lo usás como guía de estilo).
-- El TONO y CONTEXTO general que el skill pide.
+⚠️ REGLAS DE FORMATO (críticas):
+- CONCISO: cada instrucción de escena = 2-4 líneas máximo, o un bloque de bullets cortos. Nada de explicaciones largas.
+- COMPLETO: si el skill tiene 5 reglas, las 5 deben estar PRESENTES en cada instrucción (aunque sea como bullet de 1 línea cada una). No omitas reglas por brevedad.
+- EJECUTABLE: el productor lee tu instrucción y sabe exactamente qué hacer SIN releer el skill. Formato directo, sin padding.
+- VARIACIÓN: si el skill pide cambios escena a escena (ej. distintos planos), VARIÁ — no repitas misma cosa.
+- IDIOMA: español neutro internacional. NO voseo (vos/tenés), NO España (vosotros/os), NO regionalismos. Usá "tú".
 
-PASO 2 — APLICAR CADA REGLA A CADA ESCENA:
-Para cada escena, generá una instrucción RICA y COMPREHENSIVA que respete SIMULTÁNEAMENTE TODAS las reglas del skill. No es suficiente respetar una o dos — TODAS deben estar presentes en cada instrucción.
+FORMATO PREFERIDO POR ESCENA (ejemplo):
+[PLANO: close-up rostro]
+[ILUMINACIÓN: cálida lateral]
+[TENSIÓN: alta — pausa de 1s al inicio]
+[TRANSICIÓN: cut seco hacia escena siguiente]
 
-Si el skill tiene 5 reglas, la instrucción de cada escena DEBE incluir las 5 reglas aplicadas a esa escena específica. Si una regla dice "X" y otra dice "Y", AMBAS deben aparecer en cada instrucción, no una u otra.
+Eso es lo que queremos: bloques compactos, cada uno una regla del skill aplicada a la escena específica. NO párrafos explicativos.
 
-PASO 3 — SUPER PROMPT GLOBAL:
-Generá un "super prompt" que sintetiza el CONTEXTO UNIVERSAL del skill aplicado a toda la variación. Este prompt va arriba de TODAS las escenas y establece reglas globales que se respetan en cada una (vestuario del personaje, paleta de colores, tono musical, estilo visual general, etc.). Debe ser de 1-3 párrafos cortos, denso en información.
-
-⚠️ REGLAS CRÍTICAS:
-1. NO cambies el texto de las escenas — solo generás los prompts que van ARRIBA.
-2. Si el skill pide VARIACIÓN (ej. "cambia planos de cámara escena a escena"), efectivamente VARIÁ — no repitas misma cosa en escenas consecutivas.
-3. Las instrucciones deben ser RICAS y EJECUTABLES — no genéricas. El productor lee tu instrucción y sabe exactamente qué hacer.
-4. Idioma: español neutro internacional. PROHIBIDO voseo (vos/tenés), España (vosotros/os/tío), regionalismos (wey/chido/parcero). Usá "tú" universal.
-5. Cada instrucción debe ser COHERENTE con el super prompt global — no se contradigan.
-6. Si hay MENCIONES TÉCNICAS específicas en el skill (formatos, ratios, plataformas, software), incluilas literalmente.
-
-ESCENAS YA DIVIDIDAS (NO LAS MODIFIQUES, solo generás los prompts ARRIBA):
+ESCENAS (no las modifiques, solo generás los prompts compactos ARRIBA):
 ${scenesList}
 
 ══════════════════════════════════════════════════════════════
 FORMATO DE SALIDA — JSON estricto, SIN nada antes o después, SIN markdown:
 
 {
-  "globalPrompt": "Super prompt de 1-3 párrafos cortos que sintetiza el CONTEXTO UNIVERSAL del skill aplicado a toda la variación. Esto va arriba de TODAS las escenas.",
+  "globalPrompt": "Super prompt CORTO (1 párrafo de 3-5 líneas) que sintetiza el contexto universal del skill aplicado a toda la variación.",
   "instructions": [
-    "Instrucción RICA y COMPLETA para escena 1 — respeta TODAS las reglas del skill aplicadas específicamente a esta escena.",
-    "Instrucción para escena 2 — distinta a la 1 si el skill pide variación, pero respetando TODAS las reglas.",
-    "...EXACTAMENTE ${v.scenes.length} instrucciones, una por escena, ninguna salteada."
+    "Instrucción CONCISA para escena 1 — bloque compacto con TODAS las reglas del skill aplicadas a esta escena. 2-4 líneas o bullets cortos. SIN padding.",
+    "Instrucción CONCISA para escena 2 — distinta a la 1 si hay variación, con TODAS las reglas.",
+    "...EXACTAMENTE ${v.scenes.length} instrucciones, ninguna salteada."
   ]
 }
 
-Debe haber EXACTAMENTE ${v.scenes.length} instrucciones, una por escena. Si saltas alguna o devolvés menos, fallás la tarea.`;
+EXACTAMENTE ${v.scenes.length} instrucciones. Concisas pero completas — todas las reglas presentes en formato compacto.`;
 
   try {
     const result = await window.api.generateWithClaude({

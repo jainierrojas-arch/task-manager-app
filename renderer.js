@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.155': {
+    title: '✂️ Skills: instrucciones por escena más CONCISAS (sin perder reglas)',
+    features: [
+      '✂️ <strong>Re-balanceado el prompt</strong>: en v3.11.153 le había metido "RICA y COMPREHENSIVA" y Claude se pasaba al verboso. Ahora: <strong>CONCISO pero COMPLETO</strong> — todas las reglas presentes, pero en formato compacto.',
+      '📐 <strong>Formato preferido</strong>: bloques compactos tipo <code>[PLANO: close-up rostro]</code> / <code>[ILUMINACIÓN: cálida lateral]</code> / <code>[TRANSICIÓN: cut seco]</code>. Cada regla del skill = un bullet de 1 línea, no un párrafo.',
+      '🎯 <strong>Regla nueva del prompt</strong>: "Cada instrucción de escena = 2-4 líneas máximo, o bullets cortos. Si el skill tiene 5 reglas, las 5 deben estar presentes — pero EN FORMATO COMPACTO, no en párrafos largos."',
+      '🌐 <strong>Super prompt global también más corto</strong>: 1 párrafo de 3-5 líneas máximo en vez de 1-3 párrafos.',
+      '✅ Sigue respetando TODAS las reglas del skill — solo cambia la forma de expresarlas (compacta vs verbosa).'
+    ]
+  },
   '3.11.154': {
     title: '💬 Nuevo CTA: "Comenta + palabra clave" — Claude inventa la palabra para automatización ManyChat',
     features: [
