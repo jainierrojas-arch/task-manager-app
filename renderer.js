@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.129': {
+    title: '🌐 Botón "Chrome del sistema" en el Explorer (para login de Google)',
+    features: [
+      '🌐 <strong>Nuevo botón "🌐 Chrome"</strong> al lado de "Ir" en el Explorer. Click → abre la URL actual en el Chrome / navegador del sistema (con todas tus cuentas).',
+      '🛡 <strong>Por qué hace falta</strong>: Google bloquea el login en webviews embebidos (lo hace todo Electron y similares). Es una política oficial — no se puede saltear por User Agent. Para login Google necesitás navegador del sistema.',
+      '✅ <strong>Lo demás sigue funcionando dentro de la app</strong>: Instagram, TikTok, YouTube, Twitter/X, Facebook — todos esos sí permiten login y sesión dentro del Explorer interno (sus cookies viven en <code>persist:explorer</code>).',
+      '💡 <strong>Caso de uso</strong>: si querés entrar a Gmail/YouTube logueado/Google Drive desde la app, tocás 🌐 Chrome → te lleva a tu Chrome del sistema → hacés lo que necesitás. Para guardar al Depósito desde IG/TT seguís usando el Explorer interno.'
+    ]
+  },
   '3.11.128': {
     title: '🪟 Diagnósticos para Windows en Guardar al Depósito desde Explorer',
     features: [

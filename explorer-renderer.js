@@ -203,6 +203,33 @@
   });
   addTabBtn.addEventListener('click', () => createTab('https://www.google.com/'));
 
+  // v3.11.129: abrir la URL actual en el Chrome / navegador del sistema.
+  // Útil para login de Google (que bloquea webviews embebidos) o pagar
+  // subscripciones, OAuth, etc.
+  const openSystemBtn = document.getElementById('explorerOpenSystem');
+  if (openSystemBtn) {
+    openSystemBtn.addEventListener('click', () => {
+      const b = getActiveBrowser();
+      let u = '';
+      try { u = b ? b.getURL() : (urlBar.value || '').trim(); } catch (_) { u = (urlBar.value || '').trim(); }
+      if (!u || !/^https?:/i.test(u)) {
+        showToast('URL inválida', 'error');
+        return;
+      }
+      try {
+        if (window.api && window.api.openExternal) {
+          window.api.openExternal(u);
+          showToast('Abriendo en Chrome del sistema...');
+        } else {
+          window.open(u, '_blank', 'noopener');
+        }
+      } catch (e) {
+        console.warn('[explorer] openExternal failed', e.message);
+        try { window.open(u, '_blank', 'noopener'); } catch (_) {}
+      }
+    });
+  }
+
   // ===== Categorías + subcategorías =====
   let categoriesLoaded = false;
   let _allCats = [];
