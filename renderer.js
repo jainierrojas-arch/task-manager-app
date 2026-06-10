@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.142': {
+    title: '🪟 Chrome Nativo SE ABRE ENCIMA del Explorer (sin permisos, sin AppleScript)',
+    features: [
+      '🪟 <strong>Chrome arranca EXACTAMENTE encima del área del Explorer</strong>: usamos las flags estándar <code>--window-position=X,Y</code> y <code>--window-size=W,H</code> de Chrome al lanzar. NO requiere Accessibility, NO requiere AppleScript — son flags built-in del browser.',
+      '🎯 <strong>El cálculo</strong>: leo las dimensiones del Task Manager (<code>mainWindow.getBounds()</code>), resto sidebar (220px) + topbar (130px) + bottom toolbar (80px), y le paso esas coordenadas a Chrome.',
+      '✅ <strong>Resultado</strong>: visualmente parece estar dentro del Task Manager. Login Google funciona porque es Chrome real.',
+      '⚠ <strong>Trade-off real</strong>: si después movés/redimensionás el Task Manager, Chrome NO sigue automáticamente (eso sí requeriría AppleScript + Accessibility). Tenés que cerrar Chrome y volver a abrirlo, o ajustarlo manualmente. Para uso normal donde abrís Chrome, hacés lo tuyo, y cerrás → es más que suficiente.',
+      '🪟 <strong>Cross-platform</strong>: detección de Chrome path para macOS, Windows y Linux.'
+    ]
+  },
   '3.11.141': {
     title: '🎯 Simplificación Chrome Nativo + botón X eliminar plantillas',
     features: [

@@ -22,7 +22,25 @@ const fs = require('fs');
 const { spawn, exec } = require('child_process');
 const { app, BrowserWindow } = require('electron');
 
-const CHROME_PATH = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+// v3.11.142: detección cross-platform de Chrome
+function findChromePath() {
+  const candidates = process.platform === 'darwin' ? [
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+  ] : process.platform === 'win32' ? [
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    path.join(process.env.LOCALAPPDATA || '', 'Google', 'Chrome', 'Application', 'chrome.exe')
+  ] : [
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/chromium-browser'
+  ];
+  for (const p of candidates) {
+    if (p && fs.existsSync(p)) return p;
+  }
+  return null;
+}
+const CHROME_PATH = findChromePath();
 
 let state = {
   chromeProc: null,
@@ -41,28 +59,47 @@ function profileDir() {
 }
 
 function chromeAvailable() {
-  return fs.existsSync(CHROME_PATH);
+  return CHROME_PATH && fs.existsSync(CHROME_PATH);
 }
 
 async function start({ url, mainWindow, explorerOffset }) {
   if (state.active) await stop();
   if (!chromeAvailable()) {
-    throw new Error('Google Chrome no está instalado en /Applications/Google Chrome.app');
+    throw new Error('Google Chrome no está instalado. Buscado en /Applications/Google Chrome.app');
   }
   state.mainWindowRef = mainWindow;
+  if (explorerOffset) state.explorerOffset = { ...state.explorerOffset, ...explorerOffset };
+
+  // v3.11.142: calcular dimensiones del área del Explorer y pasarlas a Chrome
+  // como --window-position y --window-size. NO requiere Accessibility — son
+  // flags estándar de Chrome al lanzar. Chrome arranca EXACTAMENTE encima
+  // del área del Explorer dentro del Task Manager.
+  let posArg = '', sizeArg = '';
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    const b = mainWindow.getBounds();
+    const off = state.explorerOffset;
+    const x = b.x + off.left;
+    const y = b.y + off.top;
+    const w = Math.max(400, b.width - off.left - off.right);
+    const h = Math.max(300, b.height - off.top - off.bottom);
+    posArg = `--window-position=${x},${y}`;
+    sizeArg = `--window-size=${w},${h}`;
+    console.log('[chrome-overlay] position', x, y, 'size', w, h);
+  }
 
   const startUrl = url || 'https://www.google.com/';
-  // v3.11.141: SIMPLE. Lanzamos Chrome como ventana normal con perfil dedicado.
-  // SIN AppleScript positioning, SIN Accessibility permissions, SIN polling.
-  // El usuario tiene su Chrome separado pero funciona INSTANTÁNEAMENTE.
-  console.log('[chrome-overlay] launching Chrome (simple mode) --app=' + startUrl);
-  state.chromeProc = spawn(CHROME_PATH, [
+  console.log('[chrome-overlay] launching Chrome --app=' + startUrl);
+  const args = [
     `--app=${startUrl}`,
     `--user-data-dir=${profileDir()}`,
     '--no-first-run',
     '--no-default-browser-check',
     '--disable-features=PrivacySandboxSettings4'
-  ], { detached: false, stdio: 'ignore' });
+  ];
+  if (posArg) args.push(posArg);
+  if (sizeArg) args.push(sizeArg);
+
+  state.chromeProc = spawn(CHROME_PATH, args, { detached: false, stdio: 'ignore' });
 
   state.chromeProc.on('exit', () => {
     console.log('[chrome-overlay] Chrome process exited');

@@ -818,7 +818,12 @@
       let initialUrl = 'https://www.google.com/';
       try { const b = getActiveBrowser(); if (b) initialUrl = b.getURL() || initialUrl; } catch (_) {}
       chromeNativeBtn.textContent = '⏳ Abriendo Chrome...';
-      const result = await window.api.chromeOverlay.start({ url: initialUrl });
+      // v3.11.142: pasamos las dimensiones del Explorer area para que Chrome
+      // arranque EXACTAMENTE encima de ahí
+      const result = await window.api.chromeOverlay.start({
+        url: initialUrl,
+        explorerOffset: { top: 130, left: 220, right: 0, bottom: 80 }
+      });
       if (!result || !result.ok) {
         alert('No se pudo abrir Chrome: ' + ((result && result.error) || 'error desconocido'));
         chromeNativeBtn.textContent = '🌐 Chrome Nativo';
