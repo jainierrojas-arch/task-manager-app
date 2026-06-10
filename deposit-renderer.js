@@ -3347,19 +3347,14 @@ function _renderTranscriptionModalContent(entryId) {
                 </select>
                 <button class="btn btn-primary btn-small" data-split-var="${i}" style="padding:4px 10px;font-size:10px;background:#ff9866;border-color:#ff7a3d">✂️ Dividir esta variación</button>
               </div>
-              <label style="display:block;font-size:10px;color:#ff9866;font-weight:600;margin-bottom:4px;letter-spacing:0.3px">📌 Instrucciones (se repiten en TODAS las escenas, encima del guion)</label>
-              <textarea data-var-scene-instructions="${i}" placeholder="Ej: Personaje: hombre joven latino, ropa casual oscura.\nCámara: medium shot, fondo desenfocado.\nIluminación: cinematográfica suave.\nVoz neutra, energía media." rows="4" style="width:100%;padding:8px 10px;background:var(--bg-card);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-family:inherit;font-size:11.5px;line-height:1.5;resize:vertical;box-sizing:border-box">${esc(instructions)}</textarea>
-              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px;flex-wrap:wrap">
-                <span style="font-size:9.5px;color:#ff9866;font-weight:700;letter-spacing:0.3px;text-transform:uppercase">💾 Mis plantillas</span>
-                <button class="btn btn-ghost btn-small" data-save-scene-tpl="${i}" style="padding:2px 8px;font-size:10px;background:rgba(255,152,102,0.18);border:1px solid rgba(255,152,102,0.45);color:#ff9866;font-weight:600">💾 Guardar como plantilla</button>
-              </div>
-              <div data-scene-tpl-list="${i}" style="display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;padding:6px;background:var(--bg-card);border:1px dashed rgba(255,152,102,0.25);border-radius:4px;min-height:30px;align-items:center"></div>
-              <div style="font-size:9.5px;color:var(--text-dim);margin-top:4px;font-style:italic">Click en una plantilla → se carga arriba. Click en ✎ para editarla. Al copiar cada escena saldrá: tus instrucciones + "Guion en español:" + texto de esa escena.</div>
+              <!-- v3.11.150: removidas las "Instrucciones manuales" y "Mis plantillas".
+                   Skills hace todo: escribís el contenido como instrucción del skill
+                   (sea estático o variable) y al click se aplica a las escenas. -->
 
-              <!-- v3.11.148: Skills — click en pill = aplicar a las escenas ya divididas -->
-              <div style="margin-top:14px;padding-top:12px;border-top:1px dashed rgba(167,139,250,0.25)">
+              <!-- v3.11.150: Skills — click en pill = aplicar a las escenas ya divididas -->
+              <div>
                 <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
-                  <span style="font-size:10px;color:#a78bfa;font-weight:700;letter-spacing:0.3px;text-transform:uppercase">🎯 Mis Skills</span>
+                  <span style="font-size:10px;color:#a78bfa;font-weight:700;letter-spacing:0.3px;text-transform:uppercase">🎯 Mis Skills (instrucciones para cada escena)</span>
                   <button class="btn btn-ghost btn-small" data-new-skill="1" style="padding:2px 8px;font-size:10px;background:rgba(167,139,250,0.18);border:1px solid rgba(167,139,250,0.45);color:#c4b5fd;font-weight:600">🧠 Nuevo skill</button>
                 </div>
                 <div data-skills-list="${i}" style="display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;padding:6px;background:var(--bg-card);border:1px dashed rgba(167,139,250,0.25);border-radius:4px;min-height:30px;align-items:center"></div>
@@ -3442,14 +3437,12 @@ function _renderTranscriptionModalContent(entryId) {
       const v = currentEntry.scriptVariations[idx];
       if (!v || !v.text) { _setTranscriptionStatus('⚠ Variación vacía', 'error'); return; }
       const durSel = list.querySelector(`[data-var-scene-dur="${idx}"]`);
-      const instrTa = list.querySelector(`[data-var-scene-instructions="${idx}"]`);
       const duration = parseInt((durSel && durSel.value) || '15', 10);
-      const sceneInstructions = (instrTa && instrTa.value || '').trim();
       const scenes = splitTextByDuration(v.text, duration);
-      console.log('[split-var LOCAL] split into', scenes.length, 'scenes, instr len', sceneInstructions.length);
+      console.log('[split-var LOCAL] split into', scenes.length, 'scenes');
       if (scenes.length === 0) { _setTranscriptionStatus('⚠ Texto muy corto', 'error'); return; }
       const newVars = currentEntry.scriptVariations.slice();
-      newVars[idx] = { ...v, scenes, sceneDuration: duration, sceneInstructions };
+      newVars[idx] = { ...v, scenes, sceneDuration: duration };
       btn.disabled = true;
       btn.textContent = '⏳ Dividiendo...';
       _setTranscriptionStatus(`⏳ Dividiendo en ${scenes.length} escenas de ${duration}s...`);
@@ -4060,16 +4053,14 @@ document.addEventListener('click', (ev) => {
     }
     const durSel = document.querySelector(`[data-var-scene-dur="${idx}"]`);
     const duration = parseInt((durSel && durSel.value) || '15', 10);
-    const instrTa = document.querySelector(`[data-var-scene-instructions="${idx}"]`);
-    const sceneInstructions = (instrTa && instrTa.value || '').trim();
     const v = entry.scriptVariations[idx];
     if (!v || !v.text) { _setTranscriptionStatus('⚠ La variación está vacía', 'error'); return; }
-    console.log('[split-var] splitting variation', idx, 'duration', duration, 'words', v.text.split(/\s+/).length, 'instr', sceneInstructions.length);
+    console.log('[split-var] splitting variation', idx, 'duration', duration, 'words', v.text.split(/\s+/).length);
     const scenes = splitTextByDuration(v.text, duration);
     console.log('[split-var] split returned', scenes.length, 'scenes');
     if (scenes.length === 0) { _setTranscriptionStatus('⚠ El split devolvió 0 escenas — texto muy corto', 'error'); return; }
     const newVars = entry.scriptVariations.slice();
-    newVars[idx] = { ...v, scenes, sceneDuration: duration, sceneInstructions };
+    newVars[idx] = { ...v, scenes, sceneDuration: duration };
     splitVarBtn.disabled = true;
     splitVarBtn.textContent = '⏳ Dividiendo...';
     _setTranscriptionStatus(`⏳ Dividiendo variación en ${scenes.length} escenas de ${duration}s...`);

@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.150': {
+    title: '🧹 UI más limpia: removida textarea "Instrucciones" + "Mis Plantillas" (Skills hace todo)',
+    features: [
+      '🧹 <strong>Eliminado</strong>: la textarea "📌 Instrucciones (se repiten en TODAS las escenas)" y la sección "💾 Mis Plantillas".',
+      '🎯 <strong>Skills hace todo</strong>: si querés instrucciones que se repitan, creás un skill con esa instrucción. Si querés instrucciones que varíen por escena, creás un skill con eso. UI unificada.',
+      '🎨 <strong>Flujo nuevo limpio</strong>: 1) ✂️ Dividir esta variación → escenas. 2) Click en skill (⚡) → Claude le aplica la instrucción a cada escena. 3) 📋 Copiar → texto + instrucción.',
+      '💡 <strong>Tip para reproducir el viejo "instrucción repetida"</strong>: creá un skill con instrucción tipo <em>"Para CADA escena, usa esta misma indicación (sin variar): Personaje hombre joven latino, plano medio, fondo desenfocado, iluminación cinematográfica suave."</em> — Claude la replicará idéntica en cada escena.',
+      '🪪 <strong>Plantillas viejas siguen guardadas</strong> en Firestore, pero ya no se ven en la UI. Si querés usarlas las recuperás copiando el texto y creando un skill nuevo.'
+    ]
+  },
   '3.11.149': {
     title: '🐞 Fix Skills: click en pill no hacía nada (entryId vacío en re-render)',
     features: [
