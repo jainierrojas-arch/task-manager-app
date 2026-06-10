@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.149': {
+    title: '🐞 Fix Skills: click en pill no hacía nada (entryId vacío en re-render)',
+    features: [
+      '🐞 <strong>El bug</strong>: cuando Firestore actualizaba la lista de skills (subscription en vivo), las pills se re-renderizaban PASANDO entryId=undefined → el atributo <code>data-skill-entry</code> quedaba vacío → click no hacía nada (mi guard <code>if (!entId) return</code> se disparaba en silencio).',
+      '✅ <strong>Fix</strong>: el subscription handler ahora usa <code>_currentTranscriptionEntryId</code> (variable global del modal abierto) al re-renderear pills.',
+      '⏳ <strong>Feedback visual inmediato</strong>: al click en una pill, ahora baja opacity y cursor:wait. Sabés que está procesando mientras Claude trabaja (5-10s).',
+      '🪵 <strong>Log para debug</strong>: <code>[skill-click] id=X var=Y entry=Z</code> en Console por cada click. Si entry sale vacío sabemos el problema.',
+      '🚨 <strong>Alert visible</strong>: si por algún caso edge entryId queda vacío, aparece alert pidiendo cerrar el modal y reabrir.'
+    ]
+  },
   '3.11.148': {
     title: '⚡ Skills CORREGIDOS: ahora aplican CAPA DE INSTRUCCIONES sobre escenas ya divididas (no las re-dividen)',
     features: [

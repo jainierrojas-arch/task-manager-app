@@ -419,7 +419,8 @@ function subscribeAll() {
     updateSkillFolderOptions();
     const mod = document.getElementById('transcriptionModal');
     if (mod && mod.classList.contains('active')) {
-      document.querySelectorAll('[data-skills-list]').forEach(el => renderSkillsPills(el, parseInt(el.dataset.skillsList, 10)));
+      // v3.11.149: PASAR _currentTranscriptionEntryId — sin esto data-skill-entry queda vacío y click no hace nada
+      document.querySelectorAll('[data-skills-list]').forEach(el => renderSkillsPills(el, parseInt(el.dataset.skillsList, 10), _currentTranscriptionEntryId));
     }
   }, err => console.error('[deposit] scriptSkills error:', err)));
 
@@ -3710,8 +3711,20 @@ function renderSkillsPills(containerEl, variationIdx, entryId) {
       const id = el.dataset.skillId;
       const varIdx = parseInt(el.dataset.skillVar, 10);
       const entId = el.dataset.skillEntry;
-      if (!entId) return;
-      await applySkillToScenes(entId, varIdx, id);
+      console.log('[skill-click] id=', id, 'var=', varIdx, 'entry=', entId);
+      if (!entId) {
+        alert('Error interno: entryId vacío. Cerrá el modal y volvelo a abrir.');
+        return;
+      }
+      // Feedback visual inmediato
+      el.style.opacity = '0.6';
+      el.style.cursor = 'wait';
+      try {
+        await applySkillToScenes(entId, varIdx, id);
+      } finally {
+        el.style.opacity = '';
+        el.style.cursor = '';
+      }
     });
   });
 }
