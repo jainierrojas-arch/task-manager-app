@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.137': {
+    title: '🕵️ Chrome Real: stealth plugin + Chrome con ventana real (off-screen) para bypass de detección Google',
+    features: [
+      '🕵️ <strong>puppeteer-extra-plugin-stealth</strong>: parchea TODOS los vectores que Google usa para detectar browsers automatizados: <code>navigator.webdriver</code>, <code>chrome.runtime</code>, plugins array, permissions API, languages, vendor, WebGL, codecs, timing, etc.',
+      '👻 <strong>Headless OFF</strong>: ahora Chrome corre con ventana REAL (no headless) — la posicionamos en <code>-2400,-2400</code> (fuera de pantalla). Headless mode era uno de los flags más detectables de Google.',
+      '🚫 <strong>Anti-automation flags</strong>: <code>--disable-blink-features=AutomationControlled</code> + <code>ignoreDefaultArgs: ["--enable-automation"]</code>. Sin la infobar amarilla "Chrome is being controlled by automated test software".',
+      '🎯 <strong>Resultado esperado</strong>: Google debería aceptar el login. Si todavía bloquea, el siguiente paso es usar Chrome con el flag <code>--app=URL</code> que es la firma de "Progressive Web App" y aún menos detectable.',
+      '⚠ Honestidad técnica: la guerra contra anti-detect es asimétrica. Google actualiza sus checks regularmente. Si esto falla, la alternativa es OAuth en navegador externo y luego volver a la app.'
+    ]
+  },
   '3.11.136': {
     title: '⌨ Fix Chrome Real: tipear no congela más + IPC fire-and-forget',
     features: [

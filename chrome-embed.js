@@ -15,11 +15,19 @@ const { app } = require('electron');
 let puppeteer = null;
 let puppeteerLoadError = null;
 try {
-  puppeteer = require('puppeteer-core');
-  console.log('[chrome-embed] puppeteer-core loaded OK, version:', (require('puppeteer-core/package.json') || {}).version);
+  // v3.11.137: puppeteer-extra + stealth plugin para bypass detection de Google.
+  // Stealth parchea navigator.webdriver, chrome.runtime, plugins array,
+  // permissions API, languages, vendor, WebGL, codecs, etc. Es la forma
+  // más confiable de hacer que Google acepte el login.
+  const { addExtra } = require('puppeteer-extra');
+  const puppeteerCore = require('puppeteer-core');
+  const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+  puppeteer = addExtra(puppeteerCore);
+  puppeteer.use(StealthPlugin());
+  console.log('[chrome-embed] puppeteer-core + stealth plugin loaded OK');
 } catch (e) {
   puppeteerLoadError = e.message || String(e);
-  console.error('[chrome-embed] puppeteer-core REQUIRE FAILED:', puppeteerLoadError);
+  console.error('[chrome-embed] puppeteer setup FAILED:', puppeteerLoadError);
 }
 
 let state = {
@@ -189,16 +197,23 @@ async function start({ url, sender, width, height, quality }) {
   state.tabs = [];
   state.activeId = null;
 
-  console.log('[chrome-embed] launching system Chrome (headless)...');
+  // v3.11.137: headless=false + off-screen + flags anti-automation. Google
+  // detecta headless mode con bastante eficacia — usar Chrome con ventana real
+  // pero invisible. Stealth plugin parchea navigator.webdriver y compañía.
+  console.log('[chrome-embed] launching system Chrome (headed, off-screen, stealth)...');
   const launchOpts = {
     channel: 'chrome',
-    headless: 'new',
+    headless: false,
     userDataDir: profileDir(),
+    ignoreDefaultArgs: ['--enable-automation'],
     args: [
       '--no-first-run',
       '--no-default-browser-check',
-      '--disable-features=PrivacySandboxSettings4',
-      `--window-size=${state.width},${state.height}`
+      '--disable-blink-features=AutomationControlled',
+      '--disable-features=PrivacySandboxSettings4,AutomationControlled',
+      '--disable-infobars',
+      '--window-position=-2400,-2400',
+      `--window-size=${state.width},${state.height + 100}`
     ],
     defaultViewport: { width: state.width, height: state.height, deviceScaleFactor: 1 }
   };
