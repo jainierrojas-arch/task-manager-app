@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.144': {
+    title: '🧹 Limpieza: removidos Chrome Real / Chrome Nativo (causaban confusión sin entregar valor)',
+    features: [
+      '🧹 <strong>Eliminados los botones</strong> "🌐 Chrome Real" / "⚙ Legacy" / "🌐 Chrome Nativo" — generaban más confusión que beneficio.',
+      '✨ <strong>Queda solo el Explorer integrado</strong>: webview con tabs, downloads → Depósito (v3.11.143), categorías, todo lo que SÍ funciona sin lag ni freezes.',
+      '🌐 <strong>Un único botón nuevo: "🌐 Abrir en Chrome"</strong> para los pocos casos donde necesites Google login. Abre la URL actual en tu Chrome del sistema (1 click, 0 setup).',
+      '✅ <strong>El Explorer integrado hace todo</strong>: IG/TikTok/YouTube/Twitter/Facebook + descargas automáticas al Depósito + asignación a empleados. Para Google login específicamente → botón "Abrir en Chrome".',
+      '🎯 <strong>Próximos pasos del roadmap</strong>: right-click "Guardar al Depósito" en cualquier link, bookmarks bar con apps Google, atajos de teclado (Cmd+T/W/L/R). Decime cuál arrancamos.'
+    ]
+  },
   '3.11.143': {
     title: '⬇ Downloads del Explorer interno → Depósito (sin necesidad de Chrome Real)',
     features: [

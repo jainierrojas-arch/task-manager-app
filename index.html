@@ -2545,9 +2545,7 @@
             <button id="explorerReload" title="Recargar">🔄</button>
             <input type="url" id="explorerUrlBar" placeholder="https://..." spellcheck="false">
             <button id="explorerGo" class="explorer-primary">Ir</button>
-            <button id="explorerToggleChromeNative" title="Abrir TU Chrome real con perfil dedicado del Task Manager. Sin setup, sin permisos. Google acepta login porque es Chrome de verdad. La ventana de Chrome aparece aparte." style="background:rgba(76,175,80,0.18);border:1px solid rgba(76,175,80,0.55);color:#9ee49e;font-weight:700;padding:6px 12px;border-radius:6px;cursor:pointer">🌐 Chrome Nativo</button>
-            <button id="explorerToggleChromeReal" title="Modo legacy: Chrome via CDP screencast (puede congelar, Google bloquea)" style="background:rgba(120,120,120,0.18);border:1px solid rgba(120,120,120,0.45);color:#888;font-weight:600;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:11px">⚙ Legacy</button>
-            <button id="explorerOpenSystem" title="Abrir esta página en tu Chrome/navegador del sistema" style="background:rgba(108,99,255,0.18);border:1px solid rgba(108,99,255,0.45);color:var(--accent);font-weight:600;padding:6px 12px;border-radius:6px;cursor:pointer">↗ System</button>
+            <button id="explorerOpenSystem" title="Abrir esta página en tu Chrome del sistema (útil para login Google y sitios que bloquean apps embebidas)" style="background:rgba(108,99,255,0.18);border:1px solid rgba(108,99,255,0.45);color:var(--accent);font-weight:600;padding:6px 12px;border-radius:6px;cursor:pointer">🌐 Abrir en Chrome</button>
           </div>
 
           <!-- Bookmark bar: quick links + selectores + guardar (todo en una fila) -->
@@ -2576,15 +2574,10 @@
             <div class="explorer-toast" id="explorerToast"></div>
           </div>
 
-          <!-- v3.11.130 + v3.11.134: Chrome Real Embed area + tabs bar -->
-          <div id="chromeEmbedWrap" style="display:none;flex-direction:column;position:relative;width:100%;height:100%;background:#0c0c0e;overflow:hidden">
-            <!-- Tabs bar estilo Chrome -->
-            <div id="chromeEmbedTabsBar" style="display:flex;align-items:flex-end;gap:2px;background:#1a1a1f;padding:6px 8px 0 8px;border-bottom:1px solid #2a2a32;flex-shrink:0;overflow-x:auto;scrollbar-width:thin;min-height:38px"></div>
-            <div style="flex:1;position:relative;min-height:0">
-              <canvas id="chromeEmbedCanvas" tabindex="0" style="display:block;width:100%;height:100%;outline:none;cursor:default;background:#000"></canvas>
-              <div id="chromeEmbedStatus" style="position:absolute;top:8px;right:12px;background:rgba(0,0,0,0.7);color:#fff;padding:4px 10px;border-radius:6px;font-size:11px;pointer-events:none">⏳ Cargando Chrome…</div>
-            </div>
-          </div>
+          <!-- v3.11.144: removida el área del Chrome Real Embed.
+               Quedó solo el webview integrado (browserWrap) que ya soporta tabs,
+               downloads → Depósito (v3.11.143), categorías, etc. Para Google
+               login se usa el botón "🌐 Abrir en Chrome" (sistema). -->
         </div>
       </div>
 
