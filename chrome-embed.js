@@ -39,6 +39,70 @@ function profileDir() {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
+function downloadsDir() {
+  const userData = app.getPath('userData');
+  const dir = path.join(userData, 'chrome-downloads');
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+// v3.11.135: setup de download interception via CDP. Chrome guarda al disco;
+// cuando completa avisamos al renderer para crear entry en Depósito.
+async function _setupDownloads() {
+  if (!state.browser) return;
+  const bClient = await state.browser.target().createCDPSession();
+  await bClient.send('Browser.setDownloadBehavior', {
+    behavior: 'allowAndName',
+    downloadPath: downloadsDir(),
+    eventsEnabled: true
+  });
+  const activeDownloads = new Map(); // guid → { suggestedFilename, url }
+  bClient.on('Browser.downloadWillBegin', (ev) => {
+    activeDownloads.set(ev.guid, { filename: ev.suggestedFilename || 'archivo', url: ev.url || '' });
+    if (state.sender) {
+      try { state.sender.send('chrome-embed-download-start', { guid: ev.guid, filename: ev.suggestedFilename, url: ev.url }); } catch (_) {}
+    }
+  });
+  bClient.on('Browser.downloadProgress', (ev) => {
+    const d = activeDownloads.get(ev.guid);
+    if (!d) return;
+    if (ev.state === 'completed') {
+      // Con 'allowAndName' Chrome guarda como ev.guid (sin extensión). Renombrar
+      // al suggestedFilename para conservar la extensión correcta.
+      const tmpPath = path.join(downloadsDir(), ev.guid);
+      let finalPath = tmpPath;
+      try {
+        const safeFn = (d.filename || 'archivo').replace(/[\/\\:*?"<>|]/g, '_');
+        const unique = Date.now() + '-' + safeFn;
+        finalPath = path.join(downloadsDir(), unique);
+        if (fs.existsSync(tmpPath)) fs.renameSync(tmpPath, finalPath);
+      } catch (e) { console.warn('[chrome-embed] download rename warn:', e.message); }
+      if (state.sender) {
+        try {
+          state.sender.send('chrome-embed-download-complete', {
+            guid: ev.guid,
+            filename: d.filename,
+            filePath: finalPath,
+            size: ev.receivedBytes || 0,
+            url: d.url
+          });
+        } catch (_) {}
+      }
+      activeDownloads.delete(ev.guid);
+    } else if (ev.state === 'canceled') {
+      activeDownloads.delete(ev.guid);
+      if (state.sender) { try { state.sender.send('chrome-embed-download-cancel', { guid: ev.guid }); } catch (_) {} }
+    } else if (state.sender) {
+      try {
+        state.sender.send('chrome-embed-download-progress', {
+          guid: ev.guid,
+          progress: ev.totalBytes ? ev.receivedBytes / ev.totalBytes : 0,
+          receivedBytes: ev.receivedBytes
+        });
+      } catch (_) {}
+    }
+  });
+}
 
 function findTab(id) { return state.tabs.find(t => t.id === id); }
 function tabsSummary() {
@@ -145,6 +209,7 @@ async function start({ url, sender, width, height, quality }) {
     throw new Error('No se pudo lanzar Chrome. Asegurate de tener Google Chrome instalado. Detalle: ' + e.message);
   }
   state.active = true;
+  await _setupDownloads();
 
   // Crear primera pestaña
   const startUrl = url || 'https://www.google.com/';

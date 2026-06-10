@@ -75,6 +75,18 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.135': {
+    title: '⬇ Descargas de Chrome Real → Depósito automático (categoría "Descargas Chrome")',
+    features: [
+      '⬇ <strong>Descargas auto-importan al Depósito</strong>: cuando descargás un archivo desde Chrome Real (video/imagen/cualquier cosa), se sube a Cloudinary y se crea entry en el Depósito en la categoría <code>Descargas Chrome</code> (se auto-crea si no existe).',
+      '🎬 <strong>Para videos</strong>: se genera cover automáticamente con transformación Cloudinary (frame 0, vertical 9:16).',
+      '🖼 <strong>Para imágenes</strong>: el cover ES la imagen subida.',
+      '👥 <strong>Ya está listo para asignar como tarea</strong>: desde el Depósito, abrís la entry → "Asignar a empleado".',
+      '🪵 Toast en cada fase: <code>⏳ Descargando…</code> → <code>✓ Descarga completada</code> → <code>✓ Guardado en Depósito</code>.',
+      '🧹 <strong>Limpia automáticamente</strong>: el archivo local se borra después de subir a Cloudinary.',
+      '⚠ Requiere Cloudinary configurado en Settings (sino guarda el archivo localmente con <code>file://</code> URL).'
+    ]
+  },
   '3.11.134': {
     title: '🗂 Chrome Real: pestañas múltiples estilo Chrome (Gmail + YouTube + Drive a la vez)',
     features: [

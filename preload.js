@@ -71,8 +71,16 @@ contextBridge.exposeInMainWorld('api', {
     switchTab: (id) => ipcRenderer.invoke('chrome-embed-switch-tab', id),
     closeTab: (id) => ipcRenderer.invoke('chrome-embed-close-tab', id),
     listTabs: () => ipcRenderer.invoke('chrome-embed-list-tabs'),
-    onTabs: (cb) => ipcRenderer.on('chrome-embed-tabs', (_, tabs) => cb(tabs))
+    onTabs: (cb) => ipcRenderer.on('chrome-embed-tabs', (_, tabs) => cb(tabs)),
+    // downloads
+    onDownloadStart: (cb) => ipcRenderer.on('chrome-embed-download-start', (_, info) => cb(info)),
+    onDownloadProgress: (cb) => ipcRenderer.on('chrome-embed-download-progress', (_, info) => cb(info)),
+    onDownloadComplete: (cb) => ipcRenderer.on('chrome-embed-download-complete', (_, info) => cb(info)),
+    onDownloadCancel: (cb) => ipcRenderer.on('chrome-embed-download-cancel', (_, info) => cb(info))
   },
+
+  // v3.11.135: subir archivo local descargado a Cloudinary
+  uploadLocalFileToCloudinary: (filePath) => ipcRenderer.invoke('upload-local-file-to-cloudinary', { filePath }),
 
   // Tabs view mode
   getTabsMultirow: () => ipcRenderer.invoke('get-tabs-multirow'),

@@ -952,6 +952,97 @@
       if (ntb) ntb.addEventListener('click', () => window.api.chromeEmbed.newTab('https://www.google.com/'));
     }
     window.api.chromeEmbed.onTabs(renderChromeTabs);
+
+    // ===== v3.11.135: Downloads de Chrome Real → Depósito =====
+    window.api.chromeEmbed.onDownloadStart((info) => {
+      console.log('[chrome-real] download START', info);
+      showToast(`⏳ Descargando: ${info.filename}…`);
+    });
+    window.api.chromeEmbed.onDownloadProgress((info) => {
+      // Throttle simple — solo cada 25% para no spammear
+      const pct = Math.round((info.progress || 0) * 100);
+      if (pct % 25 === 0 && pct > 0) {
+        console.log('[chrome-real] download progress', pct + '%');
+      }
+    });
+    window.api.chromeEmbed.onDownloadComplete(async (info) => {
+      console.log('[chrome-real] download COMPLETE', info);
+      showToast(`✓ Descarga completada — guardando al Depósito…`);
+      try {
+        // 1) Subir a Cloudinary
+        let publicUrl = '';
+        let resourceType = 'raw';
+        let extra = {};
+        if (window.api && window.api.uploadLocalFileToCloudinary) {
+          const up = await window.api.uploadLocalFileToCloudinary(info.filePath);
+          if (up && up.ok && up.url) {
+            publicUrl = up.url;
+            resourceType = up.resourceType || 'raw';
+            extra = up;
+          } else {
+            console.warn('[chrome-real] Cloudinary upload failed:', up && up.error);
+            showToast('⚠ Descarga: Cloudinary no configurado — entry sin URL pública', 'error');
+          }
+        }
+        // 2) Buscar/crear categoría "Descargas Chrome"
+        const catName = 'Descargas Chrome';
+        const catId = await _ensureDownloadCategory(catName);
+        // 3) Detectar tipo de link según extensión
+        const ext = (info.filename || '').toLowerCase().split('.').pop() || '';
+        const isVideo = ['mp4', 'mov', 'webm', 'm4v', 'mkv', 'avi'].includes(ext);
+        const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif'].includes(ext);
+        const linkType = isVideo ? 'video' : (isImage ? 'carrusel' : 'material');
+        // 4) Crear entry
+        const data = {
+          title: info.filename || 'Descarga sin nombre',
+          description: '',
+          links: publicUrl
+            ? [{ type: linkType, url: publicUrl, label: linkType === 'video' ? 'Video' : (linkType === 'carrusel' ? 'Imagen' : 'Archivo') }]
+            : [{ type: linkType, url: 'file://' + info.filePath, label: 'Archivo local' }],
+          categoryId: catId,
+          status: 'idea',
+          source: 'chrome-download',
+          sourceUrl: info.url || '',
+          createdBy: (typeof currentUser !== 'undefined' && currentUser) ? currentUser.uid : null,
+          createdByName: (typeof currentUserData !== 'undefined' && currentUserData ? currentUserData.name : null) || ((typeof currentUser !== 'undefined' && currentUser && currentUser.email) ? currentUser.email.split('@')[0] : 'Anónimo'),
+          createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        };
+        // Cover si es video — usamos transformación de Cloudinary
+        if (publicUrl && isVideo && resourceType === 'video') {
+          try {
+            data.coverImage = publicUrl.replace('/upload/', '/upload/so_0,w_640,h_1138,c_fill,f_jpg/').replace(/\.(mp4|mov|webm|m4v|mkv|avi)$/i, '.jpg');
+            data.coverWidth = 640;
+            data.coverHeight = 1138;
+          } catch (_) {}
+        } else if (publicUrl && isImage) {
+          data.coverImage = publicUrl;
+          if (extra.width) data.coverWidth = extra.width;
+          if (extra.height) data.coverHeight = extra.height;
+        }
+        await db.collection('depositEntries').add(data);
+        showToast(`✓ Guardado en Depósito → "${catName}"`);
+      } catch (e) {
+        console.error('[chrome-real] download → deposit FAILED', e);
+        showToast('❌ Error guardando al Depósito: ' + (e.message || e), 'error');
+      }
+    });
+
+    async function _ensureDownloadCategory(name) {
+      try {
+        const snap = await db.collection('depositCategories').where('name', '==', name).limit(1).get();
+        if (!snap.empty) return snap.docs[0].id;
+        const doc = await db.collection('depositCategories').add({
+          name,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          createdBy: (typeof currentUser !== 'undefined' && currentUser) ? currentUser.uid : null,
+          icon: '⬇'
+        });
+        return doc.id;
+      } catch (e) {
+        console.warn('[chrome-real] _ensureDownloadCategory failed:', e.message);
+        return null;
+      }
+    }
   }
 
   // ===== Input forwarding (mouse + keyboard + wheel) =====

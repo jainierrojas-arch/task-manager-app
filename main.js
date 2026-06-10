@@ -2242,6 +2242,66 @@ function registerIpcHandlers() {
   ipcMain.handle('chrome-embed-close-tab', async (_, id) => { if (chromeEmbed) return chromeEmbed.closeTab(id); return { ok: false }; });
   ipcMain.handle('chrome-embed-list-tabs', async () => { if (chromeEmbed) return chromeEmbed.listTabs(); return []; });
 
+  // v3.11.135: subir un archivo LOCAL (de los descargados por Chrome) a Cloudinary.
+  ipcMain.handle('upload-local-file-to-cloudinary', async (_, payload) => {
+    const filePath = payload && payload.filePath;
+    if (!filePath || !fs.existsSync(filePath)) return { ok: false, error: 'archivo no existe' };
+    const cloudName = store.get('cloudinaryCloudName');
+    const uploadPreset = store.get('cloudinaryUploadPreset');
+    if (!cloudName || !uploadPreset) return { ok: false, error: 'Cloudinary no configurado en Settings' };
+    const ext = (path.extname(filePath) || '').toLowerCase();
+    const isVideo = /\.(mp4|mov|webm|m4v|mkv|avi)$/i.test(ext);
+    const resourceType = isVideo ? 'video' : 'auto';
+    const apiUrl = `https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`;
+    return await new Promise((resolve) => {
+      try {
+        const fileBuf = fs.readFileSync(filePath);
+        const boundary = '----TM' + Date.now().toString(36);
+        const lines = [];
+        const pushField = (name, value) => {
+          lines.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`));
+        };
+        pushField('upload_preset', uploadPreset);
+        pushField('folder', 'task-manager-chrome-downloads');
+        lines.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${path.basename(filePath)}"\r\nContent-Type: application/octet-stream\r\n\r\n`));
+        lines.push(fileBuf);
+        lines.push(Buffer.from(`\r\n--${boundary}--\r\n`));
+        const body = Buffer.concat(lines);
+        const https = require('https');
+        const req = https.request(apiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': `multipart/form-data; boundary=${boundary}`,
+            'Content-Length': body.length
+          }
+        }, (res) => {
+          let buf = '';
+          res.on('data', d => buf += d);
+          res.on('end', () => {
+            try {
+              const j = JSON.parse(buf);
+              if (j.secure_url) {
+                console.log('[upload-local-file] OK', filePath, '→', j.secure_url);
+                // Limpiar archivo local
+                try { fs.unlinkSync(filePath); } catch (_) {}
+                resolve({ ok: true, url: j.secure_url, resourceType, width: j.width, height: j.height, duration: j.duration, format: j.format, bytes: j.bytes });
+              } else {
+                console.error('[upload-local-file] no secure_url:', buf.substring(0, 300));
+                resolve({ ok: false, error: 'Cloudinary rechazó el upload: ' + (buf.substring(0, 200) || 'sin respuesta') });
+              }
+            } catch (e) { resolve({ ok: false, error: e.message }); }
+          });
+        });
+        req.on('error', (err) => resolve({ ok: false, error: err.message }));
+        req.setTimeout(120000, () => { try { req.destroy(); } catch (_) {} resolve({ ok: false, error: 'timeout (>2min)' }); });
+        req.write(body);
+        req.end();
+      } catch (e) {
+        resolve({ ok: false, error: e.message });
+      }
+    });
+  });
+
   // v3.11.123: abrir URL en el Explorer interno (mainWindow), no en navegador externo.
   ipcMain.handle('open-in-explorer', async (_, url) => {
     console.log('[open-in-explorer] called with', url);
