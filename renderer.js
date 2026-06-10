@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.146': {
+    title: '🩹 Fix CRÍTICO: guardar links del Explorer rota desde v3.11.143',
+    features: [
+      '🐞 <strong>El bug</strong>: en v3.11.143 agregué <code>session.on("will-download")</code> en la partition <code>persist:explorer</code> para auto-importar descargas. PROBLEMA: el OG fetch (que extrae title/description/cover de cualquier link al guardar) USA LA MISMA partition. Si el URL respondía con archivo descargable (algunos MP4 directos, redirects), el handler lo interpretaba como "el usuario descargó algo" y rompía el flow normal de guardado.',
+      '✅ <strong>Fix</strong>: marco los BrowserWindows internos de OG fetch / auth fetch con <code>_tmIgnoreDownload = true</code>. El handler <code>will-download</code> ahora chequea ese flag y los IGNORA. Solo las descargas REALES del Explorer del usuario se importan al Depósito.',
+      '🪵 Log si pasa: <code>[webview-download] ignored (background OG/auth fetch)</code>',
+      '🎯 <strong>Próximo (v3.11.147)</strong>: feature "Skills" para Dividir en escenas — guardar instrucciones reutilizables que se inyectan al prompt de Claude, ej. "cada escena con cambio de cámara distinto". En progreso.'
+    ]
+  },
   '3.11.145': {
     title: '🗣 Variaciones generadas SIEMPRE en español neutro internacional (sin voseo, sin España, sin regionalismos)',
     features: [

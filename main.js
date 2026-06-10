@@ -1958,6 +1958,7 @@ function registerIpcHandlers() {
             partition: partitionName || 'persist:tm-instagram'
           }
         });
+        try { win.webContents._tmIgnoreDownload = true; } catch (_) {}
         const timeout = setTimeout(() => finish(null), 15000);
         win.webContents.once('did-finish-load', async () => {
           try {
@@ -2039,6 +2040,9 @@ function registerIpcHandlers() {
             partition: partitionName || 'persist:explorer'
           }
         });
+        // v3.11.146: marcar este BrowserWindow como background OG-fetch para que
+        // session.will-download lo ignore y no cree entries duplicadas en Depósito.
+        try { win.webContents._tmIgnoreDownload = true; } catch (_) {}
         const timeout = setTimeout(() => finish(null), 15000);
         const extractOnce = async () => {
           try {
@@ -2120,6 +2124,7 @@ function registerIpcHandlers() {
             partition: 'persist:explorer'
           }
         });
+        try { win.webContents._tmIgnoreDownload = true; } catch (_) {}
         const timeout = setTimeout(() => finish(null), 15000);
         const extractOnce = async () => {
           try {
@@ -2372,6 +2377,13 @@ function registerIpcHandlers() {
       if (sess._tmDownloadHandlerSet) return;
       sess._tmDownloadHandlerSet = true;
       sess.on('will-download', (event, item, webContents) => {
+        // v3.11.146: ignorar descargas de BrowserWindows internas (OG fetch,
+        // auth fetch, etc.) — esos NO son "el usuario quiso descargar algo",
+        // son fetches background que NO deben generar entry en Depósito.
+        if (webContents && webContents._tmIgnoreDownload) {
+          console.log('[webview-download] ignored (background OG/auth fetch)');
+          return;
+        }
         const filename = item.getFilename() || 'archivo';
         const safe = filename.replace(/[\/\\:*?"<>|]/g, '_');
         const unique = Date.now() + '-' + safe;
