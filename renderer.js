@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.132': {
+    title: '🖼 Chrome Real: arregladas barras negras + más nitidez + resize automático',
+    features: [
+      '🖼 <strong>Adiós letterbox</strong>: el viewport de Chrome ahora se setea EXACTO al tamaño del canvas con <code>page.setViewport()</code>. Sin barras negras arriba/abajo.',
+      '✨ <strong>JPEG quality 70 → 85</strong>: imagen más nítida, menos artefactos de compresión. Pesa más ancho de banda IPC pero todo en local, no se nota.',
+      '↔ <strong>Resize automático</strong>: cuando cambiás el tamaño de la ventana del Task Manager, Chrome embed re-dimensiona su viewport para llenar bien (debounced 300ms).',
+      '🪵 Logs: <code>[chrome-real] starting at WxH</code> y <code>[chrome-real] resize to WxH</code> en Console.'
+    ]
+  },
   '3.11.131': {
     title: '🔧 Fix Chrome Real: bajamos puppeteer-core a versión CJS compatible',
     features: [

@@ -80,6 +80,15 @@ async function start({ url, sender, width, height, quality }) {
     throw new Error('No se pudo lanzar Chrome. Asegurate de tener Google Chrome instalado. Detalle: ' + e.message);
   }
   state.page = (await state.browser.pages())[0] || await state.browser.newPage();
+  // v3.11.132: forzar viewport EXACTO al tamaño pedido (sin toolbars/etc).
+  // Esto evita letterbox (barras negras arriba/abajo) en el canvas.
+  try {
+    await state.page.setViewport({
+      width: state.width,
+      height: state.height,
+      deviceScaleFactor: 1
+    });
+  } catch (e) { console.warn('[chrome-embed] setViewport warn:', e.message); }
   state.cdp = await state.page.target().createCDPSession();
   await state.cdp.send('Page.enable');
   await state.cdp.send('Runtime.enable');

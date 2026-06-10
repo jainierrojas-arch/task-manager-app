@@ -823,10 +823,13 @@
       const b = getActiveBrowser();
       if (b) initialUrl = b.getURL() || initialUrl;
     } catch (_) {}
+    // v3.11.132: medir el canvas wrap DESPUÉS de mostrarlo para tener dims reales
+    await new Promise(r => setTimeout(r, 50));
     const rect = chromeWrap.getBoundingClientRect();
     const w = Math.max(800, Math.floor(rect.width));
     const h = Math.max(500, Math.floor(rect.height));
-    const result = await window.api.chromeEmbed.start({ url: initialUrl, width: w, height: h, quality: 70 });
+    console.log('[chrome-real] starting at', w, 'x', h);
+    const result = await window.api.chromeEmbed.start({ url: initialUrl, width: w, height: h, quality: 85 });
     if (!result || !result.ok) {
       chromeStatus.textContent = '❌ ' + ((result && result.error) || 'Error al lanzar Chrome');
       setTimeout(() => stopChromeReal(), 2500);
@@ -861,6 +864,25 @@
       if (chromeActive) { await stopChromeReal(); }
       else { await startChromeReal(); }
     });
+  }
+
+  // v3.11.132: cuando cambia el tamaño de la ventana, re-dimensionar Chrome embed
+  let _chromeResizeTimer = null;
+  function _scheduleChromeResize() {
+    if (!chromeActive || !window.api || !window.api.chromeEmbed) return;
+    if (_chromeResizeTimer) clearTimeout(_chromeResizeTimer);
+    _chromeResizeTimer = setTimeout(async () => {
+      const rect = chromeWrap.getBoundingClientRect();
+      const w = Math.max(640, Math.floor(rect.width));
+      const h = Math.max(480, Math.floor(rect.height));
+      console.log('[chrome-real] resize to', w, 'x', h);
+      try { await window.api.chromeEmbed.resize({ width: w, height: h }); } catch (e) {}
+    }, 300);
+  }
+  window.addEventListener('resize', _scheduleChromeResize);
+  if (typeof ResizeObserver !== 'undefined' && chromeWrap) {
+    const ro = new ResizeObserver(_scheduleChromeResize);
+    ro.observe(chromeWrap);
   }
 
   // Recibir frames del main process y pintarlos
