@@ -265,7 +265,17 @@
     if (typeof db === 'undefined') return;
     try {
       const snap = await db.collection('depositCategories').orderBy('name').get();
-      _allCats = snap.docs.map(d => Object.assign({ id: d.id }, d.data()));
+      let all = snap.docs.map(d => Object.assign({ id: d.id }, d.data()));
+      // v3.11.151: filtrar por workspace activo. Sin esto el dropdown mostraba
+      // categorías de TODOS los workspaces (ej. "Tutoriales de Herramientas"
+      // del workspace B) → al guardar, la entry quedaba con un categoryId que
+      // NO existe en el workspace actual → entry huérfana, no se ve en Depósito.
+      const before = all.length;
+      if (typeof belongsToCurrentWs === 'function') {
+        all = all.filter(belongsToCurrentWs);
+      }
+      console.log('[explorer] categories loaded:', before, '→ scoped to ws:', all.length);
+      _allCats = all;
       const current = categorySelect.value;
       categorySelect.innerHTML = buildCategoryOptions(_allCats);
       if (current) categorySelect.value = current;

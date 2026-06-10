@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.151': {
+    title: '🐞 Fix: Explorer guardaba en categorías de OTROS workspaces (entries quedaban huérfanas)',
+    features: [
+      '🐞 <strong>El bug</strong>: el dropdown de categorías del Explorer cargaba TODAS las categorías de TODOS los workspaces (sin filtrar). Si elegías "Tutoriales de Herramientas" que era de OTRO workspace, la entry se guardaba con un <code>categoryId</code> que NO existía en el workspace actual → entry huérfana, no aparecía en el Depósito.',
+      '✅ <strong>Fix</strong>: ahora <code>_explorerLoadCategories()</code> filtra por workspace activo usando <code>belongsToCurrentWs()</code>. Solo ves categorías DE TU workspace.',
+      '🪵 Log: <code>[explorer] categories loaded: 30 → scoped to ws: 8</code> (te dice cuántas filtró).',
+      '🔄 <strong>Para recuperar entries viejas perdidas</strong>: volvé a guardar el link (con la categoría correcta ahora). Las entries viejas siguen en Firestore pero apuntan a categorías de otros workspaces — quedan huérfanas hasta migración manual.'
+    ]
+  },
   '3.11.150': {
     title: '🧹 UI más limpia: removida textarea "Instrucciones" + "Mis Plantillas" (Skills hace todo)',
     features: [
