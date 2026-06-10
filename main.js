@@ -2202,6 +2202,41 @@ function registerIpcHandlers() {
     });
   }
 
+  // v3.11.130: Chrome Real Embed via CDP. Lanza Chrome del sistema y stream
+  // frames al renderer + forward de input events. Permite login Google y demás
+  // sitios que bloquean webviews de Electron.
+  let chromeEmbed = null;
+  try { chromeEmbed = require('./chrome-embed'); } catch (e) { console.warn('[chrome-embed] module not loaded:', e.message); }
+
+  ipcMain.handle('chrome-embed-start', async (e, opts) => {
+    if (!chromeEmbed) return { ok: false, error: 'puppeteer-core no disponible' };
+    try {
+      const result = await chromeEmbed.start({ ...(opts || {}), sender: e.sender });
+      return result;
+    } catch (err) {
+      console.error('[chrome-embed-start]', err);
+      return { ok: false, error: err.message || String(err) };
+    }
+  });
+  ipcMain.handle('chrome-embed-stop', async () => {
+    if (!chromeEmbed) return { ok: true };
+    try { await chromeEmbed.stop(); return { ok: true }; }
+    catch (err) { return { ok: false, error: err.message }; }
+  });
+  ipcMain.handle('chrome-embed-navigate', async (_, url) => {
+    if (!chromeEmbed) return { ok: false };
+    try { return await chromeEmbed.navigate(url); }
+    catch (err) { return { ok: false, error: err.message }; }
+  });
+  ipcMain.handle('chrome-embed-back', async () => { try { if (chromeEmbed) await chromeEmbed.back(); } catch (_) {} return { ok: true }; });
+  ipcMain.handle('chrome-embed-forward', async () => { try { if (chromeEmbed) await chromeEmbed.forward(); } catch (_) {} return { ok: true }; });
+  ipcMain.handle('chrome-embed-reload', async () => { try { if (chromeEmbed) await chromeEmbed.reload(); } catch (_) {} return { ok: true }; });
+  ipcMain.handle('chrome-embed-resize', async (_, dims) => { try { if (chromeEmbed) await chromeEmbed.resize(dims || {}); } catch (_) {} return { ok: true }; });
+  ipcMain.handle('chrome-embed-mouse', async (_, ev) => { if (chromeEmbed) chromeEmbed.dispatchMouse(ev || {}); });
+  ipcMain.handle('chrome-embed-wheel', async (_, ev) => { if (chromeEmbed) chromeEmbed.dispatchWheel(ev || {}); });
+  ipcMain.handle('chrome-embed-key', async (_, ev) => { if (chromeEmbed) chromeEmbed.dispatchKey(ev || {}); });
+  ipcMain.handle('chrome-embed-status', async () => ({ active: chromeEmbed ? chromeEmbed.isActive() : false, url: chromeEmbed ? chromeEmbed.getUrl() : '' }));
+
   // v3.11.123: abrir URL en el Explorer interno (mainWindow), no en navegador externo.
   ipcMain.handle('open-in-explorer', async (_, url) => {
     console.log('[open-in-explorer] called with', url);

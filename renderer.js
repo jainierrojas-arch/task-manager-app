@@ -75,6 +75,18 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.130': {
+    title: '🚀 Chrome REAL embebido en el Explorer (vía CDP screencast) — login Google adentro',
+    features: [
+      '🚀 <strong>Botón "🌐 Chrome Real"</strong> en la toolbar del Explorer. Click → lanza tu Chrome del sistema en background y stremea su pantalla a un canvas DENTRO del Task Manager.',
+      '🔐 <strong>Login Google ahora funciona</strong> porque es Chrome de verdad (no Electron). Google lo acepta. Funciona también para Gmail, YouTube logueado, Drive, Calendar, Ads, etc.',
+      '👥 <strong>Perfil dedicado</strong>: usa un perfil Chrome separado en <code>~/Library/Application Support/task-manager-app/chrome-profile/</code>. Tenés que loguearte UNA vez — después queda.',
+      '🖱 <strong>Input forwarding</strong>: mouse, scroll, teclado, click derecho — todo pasa al Chrome real via CDP <code>Input.dispatchMouseEvent</code> / <code>dispatchKeyEvent</code>.',
+      '🧭 <strong>Toolbar funcional</strong>: Atrás / Adelante / Recargar / URL bar + Ir → todos manejan el Chrome embebido cuando está activo.',
+      '⚙️ <strong>Trade-offs honestos</strong>: ~20-30fps (no 60), lag de input ~50-100ms, requiere Chrome instalado en el sistema. Para login Google + browsing pesado: vale la pena.',
+      '✕ <strong>Click "✕ Volver al Explorer"</strong> para apagar Chrome y volver al webview interno (más rápido pero sin Google login).'
+    ]
+  },
   '3.11.129': {
     title: '🌐 Botón "Chrome del sistema" en el Explorer (para login de Google)',
     features: [

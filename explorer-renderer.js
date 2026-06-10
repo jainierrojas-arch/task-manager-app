@@ -795,6 +795,228 @@
     console.log('[explorer] open-url', url);
     createTab(url);
   });
+
+  // ===== v3.11.130: Chrome Real Embed (CDP screencast) =====
+  const chromeBtn = document.getElementById('explorerToggleChromeReal');
+  const chromeWrap = document.getElementById('chromeEmbedWrap');
+  const chromeCanvas = document.getElementById('chromeEmbedCanvas');
+  const chromeStatus = document.getElementById('chromeEmbedStatus');
+  let chromeActive = false;
+  let chromeImg = new Image();
+  let chromeFrameMeta = { deviceWidth: 1280, deviceHeight: 720, pageScaleFactor: 1, offsetTop: 0 };
+
+  async function startChromeReal() {
+    if (chromeActive) return;
+    if (!window.api || !window.api.chromeEmbed) {
+      showToast('Chrome Real no disponible (preload viejo)', 'error');
+      return;
+    }
+    chromeStatus.textContent = '⏳ Lanzando tu Chrome...';
+    chromeStatus.style.display = '';
+    chromeWrap.style.display = 'flex';
+    chromeWrap.style.alignItems = 'stretch';
+    chromeWrap.style.justifyContent = 'stretch';
+    browserWrap.style.display = 'none';
+    // Tomar el URL del tab activo como punto de partida
+    let initialUrl = 'https://www.google.com/';
+    try {
+      const b = getActiveBrowser();
+      if (b) initialUrl = b.getURL() || initialUrl;
+    } catch (_) {}
+    const rect = chromeWrap.getBoundingClientRect();
+    const w = Math.max(800, Math.floor(rect.width));
+    const h = Math.max(500, Math.floor(rect.height));
+    const result = await window.api.chromeEmbed.start({ url: initialUrl, width: w, height: h, quality: 70 });
+    if (!result || !result.ok) {
+      chromeStatus.textContent = '❌ ' + ((result && result.error) || 'Error al lanzar Chrome');
+      setTimeout(() => stopChromeReal(), 2500);
+      return;
+    }
+    chromeActive = true;
+    chromeBtn.textContent = '✕ Volver al Explorer';
+    chromeBtn.style.background = 'rgba(244,67,54,0.18)';
+    chromeBtn.style.borderColor = 'rgba(244,67,54,0.55)';
+    chromeBtn.style.color = '#ff8b8b';
+    chromeStatus.textContent = '✓ Chrome activo · perfil: ' + (result.profile || 'task-manager');
+    setTimeout(() => { if (chromeStatus) chromeStatus.style.display = 'none'; }, 2500);
+    if (urlBar) urlBar.value = result.url || initialUrl;
+    setupChromeInput();
+  }
+
+  async function stopChromeReal() {
+    chromeActive = false;
+    if (window.api && window.api.chromeEmbed) {
+      try { await window.api.chromeEmbed.stop(); } catch (_) {}
+    }
+    chromeWrap.style.display = 'none';
+    browserWrap.style.display = '';
+    chromeBtn.textContent = '🌐 Chrome Real';
+    chromeBtn.style.background = 'rgba(76,175,80,0.18)';
+    chromeBtn.style.borderColor = 'rgba(76,175,80,0.55)';
+    chromeBtn.style.color = '#9ee49e';
+  }
+
+  if (chromeBtn) {
+    chromeBtn.addEventListener('click', async () => {
+      if (chromeActive) { await stopChromeReal(); }
+      else { await startChromeReal(); }
+    });
+  }
+
+  // Recibir frames del main process y pintarlos
+  if (window.api && window.api.chromeEmbed) {
+    window.api.chromeEmbed.onFrame((payload) => {
+      if (!chromeActive || !payload || !payload.data) return;
+      chromeFrameMeta = payload.metadata || chromeFrameMeta;
+      const dataUri = 'data:image/jpeg;base64,' + payload.data;
+      chromeImg.onload = () => {
+        const ctx = chromeCanvas.getContext('2d');
+        // Ajustar tamaño del canvas a su contenedor
+        const rect = chromeCanvas.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        if (chromeCanvas.width !== Math.floor(rect.width * dpr) || chromeCanvas.height !== Math.floor(rect.height * dpr)) {
+          chromeCanvas.width = Math.floor(rect.width * dpr);
+          chromeCanvas.height = Math.floor(rect.height * dpr);
+        }
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'medium';
+        // Pintamos el frame escalando para llenar el canvas manteniendo aspecto
+        const imgRatio = chromeImg.width / chromeImg.height;
+        const canvRatio = chromeCanvas.width / chromeCanvas.height;
+        let dw, dh, dx, dy;
+        if (imgRatio > canvRatio) {
+          dw = chromeCanvas.width;
+          dh = dw / imgRatio;
+          dx = 0; dy = (chromeCanvas.height - dh) / 2;
+        } else {
+          dh = chromeCanvas.height;
+          dw = dh * imgRatio;
+          dy = 0; dx = (chromeCanvas.width - dw) / 2;
+        }
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, chromeCanvas.width, chromeCanvas.height);
+        ctx.drawImage(chromeImg, dx, dy, dw, dh);
+      };
+      chromeImg.src = dataUri;
+    });
+
+    window.api.chromeEmbed.onUrlChanged((url) => {
+      if (urlBar) urlBar.value = url || '';
+    });
+  }
+
+  // ===== Input forwarding (mouse + keyboard + wheel) =====
+  function canvasToPagePos(e) {
+    // Traduce coordenadas del canvas → coordenadas del viewport de Chrome real.
+    // El frame está pintado con letterbox; tenemos que invertir esa transformación.
+    const rect = chromeCanvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const canvW = chromeCanvas.width;
+    const canvH = chromeCanvas.height;
+    const imgW = chromeImg.width || 1280;
+    const imgH = chromeImg.height || 720;
+    const imgRatio = imgW / imgH;
+    const canvRatio = canvW / canvH;
+    let dw, dh, dx, dy;
+    if (imgRatio > canvRatio) {
+      dw = canvW; dh = dw / imgRatio; dx = 0; dy = (canvH - dh) / 2;
+    } else {
+      dh = canvH; dw = dh * imgRatio; dy = 0; dx = (canvW - dw) / 2;
+    }
+    const xInCanvas = (e.clientX - rect.left) * dpr;
+    const yInCanvas = (e.clientY - rect.top) * dpr;
+    const xInImg = (xInCanvas - dx) / dw * imgW;
+    const yInImg = (yInCanvas - dy) / dh * imgH;
+    return { x: Math.max(0, Math.min(imgW, xInImg)), y: Math.max(0, Math.min(imgH, yInImg)) };
+  }
+  function modifiersOf(e) {
+    let m = 0;
+    if (e.altKey) m |= 1;
+    if (e.ctrlKey) m |= 2;
+    if (e.metaKey) m |= 4;
+    if (e.shiftKey) m |= 8;
+    return m;
+  }
+
+  function setupChromeInput() {
+    if (chromeCanvas._inputBound) return;
+    chromeCanvas._inputBound = true;
+
+    chromeCanvas.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      const { x, y } = canvasToPagePos(e);
+      window.api.chromeEmbed.sendMouse({ type: 'mousePressed', x, y, button: e.button, clickCount: e.detail || 1, modifiers: modifiersOf(e) });
+      chromeCanvas.focus();
+    });
+    chromeCanvas.addEventListener('mouseup', (e) => {
+      const { x, y } = canvasToPagePos(e);
+      window.api.chromeEmbed.sendMouse({ type: 'mouseReleased', x, y, button: e.button, clickCount: e.detail || 1, modifiers: modifiersOf(e) });
+    });
+    let _lastMove = 0;
+    chromeCanvas.addEventListener('mousemove', (e) => {
+      const now = performance.now();
+      if (now - _lastMove < 16) return; // throttle ~60fps
+      _lastMove = now;
+      const { x, y } = canvasToPagePos(e);
+      window.api.chromeEmbed.sendMouse({ type: 'mouseMoved', x, y, modifiers: modifiersOf(e) });
+    });
+    chromeCanvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const { x, y } = canvasToPagePos(e);
+      window.api.chromeEmbed.sendWheel({ x, y, deltaX: e.deltaX, deltaY: e.deltaY, modifiers: modifiersOf(e) });
+    }, { passive: false });
+    chromeCanvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    // Teclado: capturamos al hacer focus en el canvas
+    chromeCanvas.addEventListener('keydown', (e) => {
+      e.preventDefault();
+      const keyCode = e.keyCode || e.which || 0;
+      window.api.chromeEmbed.sendKey({
+        type: 'rawKeyDown',
+        key: e.key,
+        code: e.code,
+        keyCode,
+        modifiers: modifiersOf(e)
+      });
+      // Si la tecla genera texto imprimible, mandamos también un char event
+      if (e.key && e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+        window.api.chromeEmbed.sendKey({
+          type: 'char',
+          key: e.key,
+          text: e.key,
+          modifiers: modifiersOf(e)
+        });
+      }
+    });
+    chromeCanvas.addEventListener('keyup', (e) => {
+      e.preventDefault();
+      const keyCode = e.keyCode || e.which || 0;
+      window.api.chromeEmbed.sendKey({
+        type: 'keyUp',
+        key: e.key,
+        code: e.code,
+        keyCode,
+        modifiers: modifiersOf(e)
+      });
+    });
+  }
+
+  // Re-routear los botones de Atrás/Adelante/Recargar/URL al Chrome embed cuando está activo
+  const origGoClick = document.getElementById('explorerGo').onclick;
+  document.getElementById('explorerGo').addEventListener('click', () => {
+    if (!chromeActive) return;
+    const u = (urlBar.value || '').trim();
+    if (u && window.api.chromeEmbed) window.api.chromeEmbed.navigate(u);
+  }, true);
+  document.getElementById('explorerBack').addEventListener('click', () => {
+    if (chromeActive && window.api.chromeEmbed) window.api.chromeEmbed.back();
+  }, true);
+  document.getElementById('explorerForward').addEventListener('click', () => {
+    if (chromeActive && window.api.chromeEmbed) window.api.chromeEmbed.forward();
+  }, true);
+  document.getElementById('explorerReload').addEventListener('click', () => {
+    if (chromeActive && window.api.chromeEmbed) window.api.chromeEmbed.reload();
+  }, true);
 })();
 
 // ===== ManyChat embed via webview (v3.11.9) =====
