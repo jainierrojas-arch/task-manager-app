@@ -197,23 +197,22 @@ async function start({ url, sender, width, height, quality }) {
   state.tabs = [];
   state.activeId = null;
 
-  // v3.11.137: headless=false + off-screen + flags anti-automation. Google
-  // detecta headless mode con bastante eficacia — usar Chrome con ventana real
-  // pero invisible. Stealth plugin parchea navigator.webdriver y compañía.
-  console.log('[chrome-embed] launching system Chrome (headed, off-screen, stealth)...');
+  // v3.11.138: headless 'new' (invisible) + stealth plugin. Macos no respeta
+  // window-position=-2400 (re-posiciona ventanas perdidas) → la ventana aparecía.
+  // Stealth plugin parchea navigator.webdriver y TAMBIÉN las detecciones
+  // específicas de headless mode. Sin duplicados de flags que Chrome rechaza.
+  console.log('[chrome-embed] launching system Chrome (headless new + stealth)...');
   const launchOpts = {
     channel: 'chrome',
-    headless: false,
+    headless: 'new',
     userDataDir: profileDir(),
     ignoreDefaultArgs: ['--enable-automation'],
     args: [
       '--no-first-run',
       '--no-default-browser-check',
       '--disable-blink-features=AutomationControlled',
-      '--disable-features=PrivacySandboxSettings4,AutomationControlled',
       '--disable-infobars',
-      '--window-position=-2400,-2400',
-      `--window-size=${state.width},${state.height + 100}`
+      `--window-size=${state.width},${state.height}`
     ],
     defaultViewport: { width: state.width, height: state.height, deviceScaleFactor: 1 }
   };

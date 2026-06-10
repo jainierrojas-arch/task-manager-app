@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.138': {
+    title: '🩹 Chrome Real: vuelve headless invisible + sin flags duplicados',
+    features: [
+      '🩹 <strong>2 bugs arreglados</strong>:',
+      '👻 <strong>(1) Ventana fantasma de Chrome</strong>: macOS reposiciona ventanas <code>-2400,-2400</code> a área visible (anti "ventana perdida"). Volvió a <code>headless: "new"</code> que es REALMENTE invisible. El stealth plugin parchea las detecciones de headless mode también — combo OK.',
+      '🚫 <strong>(2) Flag duplicado</strong>: tenía <code>AutomationControlled</code> en <code>--disable-blink-features</code> Y en <code>--disable-features</code>. Chrome detectaba el duplicado y mostraba banda de advertencia "indicador no admitido". Limpio.',
+      '🧹 <strong>Profile reseteado</strong>: borré <code>~/Library/Application Support/task-manager-app/chrome-profile/</code> en este Mac. Así Google no asocia el "browser detectado" anterior con el nuevo. Vas a tener que loguearte de cero en este Mac.',
+      '🤞 Probá login Google ahora — combo headless+stealth+anti-automation flags es lo más fuerte que puedo armar sin hacks ya extremos.'
+    ]
+  },
   '3.11.137': {
     title: '🕵️ Chrome Real: stealth plugin + Chrome con ventana real (off-screen) para bypass de detección Google',
     features: [
