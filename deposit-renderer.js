@@ -3291,24 +3291,38 @@ function _renderTranscriptionModalContent(entryId) {
         const scenes = Array.isArray(v.scenes) ? v.scenes : [];
         const currentDur = v.sceneDuration || 15;
         const instructions = v.sceneInstructions || '';
+        // v3.11.148: si hay perSceneInstructions (skill aplicado), usar esas EN VEZ
+        // de las instrucciones compartidas. Cada escena muestra su instrucción
+        // específica generada por Claude basada en el skill.
+        const perSceneInstr = Array.isArray(v.perSceneInstructions) ? v.perSceneInstructions : null;
+        const appliedSkillName = v.appliedSkillName || '';
+        const skillBanner = perSceneInstr && appliedSkillName
+          ? `<div style="background:rgba(167,139,250,0.12);border:1px solid rgba(167,139,250,0.35);border-radius:6px;padding:6px 10px;font-size:10.5px;color:#c4b5fd;margin-bottom:8px;display:flex;align-items:center;gap:6px"><span style="font-weight:700">⚡ Skill aplicado:</span> ${esc(appliedSkillName)} <span style="margin-left:auto;font-size:9.5px;opacity:0.7">click en la pill de nuevo para quitar</span></div>`
+          : '';
         const scenesHtml = scenes.length === 0 ? '' : `
           <div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border)">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
               <span style="font-size:10px;color:#ff9866;font-weight:700;letter-spacing:0.3px;text-transform:uppercase">🎬 ${scenes.length} escenas de ${currentDur}s · El botón "📋 Copiar" de arriba copia TODAS juntas</span>
               <button class="btn btn-danger btn-small" data-clear-var-scenes="${i}" style="padding:2px 8px;font-size:10px">🗑</button>
             </div>
+            ${skillBanner}
             <div style="display:flex;flex-direction:column;gap:6px">
-              ${scenes.map((sc, sIdx) => `
-                <div style="background:var(--bg-card);padding:8px 10px;border-radius:6px;border-left:3px solid #ff9866">
+              ${scenes.map((sc, sIdx) => {
+                const sceneInstr = perSceneInstr ? (perSceneInstr[sIdx] || '') : instructions;
+                const isPerScene = perSceneInstr && sceneInstr;
+                const instrColor = isPerScene ? '#a78bfa' : '#ff9866';
+                const instrBg = isPerScene ? 'rgba(167,139,250,0.08)' : 'rgba(255,128,64,0.04)';
+                return `
+                <div style="background:var(--bg-card);padding:8px 10px;border-radius:6px;border-left:3px solid ${isPerScene ? '#a78bfa' : '#ff9866'}">
                   <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:4px">
-                    <span style="font-size:10px;color:#ff9866;font-weight:700">Escena ${sIdx + 1} · ${currentDur}s</span>
+                    <span style="font-size:10px;color:${instrColor};font-weight:700">Escena ${sIdx + 1} · ${currentDur}s${isPerScene ? ' · ⚡' : ''}</span>
                     <button class="btn btn-ghost btn-small" data-copy-var-scene="${i}-${sIdx}" style="padding:2px 8px;font-size:10px">📋 Copiar</button>
                   </div>
-                  ${instructions ? `<div style="font-size:11.5px;line-height:1.5;color:var(--text-secondary);background:rgba(255,128,64,0.04);padding:6px 8px;border-radius:4px;margin-bottom:6px;white-space:pre-wrap">${esc(instructions)}</div>` : ''}
-                  ${instructions ? `<div style="font-size:10px;color:#ff9866;font-weight:700;margin-bottom:3px">Guion en español:</div>` : ''}
+                  ${sceneInstr ? `<div style="font-size:11.5px;line-height:1.5;color:var(--text-secondary);background:${instrBg};padding:6px 8px;border-radius:4px;margin-bottom:6px;white-space:pre-wrap">${esc(sceneInstr)}</div>` : ''}
+                  ${sceneInstr ? `<div style="font-size:10px;color:${instrColor};font-weight:700;margin-bottom:3px">Guion en español:</div>` : ''}
                   <div style="font-size:12px;line-height:1.5;color:var(--text-primary)">${esc(sc)}</div>
-                </div>
-              `).join('')}
+                </div>`;
+              }).join('')}
             </div>
           </div>`;
         return `
@@ -3341,17 +3355,14 @@ function _renderTranscriptionModalContent(entryId) {
               <div data-scene-tpl-list="${i}" style="display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;padding:6px;background:var(--bg-card);border:1px dashed rgba(255,152,102,0.25);border-radius:4px;min-height:30px;align-items:center"></div>
               <div style="font-size:9.5px;color:var(--text-dim);margin-top:4px;font-style:italic">Click en una plantilla → se carga arriba. Click en ✎ para editarla. Al copiar cada escena saldrá: tus instrucciones + "Guion en español:" + texto de esa escena.</div>
 
-              <!-- v3.11.147: Skills (instrucciones que se inyectan al prompt de Claude en AI Split) -->
+              <!-- v3.11.148: Skills — click en pill = aplicar a las escenas ya divididas -->
               <div style="margin-top:14px;padding-top:12px;border-top:1px dashed rgba(167,139,250,0.25)">
                 <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
-                  <span style="font-size:10px;color:#a78bfa;font-weight:700;letter-spacing:0.3px;text-transform:uppercase">🎯 Mis Skills (AI Split)</span>
-                  <div style="display:flex;gap:6px;flex-wrap:wrap">
-                    <button class="btn btn-ghost btn-small" data-new-skill="1" style="padding:2px 8px;font-size:10px;background:rgba(167,139,250,0.18);border:1px solid rgba(167,139,250,0.45);color:#c4b5fd;font-weight:600">🧠 Nuevo skill</button>
-                    <button class="btn btn-primary btn-small" data-ai-split-var="${i}" style="padding:4px 10px;font-size:10px;background:#7c5cff;border-color:#6d4dff;opacity:0.7" title="Divide esta variación con Claude inyectando los skills activos al prompt. Si no hay skills activos, igual usa AI pero sin guías especiales.">🎬 Dividir con AI</button>
-                  </div>
+                  <span style="font-size:10px;color:#a78bfa;font-weight:700;letter-spacing:0.3px;text-transform:uppercase">🎯 Mis Skills</span>
+                  <button class="btn btn-ghost btn-small" data-new-skill="1" style="padding:2px 8px;font-size:10px;background:rgba(167,139,250,0.18);border:1px solid rgba(167,139,250,0.45);color:#c4b5fd;font-weight:600">🧠 Nuevo skill</button>
                 </div>
                 <div data-skills-list="${i}" style="display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;padding:6px;background:var(--bg-card);border:1px dashed rgba(167,139,250,0.25);border-radius:4px;min-height:30px;align-items:center"></div>
-                <div style="font-size:9.5px;color:var(--text-dim);margin-top:4px;font-style:italic">Click en un skill para activarlo (✓). Activos se inyectan al prompt cuando hacés "Dividir con AI". Ejemplo: skill "Varía planos de cámara" → cada escena saldrá con [PLANO: ...] distinto.</div>
+                <div style="font-size:9.5px;color:var(--text-dim);margin-top:4px;font-style:italic">Primero dividí en escenas con ✂️. Después click en un skill (⚡) y Claude le aplica la indicación a CADA escena (no cambia el guion, solo agrega arriba). Click de nuevo lo quita.</div>
               </div>
             </div>
             ${scenesHtml}
@@ -3368,21 +3379,14 @@ function _renderTranscriptionModalContent(entryId) {
         openSceneTplModalForCreate(idx, entryId);
       });
     });
-    // v3.11.147: renderizar pills de skills + bindear botones AI Split y Nuevo skill
+    // v3.11.148: pills de skills (click = aplicar a escenas) + botón Nuevo skill
     list.querySelectorAll('[data-skills-list]').forEach(el => {
-      renderSkillsPills(el, parseInt(el.dataset.skillsList, 10));
+      renderSkillsPills(el, parseInt(el.dataset.skillsList, 10), entryId);
     });
     list.querySelectorAll('[data-new-skill]').forEach(btn => {
       btn.addEventListener('click', (ev) => {
         ev.stopPropagation();
         openSkillModalForCreate();
-      });
-    });
-    list.querySelectorAll('[data-ai-split-var]').forEach(btn => {
-      btn.addEventListener('click', (ev) => {
-        ev.stopPropagation();
-        const idx = parseInt(btn.dataset.aiSplitVar, 10);
-        aiSplitVariationWithSkills(entryId, idx, btn);
       });
     });
     list.querySelectorAll('[data-tp-variation]').forEach(b => b.addEventListener('click', () => {
@@ -3398,8 +3402,13 @@ function _renderTranscriptionModalContent(entryId) {
       if (Array.isArray(v.scenes) && v.scenes.length > 0) {
         const dur = v.sceneDuration || 15;
         const instr = v.sceneInstructions || '';
-        // v3.11.109: cada escena se exporta con instrucciones + "Guion en español:" + texto
-        text = v.scenes.map((s, i) => `=== Escena ${i + 1} (${dur}s) ===\n${formatSceneForCopy(s, instr)}`).join('\n\n');
+        // v3.11.148: si hay perSceneInstructions (skill aplicado), usar la de cada escena.
+        // Sino, fallback a la instrucción compartida.
+        const perScene = Array.isArray(v.perSceneInstructions) ? v.perSceneInstructions : null;
+        text = v.scenes.map((s, i) => {
+          const sceneInstr = perScene ? (perScene[i] || '') : instr;
+          return `=== Escena ${i + 1} (${dur}s) ===\n${formatSceneForCopy(s, sceneInstr)}`;
+        }).join('\n\n');
       } else {
         text = v.text || '';
       }
@@ -3650,26 +3659,27 @@ function _skillFolderColor(folder) {
   return '#' + f(0) + f(8) + f(4);
 }
 
-function _getActiveSkills(variationIdx) {
-  return _activeSkillsByVariation[variationIdx] || new Set();
-}
-
-function renderSkillsPills(containerEl, variationIdx) {
+function renderSkillsPills(containerEl, variationIdx, entryId) {
   if (!containerEl) return;
   if (!Array.isArray(scriptSkills) || scriptSkills.length === 0) {
     containerEl.innerHTML = '<span style="font-size:10px;color:var(--text-dim);font-style:italic">Sin skills guardados. Ejemplo: "Variar planos de cámara por escena", "Aumentar tensión", "Cliffhangers escalados". Tocá 🧠 para crear el primero.</span>';
     return;
   }
-  const activeSet = _getActiveSkills(variationIdx);
+  // Saber qué skill está aplicado actualmente en esta variación
+  const entry = entries.find(e => e.id === entryId);
+  let appliedSkillId = null;
+  if (entry && Array.isArray(entry.scriptVariations) && entry.scriptVariations[variationIdx]) {
+    appliedSkillId = entry.scriptVariations[variationIdx].appliedSkillId || null;
+  }
   containerEl.innerHTML = scriptSkills.map(s => {
     const folder = s.folder || 'General';
     const c = _skillFolderColor(folder);
     const name = s.name || (s.text || '').slice(0, 32);
     const titleAttr = esc((s.text || '').slice(0, 240) + ((s.text || '').length > 240 ? '...' : ''));
-    const isActive = activeSet.has(s.id);
+    const isApplied = appliedSkillId === s.id;
     return `
-      <div class="skill-pill" data-skill-id="${esc(s.id)}" data-skill-var="${variationIdx}" title="${titleAttr}" style="display:inline-flex;align-items:center;gap:4px;padding:3px 4px 3px 4px;background:${isActive ? _hexToRgba(c, 0.45) : _hexToRgba(c, 0.12)};border:1px solid ${isActive ? c : _hexToRgba(c, 0.45)};border-radius:14px;font-size:10.5px;cursor:pointer;line-height:1.4;user-select:none;color:var(--text-primary);${isActive ? 'box-shadow:0 0 0 2px ' + _hexToRgba(c, 0.3) + ';font-weight:600' : ''}">
-        ${isActive ? '<span style="color:' + c + ';font-weight:700">✓</span>' : ''}
+      <div class="skill-pill" data-skill-id="${esc(s.id)}" data-skill-var="${variationIdx}" data-skill-entry="${esc(entryId || '')}" title="${titleAttr}" style="display:inline-flex;align-items:center;gap:4px;padding:3px 4px 3px 4px;background:${isApplied ? _hexToRgba(c, 0.5) : _hexToRgba(c, 0.12)};border:1px solid ${isApplied ? c : _hexToRgba(c, 0.45)};border-radius:14px;font-size:10.5px;cursor:pointer;line-height:1.4;user-select:none;color:var(--text-primary);${isApplied ? 'box-shadow:0 0 0 2px ' + _hexToRgba(c, 0.35) + ';font-weight:600' : ''}">
+        ${isApplied ? '<span style="color:' + c + ';font-weight:700">⚡</span>' : ''}
         <span style="background:${_hexToRgba(c, 0.32)};color:${c};font-weight:700;font-size:9px;padding:2px 6px;border-radius:10px;letter-spacing:0.2px">${esc(folder)}</span>
         <span style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(name)}</span>
         <span class="skill-edit" data-edit-skill="${esc(s.id)}" title="Editar" style="opacity:0.55;padding:0 2px;font-size:11px">&#9998;</span>
@@ -3696,21 +3706,12 @@ function renderSkillsPills(containerEl, variationIdx) {
         openSkillModalForEdit(e.target.dataset.editSkill);
         return;
       }
-      // Toggle active
+      // CLICK = aplicar skill a las escenas (o quitar si ya está aplicado)
       const id = el.dataset.skillId;
       const varIdx = parseInt(el.dataset.skillVar, 10);
-      if (!_activeSkillsByVariation[varIdx]) _activeSkillsByVariation[varIdx] = new Set();
-      const set = _activeSkillsByVariation[varIdx];
-      if (set.has(id)) set.delete(id);
-      else set.add(id);
-      // Re-render pills + update AI button label
-      renderSkillsPills(containerEl, varIdx);
-      const btn = document.querySelector(`[data-ai-split-var="${varIdx}"]`);
-      if (btn) {
-        const count = set.size;
-        btn.textContent = count > 0 ? `🎬 Dividir con AI (${count} skill${count === 1 ? '' : 's'})` : '🎬 Dividir con AI';
-        btn.style.opacity = count > 0 ? '1' : '0.7';
-      }
+      const entId = el.dataset.skillEntry;
+      if (!entId) return;
+      await applySkillToScenes(entId, varIdx, id);
     });
   });
 }
@@ -3810,59 +3811,85 @@ if (document.readyState === 'loading') {
 }
 
 // =============================================================================
-// AI Split: divide la variación con Claude inyectando los skills activos al prompt
+// v3.11.148: Aplicar skill a escenas YA divididas. NO toca el guion ni la
+// división — solo genera per-scene instructions con Claude basado en el skill,
+// que se inyectan ARRIBA de cada escena al copiar. Click en pill = aplicar.
 // =============================================================================
-async function aiSplitVariationWithSkills(entryId, variationIdx, btn) {
+async function applySkillToScenes(entryId, variationIdx, skillId) {
   const entry = entries.find(e => e.id === entryId);
   if (!entry || !Array.isArray(entry.scriptVariations)) return;
   const v = entry.scriptVariations[variationIdx];
-  if (!v || !v.text) { _setTranscriptionStatus('⚠ Variación vacía', 'error'); return; }
-  if (!window.api || !window.api.generateWithClaude) {
-    _setTranscriptionStatus('❌ generateWithClaude no disponible. Actualizá la app.', 'error');
+  if (!v) return;
+  if (!Array.isArray(v.scenes) || v.scenes.length === 0) {
+    _setTranscriptionStatus('⚠ Primero dividí la variación en escenas con ✂️', 'error');
     return;
   }
-  const durSel = document.querySelector(`[data-var-scene-dur="${variationIdx}"]`);
-  const duration = parseInt((durSel && durSel.value) || '15', 10);
-  const activeSet = _getActiveSkills(variationIdx);
-  const activeSkills = scriptSkills.filter(s => activeSet.has(s.id));
-  const wordsPerScene = Math.round(duration * 2.3);
+  const skill = scriptSkills.find(s => s.id === skillId);
+  if (!skill) return;
+  if (!window.api || !window.api.generateWithClaude) {
+    _setTranscriptionStatus('❌ generateWithClaude no disponible.', 'error');
+    return;
+  }
 
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Claude dividiendo...'; }
-  _setTranscriptionStatus(`⏳ Claude dividiendo en escenas de ${duration}s con ${activeSkills.length} skill${activeSkills.length === 1 ? '' : 's'} activo${activeSkills.length === 1 ? '' : 's'}...`);
+  // Si ya está aplicado este mismo skill → quitarlo (toggle)
+  if (v.appliedSkillId === skillId) {
+    const currentEntry = entries.find(e => e.id === entryId);
+    const newVars = currentEntry.scriptVariations.slice();
+    newVars[variationIdx] = {
+      ...v,
+      perSceneInstructions: firebase.firestore.FieldValue.delete(),
+      appliedSkillId: firebase.firestore.FieldValue.delete(),
+      appliedSkillName: firebase.firestore.FieldValue.delete()
+    };
+    try {
+      // Firestore FieldValue.delete() en array de objetos no funciona, hacemos limpieza local
+      const cleanVar = { ...v };
+      delete cleanVar.perSceneInstructions;
+      delete cleanVar.appliedSkillId;
+      delete cleanVar.appliedSkillName;
+      newVars[variationIdx] = cleanVar;
+      await db.collection('depositEntries').doc(entryId).update({ scriptVariations: newVars });
+      _setTranscriptionStatus(`✓ Skill "${skill.name}" removido`, 'success');
+      setTimeout(() => _renderTranscriptionModalContent(entryId), 200);
+    } catch (e) {
+      _setTranscriptionStatus('❌ Error removiendo skill: ' + (e.message || e), 'error');
+    }
+    return;
+  }
 
-  const skillsBlock = activeSkills.length > 0
-    ? `\n\n🎯 SKILLS ACTIVOS (aplicalos AL DIVIDIR, escena por escena):\n${activeSkills.map((s, i) => `${i + 1}. **${s.name}**: ${s.text}`).join('\n')}\n\nINTEGRA estos skills en CADA escena de forma que se note el efecto pedido. Si dicen "varía planos de cámara", entonces escena 1 con un plano, escena 2 con otro distinto, etc.`
-    : '';
+  _setTranscriptionStatus(`⏳ Claude aplicando skill "${skill.name}" a ${v.scenes.length} escenas...`);
 
-  const prompt = `Divide el siguiente guion de video en ESCENAS de ${duration} segundos cada una (~${wordsPerScene} palabras por escena).
+  const scenesList = v.scenes.map((text, i) => `Escena ${i + 1}: ${text}`).join('\n\n');
 
-⚠️ IDIOMA OBLIGATORIO — ESPAÑOL NEUTRO INTERNACIONAL:
-- PROHIBIDO voseo argentino (vos/tenés/mirá), castellano de España (vosotros/os/tío/vale), regionalismos.
-- USA "tú" universal, imperativos neutros (comenta/guarda/mira/sigue).${skillsBlock}
+  const prompt = `Te paso ${v.scenes.length} escenas ya divididas de un guion. NO modifiques el texto de las escenas — solo genera UNA INSTRUCCIÓN ESPECÍFICA para cada escena siguiendo el skill que te indico abajo.
+
+🎯 SKILL A APLICAR — "${skill.name}":
+${skill.text}
 
 REGLAS:
-1. Cada escena suena natural hablada, frases completas.
-2. Cada escena dura ~${duration}s leída (~${wordsPerScene} palabras).
-3. Mantén el HOOK al inicio de la escena 1. Cada escena cierra con tensión/cliffhanger.
-4. NO cortes ideas a la mitad.
-5. Mantén el sentido y orden del guion.
-6. ${activeSkills.length > 0 ? 'APLICA los skills activos en CADA escena. Por ejemplo, si el skill es "varía planos de cámara", inicia cada escena con la indicación del plano entre corchetes: [PLANO: close-up rostro]\\n\\nTexto de la escena...' : 'Devolvé solo el texto de cada escena.'}
+1. NO cambies el texto de las escenas, solo genera la instrucción que va ENCIMA de cada una.
+2. Cada instrucción debe ser DIFERENTE para cada escena (varía según el skill).
+3. La instrucción debe ser corta y específica, lista para ejecutar (no explicaciones genéricas).
+4. Si el skill dice "varía planos de cámara", entonces escena 1 una indicación de plano, escena 2 OTRA distinta, etc.
+5. Idioma: español neutro internacional (sin voseo, sin España, sin regionalismos).
+
+ESCENAS YA DIVIDIDAS (NO LAS TOQUES):
+${scenesList}
 
 FORMATO de salida — JSON válido, SIN nada antes o después:
-{"scenes":[
-  {"n":1,"text":"${activeSkills.length > 0 ? '[indicación del skill]\\n\\n' : ''}texto de la escena 1"},
-  {"n":2,"text":"${activeSkills.length > 0 ? '[indicación del skill]\\n\\n' : ''}texto de la escena 2"},
+{"instructions":[
+  "instrucción específica para escena 1, basada en el skill",
+  "instrucción específica para escena 2, distinta a la anterior",
   ...
 ]}
 
-GUION A DIVIDIR:
-${v.text}`;
+Debe haber EXACTAMENTE ${v.scenes.length} instrucciones, una por escena.`;
 
   try {
     const result = await window.api.generateWithClaude({
       prompt,
       model: 'claude-sonnet-4-6',
-      maxTokens: 4000
+      maxTokens: 2500
     });
     if (!result || !result.ok) throw new Error(result && result.error ? result.error : 'No se pudo conectar con Claude');
     let parsed;
@@ -3872,43 +3899,39 @@ ${v.text}`;
     } catch (e) {
       throw new Error('Claude devolvió JSON inválido: ' + (result.text || '').slice(0, 200));
     }
-    if (!parsed || !Array.isArray(parsed.scenes) || parsed.scenes.length === 0) {
-      throw new Error('Claude no devolvió escenas');
+    if (!parsed || !Array.isArray(parsed.instructions) || parsed.instructions.length === 0) {
+      throw new Error('Claude no devolvió instrucciones');
     }
-    const scenes = parsed.scenes.map(s => (s.text || '').trim()).filter(Boolean);
-    if (scenes.length === 0) throw new Error('Claude devolvió escenas vacías');
+    // Pad o trim para matchear cantidad de escenas
+    const perScene = v.scenes.map((_, i) => (parsed.instructions[i] || '').trim()).filter(x => x !== '');
+    if (perScene.length !== v.scenes.length) {
+      console.warn('[apply-skill] count mismatch — pad with empty');
+      while (perScene.length < v.scenes.length) perScene.push('');
+    }
 
     const currentEntry = entries.find(e => e.id === entryId);
     const newVars = currentEntry.scriptVariations.slice();
     newVars[variationIdx] = {
       ...v,
-      scenes,
-      sceneDuration: duration,
-      aiSplit: true,
-      aiSkillsUsed: activeSkills.map(s => ({ id: s.id, name: s.name }))
+      perSceneInstructions: perScene,
+      appliedSkillId: skillId,
+      appliedSkillName: skill.name
     };
     await db.collection('depositEntries').doc(entryId).update({ scriptVariations: newVars });
 
-    // Incrementar usage de skills
-    for (const s of activeSkills) {
-      try {
-        await db.collection('scriptSkills').doc(s.id).update({
-          usageCount: (s.usageCount || 0) + 1,
-          lastUsedAt: firebase.firestore.FieldValue.serverTimestamp()
-        });
-      } catch (_) {}
-    }
+    // Incrementar usage del skill
+    try {
+      await db.collection('scriptSkills').doc(skillId).update({
+        usageCount: (skill.usageCount || 0) + 1,
+        lastUsedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    } catch (_) {}
 
-    _setTranscriptionStatus(`✓ Dividido en ${scenes.length} escenas con AI ${activeSkills.length > 0 ? '+ ' + activeSkills.length + ' skill(s)' : ''}`, 'success');
-    setTimeout(() => _renderTranscriptionModalContent(entryId), 300);
+    _setTranscriptionStatus(`✓ Skill "${skill.name}" aplicado a ${v.scenes.length} escenas`, 'success');
+    setTimeout(() => _renderTranscriptionModalContent(entryId), 200);
   } catch (e) {
-    console.error('[ai-split] error', e);
-    _setTranscriptionStatus('❌ Error AI Split: ' + (e.message || e), 'error');
-    if (btn) {
-      btn.disabled = false;
-      const count = activeSet.size;
-      btn.textContent = count > 0 ? `🎬 Dividir con AI (${count} skill${count === 1 ? '' : 's'})` : '🎬 Dividir con AI';
-    }
+    console.error('[apply-skill] error', e);
+    _setTranscriptionStatus('❌ Error aplicando skill: ' + (e.message || e), 'error');
   }
 }
 
@@ -4060,8 +4083,11 @@ document.addEventListener('click', (ev) => {
     const entry = entries.find(e => e.id === _currentTranscriptionEntryId);
     const v = entry && entry.scriptVariations && entry.scriptVariations[varIdx];
     const sceneText = (v && v.scenes && v.scenes[sIdx]) || '';
-    // v3.11.109: incluir instrucciones + "Guion en español:" si la variación tiene
-    const text = formatSceneForCopy(sceneText, v && v.sceneInstructions);
+    // v3.11.148: si la variación tiene perSceneInstructions (skill aplicado), usar
+    // la instrucción específica de esta escena. Sino, fallback a la compartida.
+    const perScene = v && Array.isArray(v.perSceneInstructions) ? v.perSceneInstructions[sIdx] : null;
+    const instr = perScene || (v && v.sceneInstructions) || '';
+    const text = formatSceneForCopy(sceneText, instr);
     copyToClipboardRobust(text).then(ok => {
       copyVarSceneBtn.textContent = ok ? '✓ Copiado' : '⚠ Error';
       setTimeout(() => { copyVarSceneBtn.textContent = '📋 Copiar'; }, 1500);

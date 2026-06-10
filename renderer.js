@@ -75,6 +75,17 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.148': {
+    title: '⚡ Skills CORREGIDOS: ahora aplican CAPA DE INSTRUCCIONES sobre escenas ya divididas (no las re-dividen)',
+    features: [
+      '🔄 <strong>Cambio de comportamiento</strong>: los skills NO re-dividen el guion. El guion lo dividís VOS con ✂️ (rápido, sin AI). Después click en un skill = Claude genera UNA INSTRUCCIÓN ESPECÍFICA POR ESCENA siguiendo el skill. El TEXTO de las escenas NO se toca.',
+      '🎯 <strong>Click en pill = aplicar</strong>: tocás la pill morada del skill → Claude analiza las escenas → te devuelve N instrucciones (una por escena) cada una distinta. Cada escena muestra arriba su instrucción específica con borde morado.',
+      '⚡ <strong>Indicador visual</strong>: el banner superior dice "⚡ Skill aplicado: <nombre>". La pill activa tiene fondo full + glow. Click de nuevo en la MISMA pill quita el skill (vuelve a usar la instrucción compartida del textarea).',
+      '🪪 <strong>Diferencia clarísima</strong>: textarea/plantillas = MISMA instrucción repetida en todas las escenas. Skill = instrucción DISTINTA por escena, generada por Claude basada en lo que el skill pide.',
+      '📋 <strong>Copiar respeta el skill</strong>: el botón "📋 Copiar" de cada escena (y el de "Copiar todo") usa la instrucción per-scene si hay skill aplicado.',
+      '⚠ <strong>Requisito</strong>: primero dividí en escenas con ✂️. Si no hay escenas, click en skill avisa.'
+    ]
+  },
   '3.11.147': {
     title: '🎯 Nuevo: SKILLS — instrucciones que se inyectan al prompt de Claude al dividir guiones con AI',
     features: [
