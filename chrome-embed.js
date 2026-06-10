@@ -1,15 +1,11 @@
 // =============================================================================
 // Chrome Embed via CDP (Chrome DevTools Protocol)
-// v3.11.130
+// v3.11.134 — multi-tab
 //
-// Lanza el Chrome del sistema con un perfil dedicado en
-// ~/Library/Application Support/task-manager-app/chrome-profile/ y lo controla
-// via CDP. Stream de frames JPEG via Page.startScreencast → canvas en el
-// renderer. Input forwarding via Input.dispatchMouseEvent / dispatchKeyEvent.
-//
-// Por qué: Google bloquea el login en webviews embebidos (Electron). El Chrome
-// del sistema es Chrome de verdad → Google lo acepta. CDP nos deja "embeber"
-// visualmente esa instancia dentro del Task Manager.
+// Lanza el Chrome del sistema con un perfil dedicado y lo controla via CDP.
+// Stream de frames JPEG de la pestaña ACTIVA → canvas. Soporta múltiples tabs:
+// cada una es una puppeteer.Page separada. Switch entre tabs = stop screencast
+// en la actual + start en la nueva.
 // =============================================================================
 
 const path = require('path');
@@ -28,14 +24,13 @@ try {
 
 let state = {
   browser: null,
-  page: null,
-  cdp: null,
-  active: false,
-  sender: null, // webContents donde enviar frames
+  sender: null,
   width: 1280,
   height: 720,
-  quality: 70,
-  everyNthFrame: 1
+  quality: 85,
+  tabs: [],          // [{ id, page, cdp, title, url, screencasting }]
+  activeId: null,
+  active: false
 };
 
 function profileDir() {
@@ -43,6 +38,79 @@ function profileDir() {
   const dir = path.join(userData, 'chrome-profile');
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   return dir;
+}
+
+function findTab(id) { return state.tabs.find(t => t.id === id); }
+function tabsSummary() {
+  return state.tabs.map(t => ({ id: t.id, title: t.title || t.url || 'Pestaña', url: t.url || '', isActive: t.id === state.activeId }));
+}
+function notifyTabs() {
+  if (state.sender) {
+    try { state.sender.send('chrome-embed-tabs', tabsSummary()); } catch (_) {}
+  }
+}
+
+function _handleFrame(tab) {
+  return async (ev) => {
+    if (state.activeId !== tab.id) return;
+    try {
+      if (state.sender) {
+        state.sender.send('chrome-embed-frame', {
+          data: ev.data,
+          sessionId: ev.sessionId,
+          metadata: ev.metadata
+        });
+      }
+      await tab.cdp.send('Page.screencastFrameAck', { sessionId: ev.sessionId });
+    } catch (_) {}
+  };
+}
+
+async function _setupTab(tab) {
+  await tab.page.setViewport({
+    width: state.width,
+    height: state.height,
+    deviceScaleFactor: 1
+  }).catch(() => {});
+  tab.cdp = await tab.page.target().createCDPSession();
+  await tab.cdp.send('Page.enable');
+  await tab.cdp.send('Runtime.enable');
+
+  tab.page.on('framenavigated', (frame) => {
+    if (frame !== tab.page.mainFrame()) return;
+    tab.url = frame.url();
+    if (tab.id === state.activeId && state.sender) {
+      try { state.sender.send('chrome-embed-url-changed', tab.url); } catch (_) {}
+    }
+    notifyTabs();
+  });
+  tab.page.on('load', async () => {
+    try { tab.title = (await tab.page.title()) || tab.url; } catch (_) {}
+    notifyTabs();
+  });
+
+  tab._frameHandler = _handleFrame(tab);
+}
+
+async function _startScreencastOn(tab) {
+  if (!tab || !tab.cdp) return;
+  if (tab.screencasting) return;
+  try { await tab.page.bringToFront(); } catch (_) {}
+  tab.cdp.on('Page.screencastFrame', tab._frameHandler);
+  await tab.cdp.send('Page.startScreencast', {
+    format: 'jpeg',
+    quality: state.quality,
+    maxWidth: state.width,
+    maxHeight: state.height,
+    everyNthFrame: 1
+  });
+  tab.screencasting = true;
+}
+async function _stopScreencastOn(tab) {
+  if (!tab || !tab.cdp || !tab.screencasting) return;
+  try { await tab.cdp.send('Page.stopScreencast'); } catch (_) {}
+  try { tab.cdp.off('Page.screencastFrame', tab._frameHandler); } catch (_) {}
+  tab.screencasting = false;
 }
 
 async function start({ url, sender, width, height, quality }) {
@@ -53,19 +121,14 @@ async function start({ url, sender, width, height, quality }) {
   state.sender = sender || null;
   state.width = Math.max(640, Math.min(2560, parseInt(width) || 1280));
   state.height = Math.max(480, Math.min(1440, parseInt(height) || 720));
-  state.quality = Math.max(40, Math.min(95, parseInt(quality) || 70));
+  state.quality = Math.max(40, Math.min(95, parseInt(quality) || 85));
+  state.tabs = [];
+  state.activeId = null;
 
-  console.log('[chrome-embed] launching system Chrome...');
-  // Lanzamos Chrome del sistema con perfil dedicado, headed (para que el debug
-  // protocol funcione bien) pero la ventana queda oculta visualmente con
-  // posición offscreen + size mínimo. El usuario solo ve el canvas dentro de
-  // la app, no la ventana real de Chrome.
-  // v3.11.133: headless 'new' = Chrome real pero SIN ventana visible. Sigue
-  // renderizando todo igual, screencast funciona, pero nadie ve la ventana
-  // fantasma de Chrome aparecer. Mucho más limpio que --window-position=-2400.
+  console.log('[chrome-embed] launching system Chrome (headless)...');
   const launchOpts = {
     channel: 'chrome',
-    headless: 'new',                                // invisible — el render lo vemos via canvas
+    headless: 'new',
     userDataDir: profileDir(),
     args: [
       '--no-first-run',
@@ -81,126 +144,121 @@ async function start({ url, sender, width, height, quality }) {
     console.error('[chrome-embed] launch failed:', e.message);
     throw new Error('No se pudo lanzar Chrome. Asegurate de tener Google Chrome instalado. Detalle: ' + e.message);
   }
-  state.page = (await state.browser.pages())[0] || await state.browser.newPage();
-  // v3.11.132: forzar viewport EXACTO al tamaño pedido (sin toolbars/etc).
-  // Esto evita letterbox (barras negras arriba/abajo) en el canvas.
-  try {
-    await state.page.setViewport({
-      width: state.width,
-      height: state.height,
-      deviceScaleFactor: 1
-    });
-  } catch (e) { console.warn('[chrome-embed] setViewport warn:', e.message); }
-  state.cdp = await state.page.target().createCDPSession();
-  await state.cdp.send('Page.enable');
-  await state.cdp.send('Runtime.enable');
-
-  // Notificar cambios de URL/título
-  state.cdp.on('Page.frameNavigated', async (ev) => {
-    if (!ev.frame || ev.frame.parentId) return;
-    if (state.sender) {
-      try { state.sender.send('chrome-embed-url-changed', ev.frame.url); } catch (_) {}
-    }
-  });
-  state.page.on('framenavigated', (frame) => {
-    if (frame !== state.page.mainFrame()) return;
-    if (state.sender) {
-      try { state.sender.send('chrome-embed-url-changed', frame.url()); } catch (_) {}
-    }
-  });
-
-  // Screencast: frames JPEG
-  state.cdp.on('Page.screencastFrame', async (ev) => {
-    try {
-      if (state.sender) {
-        state.sender.send('chrome-embed-frame', {
-          data: ev.data,        // base64 JPEG
-          sessionId: ev.sessionId,
-          metadata: ev.metadata // { deviceWidth, deviceHeight, pageScaleFactor, ... }
-        });
-      }
-      await state.cdp.send('Page.screencastFrameAck', { sessionId: ev.sessionId });
-    } catch (e) { /* frame perdido, no fatal */ }
-  });
-
-  // Navegar a la URL inicial
-  const startUrl = url || 'https://www.google.com/';
-  try { await state.page.goto(startUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }); }
-  catch (e) { console.warn('[chrome-embed] initial goto warn:', e.message); }
-
-  // Iniciar screencast
-  await state.cdp.send('Page.startScreencast', {
-    format: 'jpeg',
-    quality: state.quality,
-    maxWidth: state.width,
-    maxHeight: state.height,
-    everyNthFrame: state.everyNthFrame
-  });
-
   state.active = true;
+
+  // Crear primera pestaña
+  const startUrl = url || 'https://www.google.com/';
+  const firstPage = (await state.browser.pages())[0] || await state.browser.newPage();
+  const firstTab = { id: 'tab-' + Date.now(), page: firstPage, title: 'Cargando…', url: startUrl, screencasting: false };
+  await _setupTab(firstTab);
+  state.tabs.push(firstTab);
+  state.activeId = firstTab.id;
+  try { await firstPage.goto(startUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }); }
+  catch (e) { console.warn('[chrome-embed] initial goto warn:', e.message); }
+  await _startScreencastOn(firstTab);
+  notifyTabs();
+
   console.log('[chrome-embed] started, profile:', profileDir());
-  return { ok: true, url: state.page.url(), profile: profileDir() };
+  return { ok: true, url: firstPage.url(), profile: profileDir(), tabId: firstTab.id };
 }
 
+async function newTab(url) {
+  if (!state.active || !state.browser) throw new Error('Chrome embed no está activo');
+  const page = await state.browser.newPage();
+  const tab = { id: 'tab-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6), page, title: 'Nueva pestaña', url: '', screencasting: false };
+  await _setupTab(tab);
+  state.tabs.push(tab);
+  const targetUrl = url || 'https://www.google.com/';
+  try { await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }); }
+  catch (e) { console.warn('[chrome-embed] newTab goto warn:', e.message); }
+  await switchTab(tab.id);
+  return { ok: true, id: tab.id };
+}
+
+async function switchTab(id) {
+  if (state.activeId === id) return { ok: true };
+  const newActive = findTab(id);
+  if (!newActive) return { ok: false, error: 'tab no encontrado' };
+  const oldActive = findTab(state.activeId);
+  if (oldActive) await _stopScreencastOn(oldActive);
+  state.activeId = id;
+  await _startScreencastOn(newActive);
+  if (state.sender) {
+    try { state.sender.send('chrome-embed-url-changed', newActive.url || ''); } catch (_) {}
+  }
+  notifyTabs();
+  return { ok: true };
+}
+
+async function closeTab(id) {
+  const tab = findTab(id);
+  if (!tab) return { ok: false };
+  await _stopScreencastOn(tab);
+  try { await tab.page.close(); } catch (_) {}
+  state.tabs = state.tabs.filter(t => t.id !== id);
+  if (state.tabs.length === 0) {
+    // Si cerramos la última, abrimos una nueva
+    await newTab('https://www.google.com/');
+    return { ok: true };
+  }
+  if (state.activeId === id) {
+    await switchTab(state.tabs[state.tabs.length - 1].id);
+  } else {
+    notifyTabs();
+  }
+  return { ok: true };
+}
+
+async function listTabs() { return tabsSummary(); }
+
 async function navigate(url) {
-  if (!state.active || !state.page) throw new Error('Chrome embed no está activo');
+  if (!state.active) throw new Error('Chrome embed no está activo');
+  const tab = findTab(state.activeId);
+  if (!tab) throw new Error('No hay tab activa');
   if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
-  await state.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
-  return { ok: true, url: state.page.url() };
+  await tab.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+  return { ok: true, url: tab.page.url() };
 }
 
 async function back() {
-  if (!state.page) return;
-  await state.page.goBack({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+  const tab = findTab(state.activeId); if (!tab) return;
+  await tab.page.goBack({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
 }
 async function forward() {
-  if (!state.page) return;
-  await state.page.goForward({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+  const tab = findTab(state.activeId); if (!tab) return;
+  await tab.page.goForward({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
 }
 async function reload() {
-  if (!state.page) return;
-  await state.page.reload({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+  const tab = findTab(state.activeId); if (!tab) return;
+  await tab.page.reload({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
 }
 
-// ===== Input forwarding =====
+// ===== Input forwarding (al tab activo) =====
 const MOUSE_BUTTONS = { 0: 'left', 1: 'middle', 2: 'right' };
 async function dispatchMouse({ type, x, y, button, clickCount, modifiers }) {
-  if (!state.cdp) return;
-  // type: 'mousePressed' | 'mouseReleased' | 'mouseMoved' | 'mouseWheel'
-  const params = {
-    type,
-    x: Math.round(x),
-    y: Math.round(y),
-    modifiers: modifiers || 0
-  };
+  const tab = findTab(state.activeId); if (!tab || !tab.cdp) return;
+  const params = { type, x: Math.round(x), y: Math.round(y), modifiers: modifiers || 0 };
   if (type === 'mousePressed' || type === 'mouseReleased') {
     params.button = MOUSE_BUTTONS[button] || 'left';
     params.clickCount = clickCount || 1;
   } else if (type === 'mouseMoved') {
     params.button = 'none';
   }
-  await state.cdp.send('Input.dispatchMouseEvent', params).catch(() => {});
+  await tab.cdp.send('Input.dispatchMouseEvent', params).catch(() => {});
 }
-
 async function dispatchWheel({ x, y, deltaX, deltaY, modifiers }) {
-  if (!state.cdp) return;
-  await state.cdp.send('Input.dispatchMouseEvent', {
+  const tab = findTab(state.activeId); if (!tab || !tab.cdp) return;
+  await tab.cdp.send('Input.dispatchMouseEvent', {
     type: 'mouseWheel',
-    x: Math.round(x),
-    y: Math.round(y),
-    deltaX: deltaX || 0,
-    deltaY: deltaY || 0,
+    x: Math.round(x), y: Math.round(y),
+    deltaX: deltaX || 0, deltaY: deltaY || 0,
     modifiers: modifiers || 0
   }).catch(() => {});
 }
-
 async function dispatchKey({ type, key, code, keyCode, modifiers, text }) {
-  if (!state.cdp) return;
-  // type: 'keyDown' | 'keyUp' | 'rawKeyDown' | 'char'
-  await state.cdp.send('Input.dispatchKeyEvent', {
-    type,
-    key,
-    code,
+  const tab = findTab(state.activeId); if (!tab || !tab.cdp) return;
+  await tab.cdp.send('Input.dispatchKeyEvent', {
+    type, key, code,
     windowsVirtualKeyCode: keyCode || 0,
     nativeVirtualKeyCode: keyCode || 0,
     modifiers: modifiers || 0,
@@ -211,43 +269,45 @@ async function dispatchKey({ type, key, code, keyCode, modifiers, text }) {
 
 async function stop() {
   state.active = false;
-  if (state.cdp) {
-    try { await state.cdp.send('Page.stopScreencast'); } catch (_) {}
-    try { await state.cdp.detach(); } catch (_) {}
-    state.cdp = null;
+  for (const tab of state.tabs) {
+    await _stopScreencastOn(tab);
+    try { if (tab.cdp) await tab.cdp.detach(); } catch (_) {}
   }
+  state.tabs = [];
+  state.activeId = null;
   if (state.browser) {
     try { await state.browser.close(); } catch (_) {}
     state.browser = null;
   }
-  state.page = null;
   state.sender = null;
   console.log('[chrome-embed] stopped');
 }
 
 function isActive() { return state.active; }
-function getUrl() { try { return state.page ? state.page.url() : ''; } catch (_) { return ''; } }
+function getUrl() {
+  const tab = findTab(state.activeId);
+  try { return tab && tab.page ? tab.page.url() : ''; } catch (_) { return ''; }
+}
 
 async function resize({ width, height }) {
-  if (!state.cdp) return;
   state.width = Math.max(640, Math.min(2560, parseInt(width) || state.width));
   state.height = Math.max(480, Math.min(1440, parseInt(height) || state.height));
-  try {
-    await state.page.setViewport({ width: state.width, height: state.height });
-    // Reiniciar screencast con nuevas dimensiones
-    await state.cdp.send('Page.stopScreencast').catch(() => {});
-    await state.cdp.send('Page.startScreencast', {
-      format: 'jpeg',
-      quality: state.quality,
-      maxWidth: state.width,
-      maxHeight: state.height,
-      everyNthFrame: state.everyNthFrame
-    });
-  } catch (e) { console.warn('[chrome-embed] resize warn:', e.message); }
+  for (const tab of state.tabs) {
+    try {
+      await tab.page.setViewport({ width: state.width, height: state.height, deviceScaleFactor: 1 });
+    } catch (_) {}
+  }
+  // Reiniciar screencast del activo con nuevas dimensiones
+  const active = findTab(state.activeId);
+  if (active && active.screencasting) {
+    await _stopScreencastOn(active);
+    await _startScreencastOn(active);
+  }
 }
 
 module.exports = {
   start, stop, navigate, back, forward, reload, resize,
+  newTab, switchTab, closeTab, listTabs,
   dispatchMouse, dispatchWheel, dispatchKey,
   isActive, getUrl
 };

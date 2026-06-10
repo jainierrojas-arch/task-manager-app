@@ -920,6 +920,38 @@
     window.api.chromeEmbed.onUrlChanged((url) => {
       if (urlBar) urlBar.value = url || '';
     });
+
+    // v3.11.134: tabs del Chrome embed
+    const tabsBar = document.getElementById('chromeEmbedTabsBar');
+    function renderChromeTabs(tabs) {
+      if (!tabsBar) return;
+      const list = Array.isArray(tabs) ? tabs : [];
+      const tabsHtml = list.map(t => {
+        const isActive = t.isActive;
+        const safeTitle = (t.title || t.url || 'Pestaña').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const tip = (t.url || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+        return `
+          <div class="cr-tab" data-cr-tab="${t.id}" title="${tip}" style="display:inline-flex;align-items:center;gap:6px;max-width:200px;padding:6px 10px;background:${isActive ? '#0c0c0e' : '#252530'};border:1px solid #2a2a32;border-bottom:${isActive ? '1px solid #0c0c0e' : '1px solid #2a2a32'};border-radius:8px 8px 0 0;font-size:12px;color:${isActive ? '#fff' : '#aaa'};cursor:pointer;white-space:nowrap;position:relative;${isActive ? 'top:1px;font-weight:600' : ''}">
+            <span style="overflow:hidden;text-overflow:ellipsis;max-width:140px">${safeTitle}</span>
+            <span class="cr-tab-close" data-cr-close="${t.id}" style="opacity:0.6;padding:0 4px;border-radius:4px;font-size:14px;line-height:1">×</span>
+          </div>`;
+      }).join('');
+      const newTabBtn = `<button id="crNewTab" title="Nueva pestaña" style="background:transparent;border:1px solid #2a2a32;color:#999;padding:4px 12px;border-radius:6px;font-size:18px;cursor:pointer;margin-bottom:2px">+</button>`;
+      tabsBar.innerHTML = tabsHtml + newTabBtn;
+      tabsBar.querySelectorAll('[data-cr-tab]').forEach(el => {
+        el.addEventListener('click', (ev) => {
+          if (ev.target.dataset.crClose) {
+            ev.stopPropagation();
+            window.api.chromeEmbed.closeTab(ev.target.dataset.crClose);
+          } else {
+            window.api.chromeEmbed.switchTab(el.dataset.crTab);
+          }
+        });
+      });
+      const ntb = document.getElementById('crNewTab');
+      if (ntb) ntb.addEventListener('click', () => window.api.chromeEmbed.newTab('https://www.google.com/'));
+    }
+    window.api.chromeEmbed.onTabs(renderChromeTabs);
   }
 
   // ===== Input forwarding (mouse + keyboard + wheel) =====

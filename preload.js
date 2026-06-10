@@ -51,7 +51,7 @@ contextBridge.exposeInMainWorld('api', {
   // v3.11.123: navegar Explorer interno a una URL (notificacion desde main)
   onNavigateExplorerTo: (cb) => ipcRenderer.on('navigate-explorer-to', (_, url) => cb(url)),
 
-  // v3.11.130: Chrome Real Embed (CDP screencast)
+  // v3.11.130 + v3.11.134: Chrome Real Embed (CDP screencast) + multi-tab
   chromeEmbed: {
     start: (opts) => ipcRenderer.invoke('chrome-embed-start', opts),
     stop: () => ipcRenderer.invoke('chrome-embed-stop'),
@@ -65,7 +65,13 @@ contextBridge.exposeInMainWorld('api', {
     sendKey: (ev) => ipcRenderer.invoke('chrome-embed-key', ev),
     status: () => ipcRenderer.invoke('chrome-embed-status'),
     onFrame: (cb) => ipcRenderer.on('chrome-embed-frame', (_, payload) => cb(payload)),
-    onUrlChanged: (cb) => ipcRenderer.on('chrome-embed-url-changed', (_, url) => cb(url))
+    onUrlChanged: (cb) => ipcRenderer.on('chrome-embed-url-changed', (_, url) => cb(url)),
+    // multi-tab
+    newTab: (url) => ipcRenderer.invoke('chrome-embed-new-tab', url),
+    switchTab: (id) => ipcRenderer.invoke('chrome-embed-switch-tab', id),
+    closeTab: (id) => ipcRenderer.invoke('chrome-embed-close-tab', id),
+    listTabs: () => ipcRenderer.invoke('chrome-embed-list-tabs'),
+    onTabs: (cb) => ipcRenderer.on('chrome-embed-tabs', (_, tabs) => cb(tabs))
   },
 
   // Tabs view mode

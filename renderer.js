@@ -75,6 +75,17 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.134': {
+    title: '🗂 Chrome Real: pestañas múltiples estilo Chrome (Gmail + YouTube + Drive a la vez)',
+    features: [
+      '🗂 <strong>Tabs múltiples</strong> arriba del canvas, estilo Chrome real. Cada tab es una <code>puppeteer.Page</code> separada del mismo proceso de Chrome.',
+      '➕ <strong>Botón "+" al final</strong> para abrir nueva tab.',
+      '🖱 <strong>Click en tab</strong> → switch instantáneo (stop screencast en la anterior, start en la nueva). La tab activa se ve más clara con borde inferior conectado al canvas.',
+      '✕ <strong>Click en la "×" de una tab</strong> → cerrar. Si cerrás la última, se abre Google automáticamente.',
+      '🪧 <strong>Título de cada tab</strong> viene del <code>page.title()</code> real (se actualiza cuando carga).',
+      '🌐 La URL bar de Task Manager refleja el URL del tab activo. Atrás/Adelante/Recargar afectan solo al tab activo.'
+    ]
+  },
   '3.11.133': {
     title: '👻 Chrome Real: ventana invisible (headless) + stretch puro sin letterbox',
     features: [

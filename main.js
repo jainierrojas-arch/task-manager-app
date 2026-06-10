@@ -2236,6 +2236,11 @@ function registerIpcHandlers() {
   ipcMain.handle('chrome-embed-wheel', async (_, ev) => { if (chromeEmbed) chromeEmbed.dispatchWheel(ev || {}); });
   ipcMain.handle('chrome-embed-key', async (_, ev) => { if (chromeEmbed) chromeEmbed.dispatchKey(ev || {}); });
   ipcMain.handle('chrome-embed-status', async () => ({ active: chromeEmbed ? chromeEmbed.isActive() : false, url: chromeEmbed ? chromeEmbed.getUrl() : '' }));
+  // v3.11.134: multi-tab handlers
+  ipcMain.handle('chrome-embed-new-tab', async (_, url) => { if (chromeEmbed) return chromeEmbed.newTab(url); return { ok: false }; });
+  ipcMain.handle('chrome-embed-switch-tab', async (_, id) => { if (chromeEmbed) return chromeEmbed.switchTab(id); return { ok: false }; });
+  ipcMain.handle('chrome-embed-close-tab', async (_, id) => { if (chromeEmbed) return chromeEmbed.closeTab(id); return { ok: false }; });
+  ipcMain.handle('chrome-embed-list-tabs', async () => { if (chromeEmbed) return chromeEmbed.listTabs(); return []; });
 
   // v3.11.123: abrir URL en el Explorer interno (mainWindow), no en navegador externo.
   ipcMain.handle('open-in-explorer', async (_, url) => {
