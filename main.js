@@ -2235,6 +2235,10 @@ function registerIpcHandlers() {
   ipcMain.handle('chrome-embed-mouse', async (_, ev) => { if (chromeEmbed) chromeEmbed.dispatchMouse(ev || {}); });
   ipcMain.handle('chrome-embed-wheel', async (_, ev) => { if (chromeEmbed) chromeEmbed.dispatchWheel(ev || {}); });
   ipcMain.handle('chrome-embed-key', async (_, ev) => { if (chromeEmbed) chromeEmbed.dispatchKey(ev || {}); });
+  // v3.11.136: one-way (sin await del renderer) — para input fluido sin atascos
+  ipcMain.on('chrome-embed-mouse-fast', (_, ev) => { if (chromeEmbed) chromeEmbed.dispatchMouse(ev || {}); });
+  ipcMain.on('chrome-embed-wheel-fast', (_, ev) => { if (chromeEmbed) chromeEmbed.dispatchWheel(ev || {}); });
+  ipcMain.on('chrome-embed-key-fast', (_, ev) => { if (chromeEmbed) chromeEmbed.dispatchKey(ev || {}); });
   ipcMain.handle('chrome-embed-status', async () => ({ active: chromeEmbed ? chromeEmbed.isActive() : false, url: chromeEmbed ? chromeEmbed.getUrl() : '' }));
   // v3.11.134: multi-tab handlers
   ipcMain.handle('chrome-embed-new-tab', async (_, url) => { if (chromeEmbed) return chromeEmbed.newTab(url); return { ok: false }; });

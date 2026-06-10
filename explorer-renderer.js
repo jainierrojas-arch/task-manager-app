@@ -1097,26 +1097,21 @@
     }, { passive: false });
     chromeCanvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
-    // Teclado: capturamos al hacer focus en el canvas
+    // v3.11.136: Teclado — UN solo evento keyDown con el text para letras
+    // imprimibles. CDP interpreta y mete la letra en la página. Para teclas
+    // especiales (Tab/Enter/Backspace/flechas) usamos rawKeyDown sin text.
     chromeCanvas.addEventListener('keydown', (e) => {
       e.preventDefault();
       const keyCode = e.keyCode || e.which || 0;
+      const isPrintable = e.key && e.key.length === 1 && !e.ctrlKey && !e.metaKey;
       window.api.chromeEmbed.sendKey({
-        type: 'rawKeyDown',
+        type: isPrintable ? 'keyDown' : 'rawKeyDown',
         key: e.key,
         code: e.code,
         keyCode,
+        text: isPrintable ? e.key : '',
         modifiers: modifiersOf(e)
       });
-      // Si la tecla genera texto imprimible, mandamos también un char event
-      if (e.key && e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
-        window.api.chromeEmbed.sendKey({
-          type: 'char',
-          key: e.key,
-          text: e.key,
-          modifiers: modifiersOf(e)
-        });
-      }
     });
     chromeCanvas.addEventListener('keyup', (e) => {
       e.preventDefault();

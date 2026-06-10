@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.136': {
+    title: '⌨ Fix Chrome Real: tipear no congela más + IPC fire-and-forget',
+    features: [
+      '⌨ <strong>Tipear no congela</strong>: cada letra ahora manda UN solo evento <code>keyDown</code> con <code>text</code> (en vez de <code>rawKeyDown</code>+<code>char</code> que duplicaba el tráfico IPC y saturaba CDP).',
+      '⚡ <strong>Input fire-and-forget</strong>: cambiamos mouse/wheel/key de <code>ipcRenderer.invoke</code> (con await del round-trip) a <code>ipcRenderer.send</code> (one-way). El renderer no espera respuesta de Chrome — más fluido al tipear rápido o mover el mouse.',
+      '🪟 Teclas especiales (Tab/Enter/Backspace/flechas) siguen como <code>rawKeyDown</code> sin texto.',
+      '🚀 Probá login Google ahora — escribir tu email no debería congelar más.'
+    ]
+  },
   '3.11.135': {
     title: '⬇ Descargas de Chrome Real → Depósito automático (categoría "Descargas Chrome")',
     features: [

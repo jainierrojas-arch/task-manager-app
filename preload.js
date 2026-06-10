@@ -60,9 +60,10 @@ contextBridge.exposeInMainWorld('api', {
     forward: () => ipcRenderer.invoke('chrome-embed-forward'),
     reload: () => ipcRenderer.invoke('chrome-embed-reload'),
     resize: (dims) => ipcRenderer.invoke('chrome-embed-resize', dims),
-    sendMouse: (ev) => ipcRenderer.invoke('chrome-embed-mouse', ev),
-    sendWheel: (ev) => ipcRenderer.invoke('chrome-embed-wheel', ev),
-    sendKey: (ev) => ipcRenderer.invoke('chrome-embed-key', ev),
+    // v3.11.136: usamos send (one-way) en vez de invoke para no saturar el IPC con awaits
+    sendMouse: (ev) => ipcRenderer.send('chrome-embed-mouse-fast', ev),
+    sendWheel: (ev) => ipcRenderer.send('chrome-embed-wheel-fast', ev),
+    sendKey: (ev) => ipcRenderer.send('chrome-embed-key-fast', ev),
     status: () => ipcRenderer.invoke('chrome-embed-status'),
     onFrame: (cb) => ipcRenderer.on('chrome-embed-frame', (_, payload) => cb(payload)),
     onUrlChanged: (cb) => ipcRenderer.on('chrome-embed-url-changed', (_, url) => cb(url)),
