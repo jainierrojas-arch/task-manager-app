@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.154': {
+    title: '💬 Nuevo CTA: "Comenta + palabra clave" — Claude inventa la palabra para automatización ManyChat',
+    features: [
+      '💬 <strong>Nuevo CTA "Comenta + palabra clave (IA elige · envío automático)"</strong>: Claude analiza el contenido del video y GENERA la palabra clave perfecta (4-8 letras, MAYÚSCULAS, sin acentos, fácil de tipear).',
+      '🤖 <strong>Pensado para automatización</strong>: cuando alguien comenta la palabra, ManyChat (u otro bot) le manda automáticamente el recurso por DM.',
+      '🎯 <strong>Reglas que Claude respeta</strong>: 4-8 letras / MAYÚSCULAS / sin acentos ni ñ / una sola palabra / temáticamente conectada al video / memorable.',
+      '📋 Ejemplos del formato que Claude va a generar: <em>"Comenta GUIA y te envío la guía completa gratis"</em>, <em>"Comenta CHECK y te mando la checklist al privado"</em>, <em>"Comenta PLAN y recibes mi plantilla gratis"</em>.',
+      '⚙ <strong>Cómo usarlo</strong>: en el generador de variaciones, abrí el dropdown CTA y elegí <strong>"Comenta + palabra clave"</strong>. Ajustá la posición (final / medio / ambos) y generá.'
+    ]
+  },
   '3.11.153': {
     title: '🌐 Skills POTENCIADOS: Claude lee TODO el skill + genera Super Prompt Global + instrucciones por escena RICAS',
     features: [

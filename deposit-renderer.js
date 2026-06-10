@@ -2874,7 +2874,10 @@ const SCRIPT_CTAS = {
   guardar: { label: 'Guardar video', instruction: 'Guarda este video para volver a verlo cuando lo necesites' },
   guardar_seguir: { label: 'Guardar + Seguir', instruction: 'Guarda este video y sigue la cuenta para no perderte más' },
   comentar_seguir: { label: 'Comentar + Seguir', instruction: 'Comenta abajo + Sigue la cuenta para más' },
-  compartir: { label: 'Compartir', instruction: 'Comparte este video con alguien que lo necesita ver' }
+  compartir: { label: 'Compartir', instruction: 'Comparte este video con alguien que lo necesita ver' },
+  // v3.11.154: CTA con palabra clave para automatización ManyChat/DM trigger.
+  // Claude ELIGE la palabra basándose en el contenido del video.
+  comentar_palabra: { label: 'Comenta + palabra clave (IA elige · envío automático)', instruction: 'Pide a la audiencia que comente UNA PALABRA CLAVE específica para recibir un recurso gratis relacionado al tema del video. La palabra la ELIGES TÚ basándote en el contenido — debe cumplir TODAS estas reglas:\n- 4 a 8 letras (corta y memorable)\n- EN MAYÚSCULAS\n- Fácil de tipear sin errores (sin acentos, sin ñ, sin caracteres especiales)\n- Una sola palabra (NO frases compuestas)\n- Temáticamente conectada con el tema del video o el recurso ofrecido\n- Que invite a la acción y refuerce el valor del recurso\n\nEjemplos del formato del CTA:\n- "Comenta GUIA y te envío la guía completa gratis"\n- "Comenta CHECK y te mando la checklist al privado"\n- "Comenta TIP y te llega el resumen en 30 segundos"\n- "Comenta PLAN y recibes mi plantilla gratis"\n\nIMPORTANTE: la palabra que elijas debe estar pensada para automatización (ManyChat o similar): cuando alguien comenta esa palabra exacta, un bot le envía el recurso por DM automático. Por eso debe ser ÚNICA, corta, sin ambigüedad, y memorable.' }
 };
 const SCRIPT_CTA_POSICIONES = {
   final: { label: 'Al final', instruction: 'EXACTAMENTE en la última frase del guion, como cierre' },
