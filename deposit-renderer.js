@@ -20,7 +20,7 @@ if (_wsParams.get('isDefault') === '1' || (DEFAULT_WS_ID && WS_ID === DEFAULT_WS
   _ws_status = 'non-default';
 }
 console.log('[ws] iframe init: WS_ID=' + WS_ID + ' DEFAULT_WS_ID=' + DEFAULT_WS_ID + ' status=' + _ws_status);
-const WS_SCOPED_COLLECTIONS = new Set(['tasks', 'projects', 'depositEntries', 'depositCategories', 'scheduledPosts', 'chatMessages', 'captionTemplates', 'ideas']);
+const WS_SCOPED_COLLECTIONS = new Set(['tasks', 'projects', 'depositEntries', 'depositCategories', 'scheduledPosts', 'chatMessages', 'captionTemplates', 'sceneInstructionTemplates', 'ideas']);
 function _belongsToWs(d) {
   // v3.11.18: aislamiento real entre workspaces.
   // - Sin WS_ID: mostrar todo (modo standalone, no debería pasar normalmente).
@@ -149,6 +149,10 @@ let categories = [];
 let entries = [];
 let projects = [];
 let teamMembers = [];
+// v3.11.126: plantillas reutilizables para las instrucciones de "Dividir en escenas"
+let sceneInstructionTemplates = [];
+let editingSceneTplId = null;
+let _sceneTplTargetVariation = null; // { entryId, variationIdx } — para guardar/aplicar
 let selectedCategoryId = null;
 let selectedSubcategoryId = null; // null=mostrar grid de subs, '__unsorted__'=ideas sin sub, ID=ideas de esa sub
 let editingEntryId = null;
@@ -386,6 +390,23 @@ function subscribeAll() {
     teamMembers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     renderMemberSelects();
   }, err => console.error('[deposit] users error:', err)));
+
+  // v3.11.126: plantillas de instrucciones para "Dividir en escenas"
+  unsubscribers.push(db.collection('sceneInstructionTemplates').onSnapshot(snap => {
+    sceneInstructionTemplates = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(_belongsToWs);
+    sceneInstructionTemplates.sort((a, b) => {
+      const al = a.lastUsedAt && a.lastUsedAt.toMillis ? a.lastUsedAt.toMillis() : 0;
+      const bl = b.lastUsedAt && b.lastUsedAt.toMillis ? b.lastUsedAt.toMillis() : 0;
+      if (al !== bl) return bl - al;
+      return (a.name || '').localeCompare(b.name || '');
+    });
+    updateSceneTplFolderOptions();
+    // Refrescar modal abierto si está visible
+    const mod = document.getElementById('transcriptionModal');
+    if (mod && mod.classList.contains('active')) {
+      document.querySelectorAll('[data-scene-tpl-list]').forEach(el => renderSceneTplPills(el, parseInt(el.dataset.sceneTplList, 10)));
+    }
+  }, err => console.error('[deposit] sceneInstructionTemplates error:', err)));
 }
 
 // ===== CATEGORIES =====
@@ -939,21 +960,30 @@ function renderEntries() {
         ev.stopPropagation();
         const u = chip.dataset.linkOpen;
         if (!u) return;
-        const isVideo = /instagram\.com|tiktok\.com|youtube\.com|youtu\.be|facebook\.com|fb\.watch|twitter\.com|x\.com/i.test(u);
-        console.log('[link-open]', { url: u, isVideo, hasOpenInExplorer: !!(window.api && window.api.openInExplorer) });
-        if (isVideo && window.api && window.api.openInExplorer) {
+        // v3.11.125: dos paths — si estoy en iframe (dentro del main window),
+        // mando postMessage directo al parent. Si soy ventana standalone, IPC.
+        const inIframe = window.parent && window.parent !== window;
+        console.log('[link-open] click', u, { inIframe, hasOpenInExplorer: !!(window.api && window.api.openInExplorer) });
+        if (inIframe) {
+          try {
+            window.parent.postMessage({ type: 'open-in-explorer', url: u }, '*');
+            console.log('[link-open] postMessage sent to parent');
+            return;
+          } catch (e) {
+            console.error('[link-open] postMessage failed:', e.message || e);
+          }
+        }
+        if (window.api && window.api.openInExplorer) {
           try {
             const ok = await window.api.openInExplorer(u);
             console.log('[link-open] openInExplorer result:', ok);
-            if (!ok) {
-              console.warn('[link-open] openInExplorer returned false, fallback to external');
-              window.api.openExternal(u);
-            }
+            if (!ok) window.api.openExternal(u);
           } catch (e) {
-            console.error('[link-open] openInExplorer failed:', e.message || e);
+            console.error('[link-open] failed:', e.message || e);
             window.api.openExternal(u);
           }
         } else {
+          console.warn('[link-open] no openInExplorer — fallback external');
           window.api.openExternal(u);
         }
       });
@@ -3173,11 +3203,27 @@ function _renderTranscriptionModalContent(entryId) {
               </div>
               <label style="display:block;font-size:10px;color:#ff9866;font-weight:600;margin-bottom:4px;letter-spacing:0.3px">📌 Instrucciones (se repiten en TODAS las escenas, encima del guion)</label>
               <textarea data-var-scene-instructions="${i}" placeholder="Ej: Personaje: hombre joven latino, ropa casual oscura.\nCámara: medium shot, fondo desenfocado.\nIluminación: cinematográfica suave.\nVoz neutra, energía media." rows="4" style="width:100%;padding:8px 10px;background:var(--bg-card);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-family:inherit;font-size:11.5px;line-height:1.5;resize:vertical;box-sizing:border-box">${esc(instructions)}</textarea>
-              <div style="font-size:9.5px;color:var(--text-dim);margin-top:4px;font-style:italic">Al copiar cada escena saldrá: tus instrucciones + "Guion en español:" + texto de esa escena. Perfecto para HeyGen / Flash Omni / Veo.</div>
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px;flex-wrap:wrap">
+                <span style="font-size:9.5px;color:#ff9866;font-weight:700;letter-spacing:0.3px;text-transform:uppercase">💾 Mis plantillas</span>
+                <button class="btn btn-ghost btn-small" data-save-scene-tpl="${i}" style="padding:2px 8px;font-size:10px;background:rgba(255,152,102,0.18);border:1px solid rgba(255,152,102,0.45);color:#ff9866;font-weight:600">💾 Guardar como plantilla</button>
+              </div>
+              <div data-scene-tpl-list="${i}" style="display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;padding:6px;background:var(--bg-card);border:1px dashed rgba(255,152,102,0.25);border-radius:4px;min-height:30px;align-items:center"></div>
+              <div style="font-size:9.5px;color:var(--text-dim);margin-top:4px;font-style:italic">Click en una plantilla → se carga arriba. Click en ✎ para editarla. Al copiar cada escena saldrá: tus instrucciones + "Guion en español:" + texto de esa escena.</div>
             </div>
             ${scenesHtml}
           </div>`;
       }).join('');
+    // v3.11.126: renderizar pills de plantillas + bindear botón guardar
+    list.querySelectorAll('[data-scene-tpl-list]').forEach(el => {
+      renderSceneTplPills(el, parseInt(el.dataset.sceneTplList, 10));
+    });
+    list.querySelectorAll('[data-save-scene-tpl]').forEach(btn => {
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const idx = parseInt(btn.dataset.saveSceneTpl, 10);
+        openSceneTplModalForCreate(idx, entryId);
+      });
+    });
     list.querySelectorAll('[data-tp-variation]').forEach(b => b.addEventListener('click', () => {
       openTeleprompter(variations[parseInt(b.dataset.tpVariation)].text, entryId);
     }));
@@ -3257,6 +3303,175 @@ function formatSceneForCopy(sceneText, instructions) {
   const instr = (instructions || '').trim();
   if (!instr) return sceneText || '';
   return `${instr}\n\nGuion en español:\n${sceneText || ''}`;
+}
+
+// =============================================================================
+// v3.11.126: PLANTILLAS de instrucciones de "Dividir en escenas"
+// Estructura igual a captionTemplates: { name, folder, text, usageCount,
+// createdBy, createdByName, createdAt, editedAt, lastUsedAt, workspaceId }
+// =============================================================================
+function _sceneTplFolderColor(folder) {
+  if (!folder) return '#ff9866';
+  let hash = 0;
+  for (let i = 0; i < folder.length; i++) hash = folder.charCodeAt(i) + ((hash << 5) - hash);
+  const hue = Math.abs(hash) % 360;
+  const h = hue / 360, s = 0.62, l = 0.58;
+  const k = n => (n + h * 12) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = n => Math.round(255 * (l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1))))).toString(16).padStart(2, '0');
+  return '#' + f(0) + f(8) + f(4);
+}
+function _hexToRgba(hex, a) {
+  const m = (hex || '').replace('#', '');
+  if (m.length !== 6) return `rgba(255,152,102,${a})`;
+  const r = parseInt(m.slice(0, 2), 16), g = parseInt(m.slice(2, 4), 16), b = parseInt(m.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+// Pinta la fila de pills debajo de la textarea de instrucciones de una variación.
+function renderSceneTplPills(containerEl, variationIdx) {
+  if (!containerEl) return;
+  if (!Array.isArray(sceneInstructionTemplates) || sceneInstructionTemplates.length === 0) {
+    containerEl.innerHTML = '<span style="font-size:10px;color:var(--text-dim);font-style:italic">Sin plantillas guardadas. Escribí instrucciones arriba y dale 💾.</span>';
+    return;
+  }
+  containerEl.innerHTML = sceneInstructionTemplates.map(t => {
+    const folder = t.folder || 'General';
+    const c = _sceneTplFolderColor(folder);
+    const name = t.name || (t.text || '').slice(0, 32);
+    const titleAttr = esc((t.text || '').slice(0, 240) + ((t.text || '').length > 240 ? '...' : ''));
+    return `
+      <div class="scene-tpl-pill" data-scene-tpl="${esc(t.id)}" data-scene-tpl-var="${variationIdx}" title="${titleAttr}" style="display:inline-flex;align-items:center;gap:6px;padding:3px 8px 3px 4px;background:${_hexToRgba(c, 0.15)};border:1px solid ${_hexToRgba(c, 0.45)};border-radius:14px;font-size:10.5px;cursor:pointer;line-height:1.4;user-select:none;color:var(--text-primary)">
+        <span style="background:${_hexToRgba(c, 0.32)};color:${c};font-weight:700;font-size:9px;padding:2px 6px;border-radius:10px;letter-spacing:0.2px">${esc(folder)}</span>
+        <span style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(name)}</span>
+        <span class="scene-tpl-edit" data-edit-scene-tpl="${esc(t.id)}" title="Editar" style="opacity:0.55;padding:0 2px;font-size:11px">&#9998;</span>
+      </div>`;
+  }).join('');
+  containerEl.querySelectorAll('[data-scene-tpl]').forEach(el => {
+    el.addEventListener('click', (e) => {
+      if (e.target.dataset.editSceneTpl) {
+        e.stopPropagation();
+        openSceneTplModalForEdit(e.target.dataset.editSceneTpl);
+      } else {
+        useSceneTpl(el.dataset.sceneTpl, parseInt(el.dataset.sceneTplVar, 10));
+      }
+    });
+  });
+}
+
+// Aplica la plantilla a la textarea de instrucciones de la variación.
+function useSceneTpl(tplId, variationIdx) {
+  const tpl = sceneInstructionTemplates.find(t => t.id === tplId);
+  if (!tpl) return;
+  const ta = document.querySelector(`[data-var-scene-instructions="${variationIdx}"]`);
+  if (!ta) return;
+  if (ta.value.trim() && !confirm('Ya hay instrucciones escritas. Reemplazarlas con esta plantilla?')) return;
+  ta.value = tpl.text || '';
+  ta.focus();
+  try {
+    db.collection('sceneInstructionTemplates').doc(tplId).update({
+      usageCount: (tpl.usageCount || 0) + 1,
+      lastUsedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }).catch(() => {});
+  } catch (_) {}
+}
+
+function updateSceneTplFolderOptions() {
+  const dl = document.getElementById('sceneTplFolderList');
+  if (!dl) return;
+  const folders = [...new Set(sceneInstructionTemplates.map(t => t.folder || 'General'))].sort();
+  dl.innerHTML = folders.map(f => `<option value="${esc(f)}">`).join('');
+}
+
+function openSceneTplModalForCreate(variationIdx, entryId) {
+  editingSceneTplId = null;
+  _sceneTplTargetVariation = { entryId, variationIdx };
+  const ta = document.querySelector(`[data-var-scene-instructions="${variationIdx}"]`);
+  const currentText = ta ? ta.value.trim() : '';
+  document.getElementById('sceneTplModalTitle').innerHTML = '&#128190; Guardar plantilla de instrucciones';
+  document.getElementById('sceneTplName').value = '';
+  document.getElementById('sceneTplFolder').value = '';
+  document.getElementById('sceneTplText').value = currentText;
+  document.getElementById('deleteSceneTpl').style.display = 'none';
+  document.getElementById('sceneTplModal').classList.add('active');
+  setTimeout(() => document.getElementById('sceneTplName').focus(), 100);
+}
+
+function openSceneTplModalForEdit(id) {
+  const tpl = sceneInstructionTemplates.find(t => t.id === id);
+  if (!tpl) return;
+  editingSceneTplId = id;
+  document.getElementById('sceneTplModalTitle').innerHTML = '&#9998; Editar plantilla';
+  document.getElementById('sceneTplName').value = tpl.name || '';
+  document.getElementById('sceneTplFolder').value = tpl.folder || '';
+  document.getElementById('sceneTplText').value = tpl.text || '';
+  document.getElementById('deleteSceneTpl').style.display = '';
+  document.getElementById('sceneTplModal').classList.add('active');
+  setTimeout(() => document.getElementById('sceneTplName').focus(), 100);
+}
+
+async function saveSceneTpl() {
+  const name = document.getElementById('sceneTplName').value.trim();
+  const folder = document.getElementById('sceneTplFolder').value.trim() || 'General';
+  const text = document.getElementById('sceneTplText').value.trim();
+  if (!name) { alert('Ponle un nombre corto a la plantilla (lo que aparece en la pill)'); return; }
+  if (!text) { alert('La plantilla está vacía. Escribí las instrucciones que querés reusar.'); return; }
+  const payload = {
+    name,
+    folder,
+    text,
+    editedAt: firebase.firestore.FieldValue.serverTimestamp()
+  };
+  if (WS_ID) payload.workspaceId = WS_ID;
+  try {
+    if (editingSceneTplId) {
+      await db.collection('sceneInstructionTemplates').doc(editingSceneTplId).update(payload);
+    } else {
+      payload.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+      payload.lastUsedAt = firebase.firestore.FieldValue.serverTimestamp();
+      payload.usageCount = 0;
+      if (currentUser) {
+        payload.createdBy = currentUser.uid;
+        const me = teamMembers.find(m => m.id === currentUser.uid);
+        if (me) payload.createdByName = me.name || me.email || '';
+      }
+      await db.collection('sceneInstructionTemplates').add(payload);
+    }
+    document.getElementById('sceneTplModal').classList.remove('active');
+    editingSceneTplId = null;
+  } catch (e) {
+    console.error('[scene-tpl] save error', e);
+    alert('Error guardando la plantilla: ' + (e.message || e));
+  }
+}
+
+async function deleteSceneTpl() {
+  if (!editingSceneTplId) return;
+  if (!confirm('Borrar esta plantilla? No se puede deshacer.')) return;
+  try {
+    await db.collection('sceneInstructionTemplates').doc(editingSceneTplId).delete();
+    document.getElementById('sceneTplModal').classList.remove('active');
+    editingSceneTplId = null;
+  } catch (e) {
+    alert('Error borrando: ' + (e.message || e));
+  }
+}
+
+// Bind modal buttons (una sola vez al cargar deposit)
+function _setupSceneTplModal() {
+  const cancelBtn = document.getElementById('cancelSceneTpl');
+  const confirmBtn = document.getElementById('confirmSceneTpl');
+  const deleteBtn = document.getElementById('deleteSceneTpl');
+  const overlay = document.getElementById('sceneTplModal');
+  if (cancelBtn) cancelBtn.addEventListener('click', () => { overlay.classList.remove('active'); editingSceneTplId = null; });
+  if (confirmBtn) confirmBtn.addEventListener('click', saveSceneTpl);
+  if (deleteBtn) deleteBtn.addEventListener('click', deleteSceneTpl);
+  if (overlay) overlay.addEventListener('click', (e) => { if (e.target === overlay) { overlay.classList.remove('active'); editingSceneTplId = null; } });
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _setupSceneTplModal);
+} else {
+  _setupSceneTplModal();
 }
 
 // v3.11.104: split textual puro del guion en chunks por word count.

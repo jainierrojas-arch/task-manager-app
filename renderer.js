@@ -75,6 +75,26 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.126': {
+    title: '💾 Plantillas reutilizables de instrucciones en "Dividir en escenas"',
+    features: [
+      '💾 <strong>Nuevo: Mis plantillas</strong>: debajo del textarea de instrucciones de "Dividir en escenas" hay una franja con pills de tus plantillas guardadas (igual estilo que los copys de Programar contenido).',
+      '🖱 <strong>Click en una pill</strong> → se rellena automáticamente la textarea con esa instrucción. ✎ para editar.',
+      '🆕 <strong>Botón "💾 Guardar como plantilla"</strong>: abre un modal con Nombre + Carpeta + Texto (precarga lo que tengas escrito). Útil para "Avatar masculino casual", "Estudio blanco", "Cinema Veo 3", etc.',
+      '🗂 <strong>Por carpetas</strong>: cada pill muestra su carpeta como mini-chip de color (color determinístico por nombre).',
+      '👥 <strong>Compartido por workspace</strong>: las plantillas viven en colección Firestore <code>sceneInstructionTemplates</code> y se ven en TODOS los videos del workspace actual. Se ordenan por uso reciente.',
+      '⚡ Click en pill → incrementa <code>usageCount</code> + <code>lastUsedAt</code> → sube al tope.'
+    ]
+  },
+  '3.11.125': {
+    title: '🎯 Click en CUALQUIER link del Depósito abre en Explorer interno (vía postMessage)',
+    features: [
+      '🎯 <strong>TODOS los links del Depósito</strong> (videos, artículos, lo que sea) ahora se abren en el Explorer interno (nueva pestaña dentro del Task Manager). Adiós navegador externo.',
+      '🔌 <strong>Path nuevo via postMessage</strong>: como el Depósito vive como iframe del main window, mandamos un <code>postMessage</code> directo al parent en vez de pasar por IPC. Más simple y confiable.',
+      '🛟 <strong>Fallback IPC</strong> si el Depósito está en ventana separada (depositWindow).',
+      '🪵 Logs en Console: <code>[link-open] click URL {inIframe, hasOpenInExplorer}</code> + <code>[main] postMessage open-in-explorer received URL</code> + <code>[explorer] open-url URL</code>. Si no ves los logs, el script no está cargado.'
+    ]
+  },
   '3.11.124': {
     title: '🩺 Diagnósticos visibles en Reparar portadas y Abrir en Explorer',
     features: [
@@ -2965,29 +2985,36 @@ if (referencesBtn) {
   referencesBtn.addEventListener('click', async () => _goToTab('references'));
 }
 
-// v3.11.123: cuando deposit pide abrir un URL en el Explorer interno,
-// main.js manda 'navigate-explorer-to'. Cambiamos a la pestaña Explorer y
-// dispatchamos un CustomEvent que explorer-renderer.js escucha para crear
-// una nueva tab.
-console.log('[main] checking onNavigateExplorerTo support:', !!(window.api && window.api.onNavigateExplorerTo));
+// v3.11.125: helper para navegar el Explorer interno a una URL.
+function _navigateExplorerTo(url) {
+  if (!url) return;
+  console.log('[main] navigate-explorer-to', url);
+  const explorerTab = document.querySelector(`.nav-tab[data-tab="explorer"]`);
+  if (!explorerTab) {
+    console.error('[main] explorer tab NOT FOUND');
+    return;
+  }
+  _goToTab('explorer');
+  setTimeout(() => {
+    console.log('[main] dispatching explorer-open-url');
+    window.dispatchEvent(new CustomEvent('explorer-open-url', { detail: { url } }));
+  }, 150);
+}
+
+// v3.11.125: el Depósito iframe manda postMessage para abrir un link en Explorer.
+window.addEventListener('message', (e) => {
+  if (e.data && e.data.type === 'open-in-explorer' && typeof e.data.url === 'string') {
+    console.log('[main] postMessage open-in-explorer received', e.data.url);
+    _navigateExplorerTo(e.data.url);
+  }
+});
+
+// v3.11.123: también path IPC para cuando deposit corre en ventana separada.
 if (window.api && window.api.onNavigateExplorerTo) {
   window.api.onNavigateExplorerTo((url) => {
-    if (!url) return;
-    console.log('[main] navigate-explorer-to received:', url);
-    const explorerTab = document.querySelector(`.nav-tab[data-tab="explorer"]`);
-    if (!explorerTab) {
-      console.error('[main] explorer tab element NOT FOUND');
-      alert('No se encontró la pestaña Explorer. Abrí Explorer manualmente y volvé a probar.');
-      return;
-    }
-    _goToTab('explorer');
-    setTimeout(() => {
-      console.log('[main] dispatching explorer-open-url custom event');
-      window.dispatchEvent(new CustomEvent('explorer-open-url', { detail: { url } }));
-    }, 150);
+    console.log('[main] IPC navigate-explorer-to received', url);
+    _navigateExplorerTo(url);
   });
-} else {
-  console.warn('[main] window.api.onNavigateExplorerTo not exposed — IPC bridge broken');
 }
 
 // ===== FIRESTORE REAL-TIME =====

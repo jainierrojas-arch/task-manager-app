@@ -1225,6 +1225,31 @@
     </div>
   </div>
 
+  <!-- v3.11.126: Modal Guardar/Editar plantilla de instrucciones de escenas -->
+  <div class="modal-overlay" id="sceneTplModal">
+    <div class="modal" style="max-width:620px;width:95vw">
+      <div class="modal-title" id="sceneTplModalTitle">&#128190; Guardar plantilla de instrucciones</div>
+      <div class="modal-row">
+        <label>Nombre corto (lo que aparece en la pill)</label>
+        <input type="text" id="sceneTplName" placeholder="Ej: Avatar masculino casual / Escena estudio blanco" maxlength="80">
+      </div>
+      <div class="modal-row">
+        <label>Carpeta (escribe nueva o eleg&iacute; existente)</label>
+        <input type="text" id="sceneTplFolder" placeholder="Ej: HeyGen avatars / Flash Omni / Veo cinematogr&aacute;fico" list="sceneTplFolderList" maxlength="60">
+        <datalist id="sceneTplFolderList"></datalist>
+      </div>
+      <div class="modal-row">
+        <label>Contenido de la instrucci&oacute;n (lo que se va a repetir encima de cada escena)</label>
+        <textarea id="sceneTplText" rows="10" placeholder="Ej:&#10;Personaje: hombre joven latino, ropa casual oscura.&#10;C&aacute;mara: medium shot, fondo desenfocado.&#10;Iluminaci&oacute;n: cinematogr&aacute;fica suave.&#10;Voz neutra, energ&iacute;a media." style="font-family:inherit;width:100%;box-sizing:border-box;resize:vertical;line-height:1.5;padding:10px;min-height:200px"></textarea>
+      </div>
+      <div class="modal-buttons">
+        <button class="btn btn-ghost" id="cancelSceneTpl">Cancelar</button>
+        <button class="btn btn-danger" id="deleteSceneTpl" style="display:none">Eliminar</button>
+        <button class="btn btn-primary" id="confirmSceneTpl">&#128190; Guardar</button>
+      </div>
+    </div>
+  </div>
+
   <div class="toast-container" id="toastContainer"></div>
 
   <script src="vendor/firebase-app-compat.js"></script>
