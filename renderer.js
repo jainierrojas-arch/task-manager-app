@@ -75,6 +75,19 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.140': {
+    title: '🌐 Chrome NATIVO: tu Chrome real posicionado sobre el Explorer (Google acepta login)',
+    features: [
+      '🌐 <strong>Botón nuevo "🌐 Chrome Nativo"</strong> (verde, primario): lanza TU Google Chrome real con <code>--app=URL</code> y un perfil dedicado. Usa AppleScript para posicionar la ventana de Chrome EXACTAMENTE sobre el área del Explorer dentro del Task Manager.',
+      '✅ <strong>Es Chrome de verdad</strong> — no puppeteer, no CDP. Sin <code>navigator.webdriver</code>, sin detección. Google acepta login.',
+      '⚡ <strong>Performance nativa</strong> — sin frames JPEG, sin IPC sobrecargado. Es el render normal de Chrome.',
+      '🪟 <strong>Posicionamiento en tiempo real</strong>: cuando movés/redimensionás el Task Manager, polling cada 150ms reposiciona Chrome. Si minimizás el Task Manager, Chrome se oculta.',
+      '🔐 <strong>Sesión 100% persistente</strong>: las cookies, passwords, extensiones (si las instalás) viven en <code>~/Library/Application Support/task-manager-app/chrome-overlay-profile/</code>.',
+      '⚠ <strong>Primera vez</strong>: necesita permisos de <strong>Accessibility</strong>. Si no se posiciona, andá a System Settings → Privacy & Security → Accessibility → habilitá "Task Manager".',
+      '⚙ <strong>Botón legacy "⚙ Legacy"</strong>: queda el viejo Chrome Real (CDP screencast) por si querés probarlo. No es el recomendado.',
+      '🪟 <strong>Solo macOS</strong> por ahora — Windows necesita otra implementación.'
+    ]
+  },
   '3.11.139': {
     title: '🔧 Chrome Real: ataque integral a freezes + sesión persistente + diagnóstico downloads',
     features: [

@@ -2246,6 +2246,32 @@ function registerIpcHandlers() {
   ipcMain.handle('chrome-embed-close-tab', async (_, id) => { if (chromeEmbed) return chromeEmbed.closeTab(id); return { ok: false }; });
   ipcMain.handle('chrome-embed-list-tabs', async () => { if (chromeEmbed) return chromeEmbed.listTabs(); return []; });
 
+  // v3.11.140: Chrome Overlay — TU Chrome real posicionado sobre el área del Explorer.
+  let chromeOverlay = null;
+  try { chromeOverlay = require('./chrome-overlay'); } catch (e) { console.warn('[chrome-overlay] module not loaded:', e.message); }
+
+  ipcMain.handle('chrome-overlay-start', async (_, opts) => {
+    if (!chromeOverlay) return { ok: false, error: 'módulo no cargado' };
+    try {
+      return await chromeOverlay.start({ ...(opts || {}), mainWindow });
+    } catch (err) {
+      return { ok: false, error: err.message || String(err) };
+    }
+  });
+  ipcMain.handle('chrome-overlay-stop', async () => {
+    if (!chromeOverlay) return { ok: true };
+    try { await chromeOverlay.stop(); return { ok: true }; }
+    catch (err) { return { ok: false, error: err.message }; }
+  });
+  ipcMain.handle('chrome-overlay-show', async () => {
+    if (chromeOverlay) await chromeOverlay.show();
+    return { ok: true };
+  });
+  ipcMain.handle('chrome-overlay-status', async () => ({
+    active: chromeOverlay ? chromeOverlay.isActive() : false,
+    chromeAvailable: chromeOverlay ? chromeOverlay.chromeAvailable() : false
+  }));
+
   // v3.11.135: subir un archivo LOCAL (de los descargados por Chrome) a Cloudinary.
   ipcMain.handle('upload-local-file-to-cloudinary', async (_, payload) => {
     const filePath = payload && payload.filePath;

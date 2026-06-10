@@ -83,6 +83,14 @@ contextBridge.exposeInMainWorld('api', {
   // v3.11.135: subir archivo local descargado a Cloudinary
   uploadLocalFileToCloudinary: (filePath) => ipcRenderer.invoke('upload-local-file-to-cloudinary', { filePath }),
 
+  // v3.11.140: Chrome Overlay nativo
+  chromeOverlay: {
+    start: (opts) => ipcRenderer.invoke('chrome-overlay-start', opts),
+    stop: () => ipcRenderer.invoke('chrome-overlay-stop'),
+    show: () => ipcRenderer.invoke('chrome-overlay-show'),
+    status: () => ipcRenderer.invoke('chrome-overlay-status')
+  },
+
   // Tabs view mode
   getTabsMultirow: () => ipcRenderer.invoke('get-tabs-multirow'),
   setTabsMultirow: (v) => ipcRenderer.invoke('set-tabs-multirow', v),

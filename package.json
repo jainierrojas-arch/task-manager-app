@@ -1,6 +1,6 @@
 {
   "name": "task-manager-app",
-  "version": "3.11.139",
+  "version": "3.11.140",
   "description": "App colaborativa de gestion de tareas con Firebase y Telegram",
   "main": "main.js",
   "scripts": {
@@ -30,6 +30,7 @@
       "chatbot-renderer.js",
       "explorer-renderer.js",
       "chrome-embed.js",
+      "chrome-overlay.js",
       "node_modules/puppeteer-core/**/*",
       "node_modules/puppeteer-extra/**/*",
       "node_modules/puppeteer-extra-plugin-stealth/**/*",

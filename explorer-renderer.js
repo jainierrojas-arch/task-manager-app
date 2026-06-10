@@ -796,7 +796,46 @@
     createTab(url);
   });
 
-  // ===== v3.11.130: Chrome Real Embed (CDP screencast) =====
+  // ===== v3.11.140: Chrome Nativo (overlay con tu Chrome real) =====
+  const chromeNativeBtn = document.getElementById('explorerToggleChromeNative');
+  let chromeNativeActive = false;
+  if (chromeNativeBtn) {
+    chromeNativeBtn.addEventListener('click', async () => {
+      if (!window.api || !window.api.chromeOverlay) {
+        alert('chromeOverlay no disponible (preload viejo). Reabrí la app.');
+        return;
+      }
+      if (chromeNativeActive) {
+        await window.api.chromeOverlay.stop();
+        chromeNativeActive = false;
+        chromeNativeBtn.textContent = '🌐 Chrome Nativo';
+        chromeNativeBtn.style.background = 'rgba(76,175,80,0.18)';
+        chromeNativeBtn.style.borderColor = 'rgba(76,175,80,0.55)';
+        chromeNativeBtn.style.color = '#9ee49e';
+        return;
+      }
+      // Calcular offset del Explorer area: sidebar=~220px, top toolbar=~130px, bottom=~80px
+      let initialUrl = 'https://www.google.com/';
+      try { const b = getActiveBrowser(); if (b) initialUrl = b.getURL() || initialUrl; } catch (_) {}
+      chromeNativeBtn.textContent = '⏳ Lanzando Chrome...';
+      const result = await window.api.chromeOverlay.start({
+        url: initialUrl,
+        explorerOffset: { top: 130, left: 220, right: 0, bottom: 80 }
+      });
+      if (!result || !result.ok) {
+        alert('No se pudo lanzar Chrome Nativo: ' + ((result && result.error) || 'error desconocido') + '\n\nSi es la primera vez, abrí System Settings → Privacy & Security → Accessibility y habilitá "Task Manager" en la lista.');
+        chromeNativeBtn.textContent = '🌐 Chrome Nativo';
+        return;
+      }
+      chromeNativeActive = true;
+      chromeNativeBtn.textContent = '✕ Cerrar Chrome';
+      chromeNativeBtn.style.background = 'rgba(244,67,54,0.18)';
+      chromeNativeBtn.style.borderColor = 'rgba(244,67,54,0.55)';
+      chromeNativeBtn.style.color = '#ff8b8b';
+    });
+  }
+
+  // ===== v3.11.130: Chrome Real Embed (CDP screencast) — LEGACY =====
   const chromeBtn = document.getElementById('explorerToggleChromeReal');
   const chromeWrap = document.getElementById('chromeEmbedWrap');
   const chromeCanvas = document.getElementById('chromeEmbedCanvas');
