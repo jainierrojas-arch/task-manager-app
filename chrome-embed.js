@@ -60,18 +60,20 @@ async function start({ url, sender, width, height, quality }) {
   // protocol funcione bien) pero la ventana queda oculta visualmente con
   // posición offscreen + size mínimo. El usuario solo ve el canvas dentro de
   // la app, no la ventana real de Chrome.
+  // v3.11.133: headless 'new' = Chrome real pero SIN ventana visible. Sigue
+  // renderizando todo igual, screencast funciona, pero nadie ve la ventana
+  // fantasma de Chrome aparecer. Mucho más limpio que --window-position=-2400.
   const launchOpts = {
-    channel: 'chrome',                              // auto-detect Chrome del sistema
-    headless: false,                                // no headless — necesitamos render real para screencast
-    userDataDir: profileDir(),                      // perfil dedicado de Task Manager
+    channel: 'chrome',
+    headless: 'new',                                // invisible — el render lo vemos via canvas
+    userDataDir: profileDir(),
     args: [
       '--no-first-run',
       '--no-default-browser-check',
       '--disable-features=PrivacySandboxSettings4',
-      '--window-position=-2400,-2400',              // fuera de pantalla
       `--window-size=${state.width},${state.height}`
     ],
-    defaultViewport: { width: state.width, height: state.height }
+    defaultViewport: { width: state.width, height: state.height, deviceScaleFactor: 1 }
   };
   try {
     state.browser = await puppeteer.launch(launchOpts);

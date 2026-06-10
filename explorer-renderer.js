@@ -886,6 +886,7 @@
   }
 
   // Recibir frames del main process y pintarlos
+  let _frameCount = 0;
   if (window.api && window.api.chromeEmbed) {
     window.api.chromeEmbed.onFrame((payload) => {
       if (!chromeActive || !payload || !payload.data) return;
@@ -893,31 +894,25 @@
       const dataUri = 'data:image/jpeg;base64,' + payload.data;
       chromeImg.onload = () => {
         const ctx = chromeCanvas.getContext('2d');
-        // Ajustar tamaño del canvas a su contenedor
         const rect = chromeCanvas.getBoundingClientRect();
         const dpr = window.devicePixelRatio || 1;
-        if (chromeCanvas.width !== Math.floor(rect.width * dpr) || chromeCanvas.height !== Math.floor(rect.height * dpr)) {
-          chromeCanvas.width = Math.floor(rect.width * dpr);
-          chromeCanvas.height = Math.floor(rect.height * dpr);
+        const targetW = Math.floor(rect.width * dpr);
+        const targetH = Math.floor(rect.height * dpr);
+        if (chromeCanvas.width !== targetW || chromeCanvas.height !== targetH) {
+          chromeCanvas.width = targetW;
+          chromeCanvas.height = targetH;
         }
+        // v3.11.133: STRETCH puro (object-fit:fill). Sin letterbox. Si Chrome
+        // se lanza con el viewport del tamaño del canvas, la diferencia de
+        // aspect ratio es mínima — mejor un mini stretch invisible que
+        // barras negras gigantes.
+        if (_frameCount < 3) {
+          console.log('[chrome-real] frame', _frameCount, '— img:', chromeImg.width + 'x' + chromeImg.height, '· canvas:', chromeCanvas.width + 'x' + chromeCanvas.height, '· css:', Math.floor(rect.width) + 'x' + Math.floor(rect.height), '· dpr:', dpr);
+        }
+        _frameCount++;
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'medium';
-        // Pintamos el frame escalando para llenar el canvas manteniendo aspecto
-        const imgRatio = chromeImg.width / chromeImg.height;
-        const canvRatio = chromeCanvas.width / chromeCanvas.height;
-        let dw, dh, dx, dy;
-        if (imgRatio > canvRatio) {
-          dw = chromeCanvas.width;
-          dh = dw / imgRatio;
-          dx = 0; dy = (chromeCanvas.height - dh) / 2;
-        } else {
-          dh = chromeCanvas.height;
-          dw = dh * imgRatio;
-          dy = 0; dx = (chromeCanvas.width - dw) / 2;
-        }
-        ctx.fillStyle = '#000';
-        ctx.fillRect(0, 0, chromeCanvas.width, chromeCanvas.height);
-        ctx.drawImage(chromeImg, dx, dy, dw, dh);
+        ctx.drawImage(chromeImg, 0, 0, chromeCanvas.width, chromeCanvas.height);
       };
       chromeImg.src = dataUri;
     });
@@ -929,27 +924,17 @@
 
   // ===== Input forwarding (mouse + keyboard + wheel) =====
   function canvasToPagePos(e) {
-    // Traduce coordenadas del canvas → coordenadas del viewport de Chrome real.
-    // El frame está pintado con letterbox; tenemos que invertir esa transformación.
+    // v3.11.133: con stretch puro (sin letterbox), la traducción es lineal.
+    // Mouse en CSS pixels → viewport de Chrome (que es del MISMO tamaño CSS).
     const rect = chromeCanvas.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
-    const canvW = chromeCanvas.width;
-    const canvH = chromeCanvas.height;
-    const imgW = chromeImg.width || 1280;
-    const imgH = chromeImg.height || 720;
-    const imgRatio = imgW / imgH;
-    const canvRatio = canvW / canvH;
-    let dw, dh, dx, dy;
-    if (imgRatio > canvRatio) {
-      dw = canvW; dh = dw / imgRatio; dx = 0; dy = (canvH - dh) / 2;
-    } else {
-      dh = canvH; dw = dh * imgRatio; dy = 0; dx = (canvW - dw) / 2;
-    }
-    const xInCanvas = (e.clientX - rect.left) * dpr;
-    const yInCanvas = (e.clientY - rect.top) * dpr;
-    const xInImg = (xInCanvas - dx) / dw * imgW;
-    const yInImg = (yInCanvas - dy) / dh * imgH;
-    return { x: Math.max(0, Math.min(imgW, xInImg)), y: Math.max(0, Math.min(imgH, yInImg)) };
+    const imgW = chromeImg.width || rect.width;
+    const imgH = chromeImg.height || rect.height;
+    const xRatio = (e.clientX - rect.left) / rect.width;
+    const yRatio = (e.clientY - rect.top) / rect.height;
+    return {
+      x: Math.max(0, Math.min(imgW, xRatio * imgW)),
+      y: Math.max(0, Math.min(imgH, yRatio * imgH))
+    };
   }
   function modifiersOf(e) {
     let m = 0;

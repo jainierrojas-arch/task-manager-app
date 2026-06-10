@@ -75,6 +75,14 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.133': {
+    title: '👻 Chrome Real: ventana invisible (headless) + stretch puro sin letterbox',
+    features: [
+      '👻 <strong>Sin ventana fantasma</strong>: ahora usamos <code>headless: "new"</code> (Chrome real pero sin ventana visible). Adiós a la ventana de Chrome que aparecía cuando tocabas "🌐 Chrome Real".',
+      '🖼 <strong>Sin barras negras</strong>: el render usa stretch puro al canvas (sin math de letterbox). Si hay un milímetro de aspect ratio diferente, se estira invisible — mejor que barras negras gigantes.',
+      '🪵 Logs en Console: los primeros 3 frames imprimen dimensiones reales <code>[chrome-real] frame N — img: WxH · canvas: WxH · css: WxH · dpr: X</code> para diagnosticar si hay desajuste de tamaños.'
+    ]
+  },
   '3.11.132': {
     title: '🖼 Chrome Real: arregladas barras negras + más nitidez + resize automático',
     features: [
