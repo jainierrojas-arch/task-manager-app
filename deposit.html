@@ -329,6 +329,11 @@
       flex-direction: column;
     }
     .entry-card:hover { border-color: var(--accent); box-shadow: 0 4px 14px rgba(108,99,255,0.12); }
+    /* v3.11.127: drag-and-drop visual feedback */
+    .entry-card[draggable="true"] { cursor: grab; }
+    .entry-card.dragging { opacity: 0.45; cursor: grabbing; transform: scale(0.97); transition: transform 0.1s, opacity 0.1s; }
+    .entry-card.drag-over { border-color: #ff9866 !important; box-shadow: 0 0 0 2px rgba(255,152,102,0.5), 0 8px 24px rgba(255,152,102,0.25) !important; transform: translateY(-2px); transition: transform 0.1s, box-shadow 0.1s; }
+    .entry-card .entry-cover, .entry-card .entry-cover * { pointer-events: auto; }
     .entry-card.converted {
       opacity: 0.75;
       border-left: 3px solid var(--success);

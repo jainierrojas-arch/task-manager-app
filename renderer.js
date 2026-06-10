@@ -75,6 +75,17 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.127': {
+    title: '🎯 Drag-and-drop para reordenar videos en Depósito y Referencias',
+    features: [
+      '🖱 <strong>Arrastrá cualquier card</strong> dentro del Depósito o Referencias para reordenarla. Solo dentro de la misma subcategoría.',
+      '💾 <strong>El orden se persiste</strong> en Firestore (campo <code>manualOrder</code>). Se ve igual en todos los dispositivos del workspace.',
+      '✨ <strong>Feedback visual</strong>: la card arrastrada se ve semi-transparente, la card destino se resalta con borde naranja + sombra.',
+      '⚡ <strong>UI optimista</strong>: el reorden visual es instantáneo. El batch update a Firestore corre en background.',
+      '🔄 Las cards NUEVAS (sin <code>manualOrder</code>) aparecen al final, ordenadas por fecha de creación.',
+      '🖐 Mientras no arrastres, los clicks en cover/chips/botones funcionan normal.'
+    ]
+  },
   '3.11.126': {
     title: '💾 Plantillas reutilizables de instrucciones en "Dividir en escenas"',
     features: [

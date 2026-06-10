@@ -201,11 +201,22 @@ function subcategoriesOf(parentId) { return categories.filter(c => c.parentId ==
 // Devuelve entries en una categoria/subcategoria. Por default OCULTA las que
 // estan en proceso (status='converted') porque ya fueron asignadas a tarea
 // y deben aparecer "fuera del deposito" hasta que se completen o se cancelen.
+// v3.11.127: si una entry tiene manualOrder (asignado via drag-and-drop), se
+// respeta ese orden. Sino fallback a createdAt desc.
 function entriesIn(catId, subId) {
   const visible = (e) => e.status !== 'converted';
-  if (subId === '__unsorted__') return entries.filter(e => e.categoryId === catId && !e.subcategoryId && visible(e));
-  if (subId) return entries.filter(e => e.categoryId === catId && e.subcategoryId === subId && visible(e));
-  return entries.filter(e => e.categoryId === catId && visible(e));
+  let arr;
+  if (subId === '__unsorted__') arr = entries.filter(e => e.categoryId === catId && !e.subcategoryId && visible(e));
+  else if (subId) arr = entries.filter(e => e.categoryId === catId && e.subcategoryId === subId && visible(e));
+  else arr = entries.filter(e => e.categoryId === catId && visible(e));
+  return arr.slice().sort((a, b) => {
+    const am = typeof a.manualOrder === 'number' ? a.manualOrder : Number.MAX_SAFE_INTEGER;
+    const bm = typeof b.manualOrder === 'number' ? b.manualOrder : Number.MAX_SAFE_INTEGER;
+    if (am !== bm) return am - bm;
+    const at = (a.createdAt && a.createdAt.toMillis) ? a.createdAt.toMillis() : 0;
+    const bt = (b.createdAt && b.createdAt.toMillis) ? b.createdAt.toMillis() : 0;
+    return bt - at;
+  });
 }
 
 const userColors = [
@@ -919,6 +930,8 @@ function renderEntries() {
     area.innerHTML = `<div class="entry-grid">${subEntries.map(e => renderEntryHtml(e)).join('')}</div>`;
     lazyFetchCovers(subEntries);
     ensureCoverDimensions(subEntries);
+    // v3.11.127: drag-and-drop para reordenar las cards
+    enableEntryDragAndDrop(area, subEntries);
     // v3.11.124: handler para botón "Reparar portadas" — con feedback visible
     const _repairBtn = document.getElementById('repairCoversBtn');
     console.log('[repair-covers] button render check:', { found: !!_repairBtn, socialEntries: socialEntries.length, needsRepair: needsRepair.length });
@@ -1161,7 +1174,7 @@ function renderEntryHtml(e) {
     }
   }
   return `
-    <div class="entry-card ${e.status === 'converted' ? 'converted' : ''} ${hasCarrusel ? 'is-carrusel' : ''}" data-entry-id="${esc(e.id)}">
+    <div class="entry-card ${e.status === 'converted' ? 'converted' : ''} ${hasCarrusel ? 'is-carrusel' : ''}" data-entry-id="${esc(e.id)}" draggable="true">
       ${coverHtml}
       <div class="entry-card-body">
         <div class="entry-card-head">
@@ -1541,6 +1554,76 @@ async function repairSocialCovers(entries, onProgress) {
   }
   console.log(`[repair-covers] done - ${okCount}/${entries.length} ok`);
   return { ok: okCount, total: entries.length };
+}
+
+// =============================================================================
+// v3.11.127: drag-and-drop para reordenar entries en el grid
+// Persiste el orden via manualOrder en Firestore (0..n-1 secuencial).
+// =============================================================================
+let _draggingEntryId = null;
+
+function enableEntryDragAndDrop(area, subEntries) {
+  const grid = area.querySelector('.entry-grid');
+  if (!grid) return;
+  const cards = Array.from(grid.querySelectorAll('.entry-card[draggable="true"]'));
+  cards.forEach(card => {
+    card.addEventListener('dragstart', (e) => {
+      _draggingEntryId = card.dataset.entryId;
+      card.classList.add('dragging');
+      try { e.dataTransfer.effectAllowed = 'move'; } catch (_) {}
+      try { e.dataTransfer.setData('text/plain', _draggingEntryId); } catch (_) {}
+    });
+    card.addEventListener('dragend', () => {
+      card.classList.remove('dragging');
+      grid.querySelectorAll('.entry-card.drag-over').forEach(c => c.classList.remove('drag-over'));
+      _draggingEntryId = null;
+    });
+    card.addEventListener('dragover', (e) => {
+      if (!_draggingEntryId || card.dataset.entryId === _draggingEntryId) return;
+      e.preventDefault();
+      try { e.dataTransfer.dropEffect = 'move'; } catch (_) {}
+      card.classList.add('drag-over');
+    });
+    card.addEventListener('dragleave', () => {
+      card.classList.remove('drag-over');
+    });
+    card.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      card.classList.remove('drag-over');
+      const sourceId = _draggingEntryId;
+      const targetId = card.dataset.entryId;
+      _draggingEntryId = null;
+      if (!sourceId || sourceId === targetId) return;
+      const sourceIdx = subEntries.findIndex(en => en.id === sourceId);
+      const targetIdx = subEntries.findIndex(en => en.id === targetId);
+      if (sourceIdx < 0 || targetIdx < 0) return;
+      // Insertar source antes de target. Si source estaba antes que target,
+      // al sacarlo el index de target baja en 1.
+      const newOrder = subEntries.slice();
+      const [moved] = newOrder.splice(sourceIdx, 1);
+      const insertAt = sourceIdx < targetIdx ? targetIdx - 1 : targetIdx;
+      newOrder.splice(insertAt, 0, moved);
+      // Mover DOM inmediatamente (UI optimista)
+      const draggedEl = grid.querySelector(`[data-entry-id="${CSS.escape(sourceId)}"]`);
+      const targetEl = grid.querySelector(`[data-entry-id="${CSS.escape(targetId)}"]`);
+      if (draggedEl && targetEl) {
+        if (sourceIdx < targetIdx) targetEl.after(draggedEl);
+        else targetEl.before(draggedEl);
+      }
+      // Persistir manualOrder secuencial en Firestore
+      try {
+        const batch = db.batch();
+        newOrder.forEach((en, idx) => {
+          if (en.manualOrder !== idx) {
+            batch.update(db.collection('depositEntries').doc(en.id), { manualOrder: idx });
+          }
+        });
+        await batch.commit();
+      } catch (err) {
+        console.error('[dnd] save manualOrder failed', err);
+      }
+    });
+  });
 }
 
 // v3.11.118: detecta si una entry tiene metadata pobre (sin descripción y/o
