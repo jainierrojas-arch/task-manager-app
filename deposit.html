@@ -1230,6 +1230,35 @@
     </div>
   </div>
 
+  <!-- v3.11.147: Modal Guardar/Editar skill (instrucción que se inyecta al prompt de Claude) -->
+  <div class="modal-overlay" id="skillModal">
+    <div class="modal" style="max-width:640px;width:95vw">
+      <div class="modal-title" id="skillModalTitle">&#129504; Nuevo skill</div>
+      <div style="font-size:11.5px;color:var(--text-secondary);margin-bottom:14px;padding:10px 12px;background:rgba(167,139,250,0.08);border-left:3px solid #a78bfa;border-radius:4px;line-height:1.5">
+        Un <strong>skill</strong> es una instrucci&oacute;n reutilizable que se inyecta al prompt de Claude CUANDO us&aacute;s "Dividir con AI". Ejemplo: <em>"En cada escena indica un plano de c&aacute;mara DISTINTO al anterior (close-up, plano medio, wide shot, POV, low angle, drone, etc.)"</em> &mdash; entonces cada escena dividida saldr&aacute; con una indicaci&oacute;n de c&aacute;mara distinta.
+      </div>
+      <div class="modal-row">
+        <label>Nombre corto (lo que aparece en la pill)</label>
+        <input type="text" id="skillName" placeholder="Ej: Variar planos de c&aacute;mara / Cliffhangers escalados / Tensi&oacute;n progresiva" maxlength="80">
+      </div>
+      <div class="modal-row">
+        <label>Carpeta (escribe nueva o eleg&iacute; existente)</label>
+        <input type="text" id="skillFolder" placeholder="Ej: C&aacute;mara / Edici&oacute;n / Storytelling" list="skillFolderList" maxlength="60">
+        <datalist id="skillFolderList"></datalist>
+      </div>
+      <div class="modal-row">
+        <label>Instrucci&oacute;n para Claude (lo que el AI va a aplicar al dividir)</label>
+        <textarea id="skillText" rows="8" placeholder="Ej:&#10;Para cada escena, sugiere un plano de c&aacute;mara DIFERENTE al de la escena anterior. Plano debe ir indicado entre corchetes al inicio del texto de la escena: [PLANO: close-up del rostro, iluminaci&oacute;n c&aacute;lida]. Variantes: close-up, medium shot, wide shot, low angle, high angle, POV, drone, over-the-shoulder, dutch angle.&#10;&#10;NO repitas el mismo plano en escenas consecutivas." style="font-family:inherit;width:100%;box-sizing:border-box;resize:vertical;line-height:1.5;padding:10px;min-height:180px"></textarea>
+        <div style="font-size:10.5px;color:var(--text-dim);margin-top:4px">Tip: s&eacute; ESPEC&Iacute;FICO. Claude sigue mejor instrucciones concretas con ejemplos que vagas.</div>
+      </div>
+      <div class="modal-buttons">
+        <button class="btn btn-ghost" id="cancelSkill">Cancelar</button>
+        <button class="btn btn-danger" id="deleteSkill" style="display:none">Eliminar</button>
+        <button class="btn btn-primary" id="confirmSkill">&#129504; Guardar skill</button>
+      </div>
+    </div>
+  </div>
+
   <!-- v3.11.126: Modal Guardar/Editar plantilla de instrucciones de escenas -->
   <div class="modal-overlay" id="sceneTplModal">
     <div class="modal" style="max-width:620px;width:95vw">

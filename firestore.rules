@@ -106,6 +106,7 @@ service cloud.firestore {
     match /directMessages/{id}             { allow read, write: if isSignedIn(); }
     match /captionTemplates/{id}           { allow read, write: if isSignedIn(); }
     match /sceneInstructionTemplates/{id}  { allow read, write: if isSignedIn(); }
+    match /scriptSkills/{id}               { allow read, write: if isSignedIn(); }
     match /personalTasks/{id}              { allow read, write: if isSignedIn(); }
     match /ideas/{id}                      { allow read, write: if isSignedIn(); }
     match /notifications/{id}              { allow read, write: if isSignedIn(); }

@@ -75,6 +75,18 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.147': {
+    title: '🎯 Nuevo: SKILLS — instrucciones que se inyectan al prompt de Claude al dividir guiones con AI',
+    features: [
+      '🎯 <strong>Skills</strong>: instrucciones reutilizables que MODIFICAN cómo Claude divide el guion. Ej: "Varía planos de cámara por escena" → cada escena dividida sale con un plano distinto.',
+      '🧠 <strong>Nuevo botón "🧠 Nuevo skill"</strong> en cada variación del modal de transcripción. Abre modal con Nombre + Carpeta + Instrucción para Claude.',
+      '✓ <strong>Multi-select</strong>: click en una pill activa el skill (✓ con highlight). Click de nuevo lo desactiva. Podés tener N skills activos al mismo tiempo.',
+      '🎬 <strong>Nuevo botón "🎬 Dividir con AI"</strong>: usa Claude para dividir la variación en escenas, inyectando los skills activos al prompt. El contador en el botón muestra cuántos skills activos: "🎬 Dividir con AI (2 skills)".',
+      '🪪 <strong>Diferencia con plantillas</strong>: las plantillas se REPITEN en cada escena al copiar. Los skills MODIFICAN el comportamiento de Claude durante la división — efecto distinto en cada escena.',
+      '🗂 Compartidos por workspace. Auto-creada categoría implícita. Ordenados por uso reciente. Eliminar con × en cada pill.',
+      '🌐 Regla Firestore <code>scriptSkills</code> agregada y desplegada (sin "Missing permissions").'
+    ]
+  },
   '3.11.146': {
     title: '🩹 Fix CRÍTICO: guardar links del Explorer rota desde v3.11.143',
     features: [

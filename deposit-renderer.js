@@ -20,7 +20,7 @@ if (_wsParams.get('isDefault') === '1' || (DEFAULT_WS_ID && WS_ID === DEFAULT_WS
   _ws_status = 'non-default';
 }
 console.log('[ws] iframe init: WS_ID=' + WS_ID + ' DEFAULT_WS_ID=' + DEFAULT_WS_ID + ' status=' + _ws_status);
-const WS_SCOPED_COLLECTIONS = new Set(['tasks', 'projects', 'depositEntries', 'depositCategories', 'scheduledPosts', 'chatMessages', 'captionTemplates', 'sceneInstructionTemplates', 'ideas']);
+const WS_SCOPED_COLLECTIONS = new Set(['tasks', 'projects', 'depositEntries', 'depositCategories', 'scheduledPosts', 'chatMessages', 'captionTemplates', 'sceneInstructionTemplates', 'scriptSkills', 'ideas']);
 function _belongsToWs(d) {
   // v3.11.18: aislamiento real entre workspaces.
   // - Sin WS_ID: mostrar todo (modo standalone, no debería pasar normalmente).
@@ -152,7 +152,12 @@ let teamMembers = [];
 // v3.11.126: plantillas reutilizables para las instrucciones de "Dividir en escenas"
 let sceneInstructionTemplates = [];
 let editingSceneTplId = null;
-let _sceneTplTargetVariation = null; // { entryId, variationIdx } — para guardar/aplicar
+let _sceneTplTargetVariation = null;
+// v3.11.147: skills — instrucciones que SE INYECTAN al prompt de Claude cuando
+// se divide con AI. Ejemplo: "varía planos de cámara por escena".
+let scriptSkills = [];
+let editingSkillId = null;
+let _activeSkillsByVariation = {}; // { variationIdx: Set<skillId> } — activos en cada variación
 let selectedCategoryId = null;
 let selectedSubcategoryId = null; // null=mostrar grid de subs, '__unsorted__'=ideas sin sub, ID=ideas de esa sub
 let editingEntryId = null;
@@ -401,6 +406,22 @@ function subscribeAll() {
     teamMembers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     renderMemberSelects();
   }, err => console.error('[deposit] users error:', err)));
+
+  // v3.11.147: skills para AI Split
+  unsubscribers.push(db.collection('scriptSkills').onSnapshot(snap => {
+    scriptSkills = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(_belongsToWs);
+    scriptSkills.sort((a, b) => {
+      const al = a.lastUsedAt && a.lastUsedAt.toMillis ? a.lastUsedAt.toMillis() : 0;
+      const bl = b.lastUsedAt && b.lastUsedAt.toMillis ? b.lastUsedAt.toMillis() : 0;
+      if (al !== bl) return bl - al;
+      return (a.name || '').localeCompare(b.name || '');
+    });
+    updateSkillFolderOptions();
+    const mod = document.getElementById('transcriptionModal');
+    if (mod && mod.classList.contains('active')) {
+      document.querySelectorAll('[data-skills-list]').forEach(el => renderSkillsPills(el, parseInt(el.dataset.skillsList, 10)));
+    }
+  }, err => console.error('[deposit] scriptSkills error:', err)));
 
   // v3.11.126: plantillas de instrucciones para "Dividir en escenas"
   unsubscribers.push(db.collection('sceneInstructionTemplates').onSnapshot(snap => {
@@ -3319,6 +3340,19 @@ function _renderTranscriptionModalContent(entryId) {
               </div>
               <div data-scene-tpl-list="${i}" style="display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;padding:6px;background:var(--bg-card);border:1px dashed rgba(255,152,102,0.25);border-radius:4px;min-height:30px;align-items:center"></div>
               <div style="font-size:9.5px;color:var(--text-dim);margin-top:4px;font-style:italic">Click en una plantilla → se carga arriba. Click en ✎ para editarla. Al copiar cada escena saldrá: tus instrucciones + "Guion en español:" + texto de esa escena.</div>
+
+              <!-- v3.11.147: Skills (instrucciones que se inyectan al prompt de Claude en AI Split) -->
+              <div style="margin-top:14px;padding-top:12px;border-top:1px dashed rgba(167,139,250,0.25)">
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+                  <span style="font-size:10px;color:#a78bfa;font-weight:700;letter-spacing:0.3px;text-transform:uppercase">🎯 Mis Skills (AI Split)</span>
+                  <div style="display:flex;gap:6px;flex-wrap:wrap">
+                    <button class="btn btn-ghost btn-small" data-new-skill="1" style="padding:2px 8px;font-size:10px;background:rgba(167,139,250,0.18);border:1px solid rgba(167,139,250,0.45);color:#c4b5fd;font-weight:600">🧠 Nuevo skill</button>
+                    <button class="btn btn-primary btn-small" data-ai-split-var="${i}" style="padding:4px 10px;font-size:10px;background:#7c5cff;border-color:#6d4dff;opacity:0.7" title="Divide esta variación con Claude inyectando los skills activos al prompt. Si no hay skills activos, igual usa AI pero sin guías especiales.">🎬 Dividir con AI</button>
+                  </div>
+                </div>
+                <div data-skills-list="${i}" style="display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;padding:6px;background:var(--bg-card);border:1px dashed rgba(167,139,250,0.25);border-radius:4px;min-height:30px;align-items:center"></div>
+                <div style="font-size:9.5px;color:var(--text-dim);margin-top:4px;font-style:italic">Click en un skill para activarlo (✓). Activos se inyectan al prompt cuando hacés "Dividir con AI". Ejemplo: skill "Varía planos de cámara" → cada escena saldrá con [PLANO: ...] distinto.</div>
+              </div>
             </div>
             ${scenesHtml}
           </div>`;
@@ -3332,6 +3366,23 @@ function _renderTranscriptionModalContent(entryId) {
         ev.stopPropagation();
         const idx = parseInt(btn.dataset.saveSceneTpl, 10);
         openSceneTplModalForCreate(idx, entryId);
+      });
+    });
+    // v3.11.147: renderizar pills de skills + bindear botones AI Split y Nuevo skill
+    list.querySelectorAll('[data-skills-list]').forEach(el => {
+      renderSkillsPills(el, parseInt(el.dataset.skillsList, 10));
+    });
+    list.querySelectorAll('[data-new-skill]').forEach(btn => {
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        openSkillModalForCreate();
+      });
+    });
+    list.querySelectorAll('[data-ai-split-var]').forEach(btn => {
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const idx = parseInt(btn.dataset.aiSplitVar, 10);
+        aiSplitVariationWithSkills(entryId, idx, btn);
       });
     });
     list.querySelectorAll('[data-tp-variation]').forEach(b => b.addEventListener('click', () => {
@@ -3578,6 +3629,286 @@ async function deleteSceneTpl() {
     editingSceneTplId = null;
   } catch (e) {
     alert('Error borrando: ' + (e.message || e));
+  }
+}
+
+// =============================================================================
+// v3.11.147: SKILLS — instrucciones que MODIFICAN CÓMO Claude divide el guion.
+// A diferencia de las plantillas (que solo se repiten en el copy de cada escena),
+// los skills se INYECTAN al prompt de Claude para que el AI las aplique.
+// Multi-select: cuando hacés AI Split, podés tener N skills activos a la vez.
+// =============================================================================
+function _skillFolderColor(folder) {
+  if (!folder) return '#a78bfa';
+  let hash = 0;
+  for (let i = 0; i < folder.length; i++) hash = folder.charCodeAt(i) + ((hash << 5) - hash);
+  const hue = Math.abs(hash) % 360;
+  const h = hue / 360, s = 0.62, l = 0.58;
+  const k = n => (n + h * 12) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = n => Math.round(255 * (l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1))))).toString(16).padStart(2, '0');
+  return '#' + f(0) + f(8) + f(4);
+}
+
+function _getActiveSkills(variationIdx) {
+  return _activeSkillsByVariation[variationIdx] || new Set();
+}
+
+function renderSkillsPills(containerEl, variationIdx) {
+  if (!containerEl) return;
+  if (!Array.isArray(scriptSkills) || scriptSkills.length === 0) {
+    containerEl.innerHTML = '<span style="font-size:10px;color:var(--text-dim);font-style:italic">Sin skills guardados. Ejemplo: "Variar planos de cámara por escena", "Aumentar tensión", "Cliffhangers escalados". Tocá 🧠 para crear el primero.</span>';
+    return;
+  }
+  const activeSet = _getActiveSkills(variationIdx);
+  containerEl.innerHTML = scriptSkills.map(s => {
+    const folder = s.folder || 'General';
+    const c = _skillFolderColor(folder);
+    const name = s.name || (s.text || '').slice(0, 32);
+    const titleAttr = esc((s.text || '').slice(0, 240) + ((s.text || '').length > 240 ? '...' : ''));
+    const isActive = activeSet.has(s.id);
+    return `
+      <div class="skill-pill" data-skill-id="${esc(s.id)}" data-skill-var="${variationIdx}" title="${titleAttr}" style="display:inline-flex;align-items:center;gap:4px;padding:3px 4px 3px 4px;background:${isActive ? _hexToRgba(c, 0.45) : _hexToRgba(c, 0.12)};border:1px solid ${isActive ? c : _hexToRgba(c, 0.45)};border-radius:14px;font-size:10.5px;cursor:pointer;line-height:1.4;user-select:none;color:var(--text-primary);${isActive ? 'box-shadow:0 0 0 2px ' + _hexToRgba(c, 0.3) + ';font-weight:600' : ''}">
+        ${isActive ? '<span style="color:' + c + ';font-weight:700">✓</span>' : ''}
+        <span style="background:${_hexToRgba(c, 0.32)};color:${c};font-weight:700;font-size:9px;padding:2px 6px;border-radius:10px;letter-spacing:0.2px">${esc(folder)}</span>
+        <span style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(name)}</span>
+        <span class="skill-edit" data-edit-skill="${esc(s.id)}" title="Editar" style="opacity:0.55;padding:0 2px;font-size:11px">&#9998;</span>
+        <span class="skill-delete" data-delete-skill="${esc(s.id)}" data-delete-skill-name="${esc(s.name || 'este skill')}" title="Eliminar" style="opacity:0.55;padding:0 5px 1px 5px;font-size:13px;border-radius:50%;color:#ff6b6b;font-weight:700;line-height:1">×</span>
+      </div>`;
+  }).join('');
+  containerEl.querySelectorAll('[data-skill-id]').forEach(el => {
+    el.addEventListener('click', async (e) => {
+      if (e.target.dataset.deleteSkill) {
+        e.stopPropagation();
+        const id = e.target.dataset.deleteSkill;
+        const name = e.target.dataset.deleteSkillName;
+        if (!confirm(`Borrar el skill "${name}"?\n\nEsta acción no se puede deshacer.`)) return;
+        try {
+          await db.collection('scriptSkills').doc(id).delete();
+          _setTranscriptionStatus(`✓ Skill "${name}" eliminado`, 'success');
+        } catch (err) {
+          alert('Error borrando skill: ' + (err.message || err));
+        }
+        return;
+      }
+      if (e.target.dataset.editSkill) {
+        e.stopPropagation();
+        openSkillModalForEdit(e.target.dataset.editSkill);
+        return;
+      }
+      // Toggle active
+      const id = el.dataset.skillId;
+      const varIdx = parseInt(el.dataset.skillVar, 10);
+      if (!_activeSkillsByVariation[varIdx]) _activeSkillsByVariation[varIdx] = new Set();
+      const set = _activeSkillsByVariation[varIdx];
+      if (set.has(id)) set.delete(id);
+      else set.add(id);
+      // Re-render pills + update AI button label
+      renderSkillsPills(containerEl, varIdx);
+      const btn = document.querySelector(`[data-ai-split-var="${varIdx}"]`);
+      if (btn) {
+        const count = set.size;
+        btn.textContent = count > 0 ? `🎬 Dividir con AI (${count} skill${count === 1 ? '' : 's'})` : '🎬 Dividir con AI';
+        btn.style.opacity = count > 0 ? '1' : '0.7';
+      }
+    });
+  });
+}
+
+function updateSkillFolderOptions() {
+  const dl = document.getElementById('skillFolderList');
+  if (!dl) return;
+  const folders = [...new Set(scriptSkills.map(t => t.folder || 'General'))].sort();
+  dl.innerHTML = folders.map(f => `<option value="${esc(f)}">`).join('');
+}
+
+function openSkillModalForCreate() {
+  editingSkillId = null;
+  document.getElementById('skillModalTitle').innerHTML = '&#129504; Nuevo skill';
+  document.getElementById('skillName').value = '';
+  document.getElementById('skillFolder').value = '';
+  document.getElementById('skillText').value = '';
+  document.getElementById('deleteSkill').style.display = 'none';
+  document.getElementById('skillModal').classList.add('active');
+  setTimeout(() => document.getElementById('skillName').focus(), 100);
+}
+
+function openSkillModalForEdit(id) {
+  const s = scriptSkills.find(x => x.id === id);
+  if (!s) return;
+  editingSkillId = id;
+  document.getElementById('skillModalTitle').innerHTML = '&#9998; Editar skill';
+  document.getElementById('skillName').value = s.name || '';
+  document.getElementById('skillFolder').value = s.folder || '';
+  document.getElementById('skillText').value = s.text || '';
+  document.getElementById('deleteSkill').style.display = '';
+  document.getElementById('skillModal').classList.add('active');
+  setTimeout(() => document.getElementById('skillName').focus(), 100);
+}
+
+async function saveSkill() {
+  const name = document.getElementById('skillName').value.trim();
+  const folder = document.getElementById('skillFolder').value.trim() || 'General';
+  const text = document.getElementById('skillText').value.trim();
+  if (!name) { alert('Ponele un nombre corto al skill (lo que aparece en la pill)'); return; }
+  if (!text) { alert('El skill está vacío. Escribí la instrucción que querés que Claude aplique al dividir.'); return; }
+  const payload = {
+    name,
+    folder,
+    text,
+    editedAt: firebase.firestore.FieldValue.serverTimestamp()
+  };
+  if (WS_ID) payload.workspaceId = WS_ID;
+  try {
+    if (editingSkillId) {
+      await db.collection('scriptSkills').doc(editingSkillId).update(payload);
+    } else {
+      payload.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+      payload.lastUsedAt = firebase.firestore.FieldValue.serverTimestamp();
+      payload.usageCount = 0;
+      if (currentUser) {
+        payload.createdBy = currentUser.uid;
+        const me = teamMembers.find(m => m.id === currentUser.uid);
+        if (me) payload.createdByName = me.name || me.email || '';
+      }
+      await db.collection('scriptSkills').add(payload);
+    }
+    document.getElementById('skillModal').classList.remove('active');
+    editingSkillId = null;
+  } catch (e) {
+    console.error('[skill] save error', e);
+    alert('Error guardando skill: ' + (e.message || e));
+  }
+}
+
+async function deleteSkillFromModal() {
+  if (!editingSkillId) return;
+  if (!confirm('Borrar este skill? No se puede deshacer.')) return;
+  try {
+    await db.collection('scriptSkills').doc(editingSkillId).delete();
+    document.getElementById('skillModal').classList.remove('active');
+    editingSkillId = null;
+  } catch (e) {
+    alert('Error borrando: ' + (e.message || e));
+  }
+}
+
+function _setupSkillModal() {
+  const cancelBtn = document.getElementById('cancelSkill');
+  const confirmBtn = document.getElementById('confirmSkill');
+  const deleteBtn = document.getElementById('deleteSkill');
+  const overlay = document.getElementById('skillModal');
+  if (cancelBtn) cancelBtn.addEventListener('click', () => { overlay.classList.remove('active'); editingSkillId = null; });
+  if (confirmBtn) confirmBtn.addEventListener('click', saveSkill);
+  if (deleteBtn) deleteBtn.addEventListener('click', deleteSkillFromModal);
+  if (overlay) overlay.addEventListener('click', (e) => { if (e.target === overlay) { overlay.classList.remove('active'); editingSkillId = null; } });
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _setupSkillModal);
+} else {
+  _setupSkillModal();
+}
+
+// =============================================================================
+// AI Split: divide la variación con Claude inyectando los skills activos al prompt
+// =============================================================================
+async function aiSplitVariationWithSkills(entryId, variationIdx, btn) {
+  const entry = entries.find(e => e.id === entryId);
+  if (!entry || !Array.isArray(entry.scriptVariations)) return;
+  const v = entry.scriptVariations[variationIdx];
+  if (!v || !v.text) { _setTranscriptionStatus('⚠ Variación vacía', 'error'); return; }
+  if (!window.api || !window.api.generateWithClaude) {
+    _setTranscriptionStatus('❌ generateWithClaude no disponible. Actualizá la app.', 'error');
+    return;
+  }
+  const durSel = document.querySelector(`[data-var-scene-dur="${variationIdx}"]`);
+  const duration = parseInt((durSel && durSel.value) || '15', 10);
+  const activeSet = _getActiveSkills(variationIdx);
+  const activeSkills = scriptSkills.filter(s => activeSet.has(s.id));
+  const wordsPerScene = Math.round(duration * 2.3);
+
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Claude dividiendo...'; }
+  _setTranscriptionStatus(`⏳ Claude dividiendo en escenas de ${duration}s con ${activeSkills.length} skill${activeSkills.length === 1 ? '' : 's'} activo${activeSkills.length === 1 ? '' : 's'}...`);
+
+  const skillsBlock = activeSkills.length > 0
+    ? `\n\n🎯 SKILLS ACTIVOS (aplicalos AL DIVIDIR, escena por escena):\n${activeSkills.map((s, i) => `${i + 1}. **${s.name}**: ${s.text}`).join('\n')}\n\nINTEGRA estos skills en CADA escena de forma que se note el efecto pedido. Si dicen "varía planos de cámara", entonces escena 1 con un plano, escena 2 con otro distinto, etc.`
+    : '';
+
+  const prompt = `Divide el siguiente guion de video en ESCENAS de ${duration} segundos cada una (~${wordsPerScene} palabras por escena).
+
+⚠️ IDIOMA OBLIGATORIO — ESPAÑOL NEUTRO INTERNACIONAL:
+- PROHIBIDO voseo argentino (vos/tenés/mirá), castellano de España (vosotros/os/tío/vale), regionalismos.
+- USA "tú" universal, imperativos neutros (comenta/guarda/mira/sigue).${skillsBlock}
+
+REGLAS:
+1. Cada escena suena natural hablada, frases completas.
+2. Cada escena dura ~${duration}s leída (~${wordsPerScene} palabras).
+3. Mantén el HOOK al inicio de la escena 1. Cada escena cierra con tensión/cliffhanger.
+4. NO cortes ideas a la mitad.
+5. Mantén el sentido y orden del guion.
+6. ${activeSkills.length > 0 ? 'APLICA los skills activos en CADA escena. Por ejemplo, si el skill es "varía planos de cámara", inicia cada escena con la indicación del plano entre corchetes: [PLANO: close-up rostro]\\n\\nTexto de la escena...' : 'Devolvé solo el texto de cada escena.'}
+
+FORMATO de salida — JSON válido, SIN nada antes o después:
+{"scenes":[
+  {"n":1,"text":"${activeSkills.length > 0 ? '[indicación del skill]\\n\\n' : ''}texto de la escena 1"},
+  {"n":2,"text":"${activeSkills.length > 0 ? '[indicación del skill]\\n\\n' : ''}texto de la escena 2"},
+  ...
+]}
+
+GUION A DIVIDIR:
+${v.text}`;
+
+  try {
+    const result = await window.api.generateWithClaude({
+      prompt,
+      model: 'claude-sonnet-4-6',
+      maxTokens: 4000
+    });
+    if (!result || !result.ok) throw new Error(result && result.error ? result.error : 'No se pudo conectar con Claude');
+    let parsed;
+    try {
+      const cleaned = (result.text || '').replace(/^```(?:json)?/, '').replace(/```$/, '').trim();
+      parsed = JSON.parse(cleaned);
+    } catch (e) {
+      throw new Error('Claude devolvió JSON inválido: ' + (result.text || '').slice(0, 200));
+    }
+    if (!parsed || !Array.isArray(parsed.scenes) || parsed.scenes.length === 0) {
+      throw new Error('Claude no devolvió escenas');
+    }
+    const scenes = parsed.scenes.map(s => (s.text || '').trim()).filter(Boolean);
+    if (scenes.length === 0) throw new Error('Claude devolvió escenas vacías');
+
+    const currentEntry = entries.find(e => e.id === entryId);
+    const newVars = currentEntry.scriptVariations.slice();
+    newVars[variationIdx] = {
+      ...v,
+      scenes,
+      sceneDuration: duration,
+      aiSplit: true,
+      aiSkillsUsed: activeSkills.map(s => ({ id: s.id, name: s.name }))
+    };
+    await db.collection('depositEntries').doc(entryId).update({ scriptVariations: newVars });
+
+    // Incrementar usage de skills
+    for (const s of activeSkills) {
+      try {
+        await db.collection('scriptSkills').doc(s.id).update({
+          usageCount: (s.usageCount || 0) + 1,
+          lastUsedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      } catch (_) {}
+    }
+
+    _setTranscriptionStatus(`✓ Dividido en ${scenes.length} escenas con AI ${activeSkills.length > 0 ? '+ ' + activeSkills.length + ' skill(s)' : ''}`, 'success');
+    setTimeout(() => _renderTranscriptionModalContent(entryId), 300);
+  } catch (e) {
+    console.error('[ai-split] error', e);
+    _setTranscriptionStatus('❌ Error AI Split: ' + (e.message || e), 'error');
+    if (btn) {
+      btn.disabled = false;
+      const count = activeSet.size;
+      btn.textContent = count > 0 ? `🎬 Dividir con AI (${count} skill${count === 1 ? '' : 's'})` : '🎬 Dividir con AI';
+    }
   }
 }
 
