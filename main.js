@@ -2356,6 +2356,69 @@ function registerIpcHandlers() {
     }
   });
 
+  // v3.11.143: descargas del WEBVIEW Explorer → ventana visible + auto-importar al Depósito.
+  // Interceptamos `will-download` en la sesión persist:explorer, guardamos el archivo
+  // localmente, mandamos eventos al renderer (start/progress/complete) para que muestre
+  // toast + cree la entry en Depósito categoría "Descargas Chrome".
+  function _explorerDownloadsDir() {
+    const dir = path.join(app.getPath('userData'), 'explorer-downloads');
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    return dir;
+  }
+  function _setupExplorerDownloads() {
+    try {
+      const sess = session.fromPartition('persist:explorer');
+      // Evitar duplicar el handler si reload
+      if (sess._tmDownloadHandlerSet) return;
+      sess._tmDownloadHandlerSet = true;
+      sess.on('will-download', (event, item, webContents) => {
+        const filename = item.getFilename() || 'archivo';
+        const safe = filename.replace(/[\/\\:*?"<>|]/g, '_');
+        const unique = Date.now() + '-' + safe;
+        const savePath = path.join(_explorerDownloadsDir(), unique);
+        item.setSavePath(savePath);
+        const url = item.getURL();
+        const mimeType = item.getMimeType();
+        const totalBytes = item.getTotalBytes();
+        const sendTo = mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null;
+        const guid = 'wv-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+        if (sendTo) {
+          try { sendTo.send('webview-download-start', { guid, filename, url, mimeType, totalBytes }); } catch (_) {}
+        }
+        item.on('updated', (_e, state) => {
+          if (state === 'interrupted') {
+            console.warn('[webview-download] interrupted', filename);
+          } else if (state === 'progressing') {
+            const received = item.getReceivedBytes();
+            if (sendTo) {
+              try { sendTo.send('webview-download-progress', { guid, receivedBytes: received, totalBytes }); } catch (_) {}
+            }
+          }
+        });
+        item.once('done', (_e, state) => {
+          if (state === 'completed') {
+            console.log('[webview-download] complete', filename, '→', savePath);
+            if (sendTo) {
+              try {
+                sendTo.send('webview-download-complete', { guid, filename, filePath: savePath, size: item.getReceivedBytes(), url, mimeType });
+              } catch (_) {}
+            }
+          } else {
+            console.warn('[webview-download] failed', state, filename);
+            if (sendTo) {
+              try { sendTo.send('webview-download-cancel', { guid, state }); } catch (_) {}
+            }
+          }
+        });
+      });
+      console.log('[webview-download] handler registered for persist:explorer');
+    } catch (e) {
+      console.warn('[webview-download] setup failed:', e.message);
+    }
+  }
+  // Setup al ready y también después de cada login (cuando el partition se vuelve a usar)
+  _setupExplorerDownloads();
+
   // v3.11.117: IPC para que el Explorer (o cualquier renderer) persista
   // covers con URL firmada al Cloudinary del user, devolviendo URL permanente.
   ipcMain.handle('persist-cover-url', async (_, imageUrl) => {

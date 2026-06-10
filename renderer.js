@@ -75,6 +75,17 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.143': {
+    title: '⬇ Downloads del Explorer interno → Depósito (sin necesidad de Chrome Real)',
+    features: [
+      '⬇ <strong>Por fin</strong>: cuando descargás un archivo desde el Explorer interno (webview integrado, con tabs) — un video, una imagen, lo que sea — ahora <strong>se intercepta y va automáticamente al Depósito</strong>, categoría "Descargas Chrome".',
+      '🔌 <strong>Cómo</strong>: agregué <code>session.fromPartition("persist:explorer").on("will-download")</code> en main.js. Cualquier descarga del webview del Explorer pasa por ahí.',
+      '☁ <strong>Mismo flujo que Chrome Real</strong>: archivo local → Cloudinary upload → entry en Firestore con cover (videos: frame 0 vía Cloudinary transform).',
+      '🪵 Toasts en cada fase: <code>⏳ Descargando…</code> → <code>✓ Descarga completada</code> → <code>✓ Guardado en Depósito</code>.',
+      '✅ <strong>Ya no necesitás abrir Chrome Real/Nativo solo para descargar</strong>. El Explorer interno (con todas sus tabs intactas) ahora hace todo lo que querías.',
+      '⚠ Para login Google sigue necesitándose Chrome real (botón "🌐 Chrome Nativo" o "↗ System") — eso no se puede solucionar sin escribir código nativo Objective-C que serían días de trabajo.'
+    ]
+  },
   '3.11.142': {
     title: '🪟 Chrome Nativo SE ABRE ENCIMA del Explorer (sin permisos, sin AppleScript)',
     features: [

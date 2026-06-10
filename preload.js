@@ -83,6 +83,12 @@ contextBridge.exposeInMainWorld('api', {
   // v3.11.135: subir archivo local descargado a Cloudinary
   uploadLocalFileToCloudinary: (filePath) => ipcRenderer.invoke('upload-local-file-to-cloudinary', { filePath }),
 
+  // v3.11.143: descargas del webview Explorer
+  onWebviewDownloadStart: (cb) => ipcRenderer.on('webview-download-start', (_, info) => cb(info)),
+  onWebviewDownloadProgress: (cb) => ipcRenderer.on('webview-download-progress', (_, info) => cb(info)),
+  onWebviewDownloadComplete: (cb) => ipcRenderer.on('webview-download-complete', (_, info) => cb(info)),
+  onWebviewDownloadCancel: (cb) => ipcRenderer.on('webview-download-cancel', (_, info) => cb(info)),
+
   // v3.11.140: Chrome Overlay nativo
   chromeOverlay: {
     start: (opts) => ipcRenderer.invoke('chrome-overlay-start', opts),

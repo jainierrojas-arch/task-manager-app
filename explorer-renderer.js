@@ -796,6 +796,94 @@
     createTab(url);
   });
 
+  // ===== v3.11.143: Downloads del WEBVIEW Explorer → Depósito =====
+  // Cuando el user descarga algo del Explorer interno (cualquier link → Save As, o
+  // download attributes en links), se intercepta en main.js (session.on('will-download'))
+  // y se manda evento acá. Hacemos lo mismo que con Chrome Real downloads:
+  // subimos a Cloudinary y creamos entry en Depósito categoría "Descargas Chrome".
+  if (window.api && window.api.onWebviewDownloadStart) {
+    window.api.onWebviewDownloadStart((info) => {
+      console.log('[webview-download] START', info);
+      showToast(`⏳ Descargando: ${info.filename}…`);
+    });
+    window.api.onWebviewDownloadComplete(async (info) => {
+      console.log('[webview-download] COMPLETE', info);
+      showToast(`✓ Descarga completada — guardando al Depósito…`);
+      try {
+        let publicUrl = '';
+        let resourceType = 'raw';
+        let extra = {};
+        if (window.api.uploadLocalFileToCloudinary) {
+          const up = await window.api.uploadLocalFileToCloudinary(info.filePath);
+          if (up && up.ok && up.url) {
+            publicUrl = up.url;
+            resourceType = up.resourceType || 'raw';
+            extra = up;
+          } else {
+            console.warn('[webview-download] Cloudinary upload failed:', up && up.error);
+            showToast('⚠ Cloudinary no configurado — entry sin URL pública', 'error');
+          }
+        }
+        const catName = 'Descargas Chrome';
+        // Buscar/crear categoría
+        let catId = null;
+        try {
+          const snap = await db.collection('depositCategories').where('name', '==', catName).limit(1).get();
+          if (!snap.empty) catId = snap.docs[0].id;
+          else {
+            const doc = await db.collection('depositCategories').add({
+              name: catName,
+              createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+              createdBy: (typeof currentUser !== 'undefined' && currentUser) ? currentUser.uid : null,
+              icon: '⬇'
+            });
+            catId = doc.id;
+          }
+        } catch (e) { console.warn('[webview-download] category ensure failed:', e.message); }
+
+        const ext = (info.filename || '').toLowerCase().split('.').pop() || '';
+        const isVideo = ['mp4', 'mov', 'webm', 'm4v', 'mkv', 'avi'].includes(ext);
+        const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif'].includes(ext);
+        const linkType = isVideo ? 'video' : (isImage ? 'carrusel' : 'material');
+
+        const data = {
+          title: info.filename || 'Descarga sin nombre',
+          description: '',
+          links: publicUrl
+            ? [{ type: linkType, url: publicUrl, label: linkType === 'video' ? 'Video' : (linkType === 'carrusel' ? 'Imagen' : 'Archivo') }]
+            : [{ type: linkType, url: 'file://' + info.filePath, label: 'Archivo local' }],
+          categoryId: catId,
+          status: 'idea',
+          source: 'webview-download',
+          sourceUrl: info.url || '',
+          createdBy: (typeof currentUser !== 'undefined' && currentUser) ? currentUser.uid : null,
+          createdByName: (typeof currentUserData !== 'undefined' && currentUserData ? currentUserData.name : null) || ((typeof currentUser !== 'undefined' && currentUser && currentUser.email) ? currentUser.email.split('@')[0] : 'Anónimo'),
+          createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        };
+        if (publicUrl && isVideo && resourceType === 'video') {
+          try {
+            data.coverImage = publicUrl.replace('/upload/', '/upload/so_0,w_640,h_1138,c_fill,f_jpg/').replace(/\.(mp4|mov|webm|m4v|mkv|avi)$/i, '.jpg');
+            data.coverWidth = 640;
+            data.coverHeight = 1138;
+          } catch (_) {}
+        } else if (publicUrl && isImage) {
+          data.coverImage = publicUrl;
+          if (extra.width) data.coverWidth = extra.width;
+          if (extra.height) data.coverHeight = extra.height;
+        }
+        await db.collection('depositEntries').add(data);
+        showToast(`✓ Guardado en Depósito → "${catName}"`);
+      } catch (e) {
+        console.error('[webview-download] → deposit FAILED', e);
+        showToast('❌ Error guardando al Depósito: ' + (e.message || e), 'error');
+      }
+    });
+    window.api.onWebviewDownloadCancel((info) => {
+      console.warn('[webview-download] CANCEL', info);
+      showToast('⚠ Descarga interrumpida', 'error');
+    });
+  }
+
   // ===== v3.11.140: Chrome Nativo (overlay con tu Chrome real) =====
   const chromeNativeBtn = document.getElementById('explorerToggleChromeNative');
   let chromeNativeActive = false;
