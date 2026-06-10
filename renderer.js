@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.152': {
+    title: '📥 Entries nuevas van al PRIMER lugar (no al último)',
+    features: [
+      '📥 <strong>Nuevo orden</strong>: las entries que guardás van automáticamente al TOPE de la subcategoría. Las viejas se corren hacia abajo. Las que ya tenías quedan abajo de las nuevas.',
+      '🎯 <strong>Drag-and-drop sigue funcionando</strong>: lo que arrastrás manualmente queda fijo en su posición. Las entries nuevas (sin manualOrder) van arriba de las arrastradas.',
+      '🧮 <strong>Lógica del sort</strong>: 1) primero las SIN manualOrder ordenadas createdAt desc (la última al tope). 2) Después las CON manualOrder en el orden que las dejaste arrastrando.',
+      '🔄 <strong>Aplica retroactivo</strong>: las entries que ya tenías sin manualOrder se acomodan según fecha de creación al reabrir.'
+    ]
+  },
   '3.11.151': {
     title: '🐞 Fix: Explorer guardaba en categorías de OTROS workspaces (entries quedaban huérfanas)',
     features: [

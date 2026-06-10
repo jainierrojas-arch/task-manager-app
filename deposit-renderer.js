@@ -206,8 +206,13 @@ function subcategoriesOf(parentId) { return categories.filter(c => c.parentId ==
 // Devuelve entries en una categoria/subcategoria. Por default OCULTA las que
 // estan en proceso (status='converted') porque ya fueron asignadas a tarea
 // y deben aparecer "fuera del deposito" hasta que se completen o se cancelen.
-// v3.11.127: si una entry tiene manualOrder (asignado via drag-and-drop), se
-// respeta ese orden. Sino fallback a createdAt desc.
+// v3.11.152: ENTRIES NUEVAS van al PRIMER lugar (no al ultimo). El orden:
+// 1. Primero las entries SIN manualOrder, ordenadas por createdAt DESC (newest top).
+//    Cada vez que entra una nueva, se inserta al tope y empuja al resto.
+// 2. Después las entries CON manualOrder (las que vos arrastraste manualmente),
+//    en el orden que las dejaste.
+// Asi el drag-and-drop sigue funcionando para "fijar" un orden custom abajo,
+// y los nuevos quedan arriba listos para revisar.
 function entriesIn(catId, subId) {
   const visible = (e) => e.status !== 'converted';
   let arr;
@@ -215,12 +220,19 @@ function entriesIn(catId, subId) {
   else if (subId) arr = entries.filter(e => e.categoryId === catId && e.subcategoryId === subId && visible(e));
   else arr = entries.filter(e => e.categoryId === catId && visible(e));
   return arr.slice().sort((a, b) => {
-    const am = typeof a.manualOrder === 'number' ? a.manualOrder : Number.MAX_SAFE_INTEGER;
-    const bm = typeof b.manualOrder === 'number' ? b.manualOrder : Number.MAX_SAFE_INTEGER;
-    if (am !== bm) return am - bm;
-    const at = (a.createdAt && a.createdAt.toMillis) ? a.createdAt.toMillis() : 0;
-    const bt = (b.createdAt && b.createdAt.toMillis) ? b.createdAt.toMillis() : 0;
-    return bt - at;
+    const aHas = typeof a.manualOrder === 'number';
+    const bHas = typeof b.manualOrder === 'number';
+    // Entries SIN manualOrder van primero
+    if (!aHas && bHas) return -1;
+    if (aHas && !bHas) return 1;
+    if (!aHas && !bHas) {
+      // Ambas nuevas: createdAt desc (la más nueva al tope)
+      const at = (a.createdAt && a.createdAt.toMillis) ? a.createdAt.toMillis() : 0;
+      const bt = (b.createdAt && b.createdAt.toMillis) ? b.createdAt.toMillis() : 0;
+      return bt - at;
+    }
+    // Ambas con manualOrder: el orden que les diste arrastrando
+    return a.manualOrder - b.manualOrder;
   });
 }
 
