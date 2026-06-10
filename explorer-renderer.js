@@ -817,13 +817,10 @@
       // Calcular offset del Explorer area: sidebar=~220px, top toolbar=~130px, bottom=~80px
       let initialUrl = 'https://www.google.com/';
       try { const b = getActiveBrowser(); if (b) initialUrl = b.getURL() || initialUrl; } catch (_) {}
-      chromeNativeBtn.textContent = '⏳ Lanzando Chrome...';
-      const result = await window.api.chromeOverlay.start({
-        url: initialUrl,
-        explorerOffset: { top: 130, left: 220, right: 0, bottom: 80 }
-      });
+      chromeNativeBtn.textContent = '⏳ Abriendo Chrome...';
+      const result = await window.api.chromeOverlay.start({ url: initialUrl });
       if (!result || !result.ok) {
-        alert('No se pudo lanzar Chrome Nativo: ' + ((result && result.error) || 'error desconocido') + '\n\nSi es la primera vez, abrí System Settings → Privacy & Security → Accessibility y habilitá "Task Manager" en la lista.');
+        alert('No se pudo abrir Chrome: ' + ((result && result.error) || 'error desconocido'));
         chromeNativeBtn.textContent = '🌐 Chrome Nativo';
         return;
       }

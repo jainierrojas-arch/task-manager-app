@@ -50,10 +50,12 @@ async function start({ url, mainWindow, explorerOffset }) {
     throw new Error('Google Chrome no está instalado en /Applications/Google Chrome.app');
   }
   state.mainWindowRef = mainWindow;
-  if (explorerOffset) state.explorerOffset = { ...state.explorerOffset, ...explorerOffset };
 
   const startUrl = url || 'https://www.google.com/';
-  console.log('[chrome-overlay] launching Chrome --app=' + startUrl);
+  // v3.11.141: SIMPLE. Lanzamos Chrome como ventana normal con perfil dedicado.
+  // SIN AppleScript positioning, SIN Accessibility permissions, SIN polling.
+  // El usuario tiene su Chrome separado pero funciona INSTANTÁNEAMENTE.
+  console.log('[chrome-overlay] launching Chrome (simple mode) --app=' + startUrl);
   state.chromeProc = spawn(CHROME_PATH, [
     `--app=${startUrl}`,
     `--user-data-dir=${profileDir()}`,
@@ -66,14 +68,9 @@ async function start({ url, mainWindow, explorerOffset }) {
     console.log('[chrome-overlay] Chrome process exited');
     state.chromeProc = null;
     state.active = false;
-    if (state.syncInterval) { clearInterval(state.syncInterval); state.syncInterval = null; }
   });
 
-  // Esperar a que la ventana de Chrome aparezca (~1.5s típico)
-  await new Promise(r => setTimeout(r, 1800));
-
   state.active = true;
-  _startWindowSync();
   return { ok: true, profile: profileDir(), pid: state.chromeProc && state.chromeProc.pid };
 }
 

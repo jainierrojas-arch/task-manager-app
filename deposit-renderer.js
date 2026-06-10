@@ -3424,14 +3424,28 @@ function renderSceneTplPills(containerEl, variationIdx) {
     const name = t.name || (t.text || '').slice(0, 32);
     const titleAttr = esc((t.text || '').slice(0, 240) + ((t.text || '').length > 240 ? '...' : ''));
     return `
-      <div class="scene-tpl-pill" data-scene-tpl="${esc(t.id)}" data-scene-tpl-var="${variationIdx}" title="${titleAttr}" style="display:inline-flex;align-items:center;gap:6px;padding:3px 8px 3px 4px;background:${_hexToRgba(c, 0.15)};border:1px solid ${_hexToRgba(c, 0.45)};border-radius:14px;font-size:10.5px;cursor:pointer;line-height:1.4;user-select:none;color:var(--text-primary)">
+      <div class="scene-tpl-pill" data-scene-tpl="${esc(t.id)}" data-scene-tpl-var="${variationIdx}" title="${titleAttr}" style="display:inline-flex;align-items:center;gap:4px;padding:3px 4px 3px 4px;background:${_hexToRgba(c, 0.15)};border:1px solid ${_hexToRgba(c, 0.45)};border-radius:14px;font-size:10.5px;cursor:pointer;line-height:1.4;user-select:none;color:var(--text-primary)">
         <span style="background:${_hexToRgba(c, 0.32)};color:${c};font-weight:700;font-size:9px;padding:2px 6px;border-radius:10px;letter-spacing:0.2px">${esc(folder)}</span>
         <span style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(name)}</span>
         <span class="scene-tpl-edit" data-edit-scene-tpl="${esc(t.id)}" title="Editar" style="opacity:0.55;padding:0 2px;font-size:11px">&#9998;</span>
+        <span class="scene-tpl-delete" data-delete-scene-tpl="${esc(t.id)}" data-delete-scene-name="${esc(t.name || 'esta plantilla')}" title="Eliminar plantilla" style="opacity:0.55;padding:0 5px 1px 5px;font-size:13px;border-radius:50%;color:#ff6b6b;font-weight:700;line-height:1">×</span>
       </div>`;
   }).join('');
   containerEl.querySelectorAll('[data-scene-tpl]').forEach(el => {
-    el.addEventListener('click', (e) => {
+    el.addEventListener('click', async (e) => {
+      if (e.target.dataset.deleteSceneTpl) {
+        e.stopPropagation();
+        const tplId = e.target.dataset.deleteSceneTpl;
+        const tplName = e.target.dataset.deleteSceneName;
+        if (!confirm(`Borrar la plantilla "${tplName}"?\n\nEsta acción no se puede deshacer.`)) return;
+        try {
+          await db.collection('sceneInstructionTemplates').doc(tplId).delete();
+          _setTranscriptionStatus(`✓ Plantilla "${tplName}" eliminada`, 'success');
+        } catch (err) {
+          alert('Error borrando plantilla: ' + (err.message || err));
+        }
+        return;
+      }
       if (e.target.dataset.editSceneTpl) {
         e.stopPropagation();
         openSceneTplModalForEdit(e.target.dataset.editSceneTpl);

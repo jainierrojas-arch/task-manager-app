@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.141': {
+    title: '🎯 Simplificación Chrome Nativo + botón X eliminar plantillas',
+    features: [
+      '🎯 <strong>Chrome Nativo SIMPLIFICADO</strong>: sin AppleScript positioning, sin permisos de Accessibility, sin polling. Tocás "🌐 Chrome Nativo" → tu Chrome real se abre como ventana aparte instantáneamente. Tu perfil dedicado del Task Manager, tu sesión persistente. Google acepta login.',
+      '🪟 <strong>Cómo se usa</strong>: tocás el botón → aparece Chrome en otra ventana → te logueás normal → cerrás Chrome cuando termines (o tocás "✕ Cerrar Chrome" desde Task Manager).',
+      '❌ <strong>Botón X en cada plantilla de Dividir en escenas</strong>: además del ✎ para editar, ahora hay un X rojo para eliminar directo con confirm. No hay que abrir el modal de editar.',
+      '✅ <strong>Honestidad</strong>: si querías Chrome embebido VISUALMENTE dentro de Task Manager, eso es lo que llevamos 10 versiones intentando sin éxito. La opción nativa SIMPLE = ventana aparte funciona al 100% pero perdés la "ilusión" de estar adentro. Es el mejor trade-off que existe para macOS sin escribir código nativo Objective-C.'
+    ]
+  },
   '3.11.140': {
     title: '🌐 Chrome NATIVO: tu Chrome real posicionado sobre el Explorer (Google acepta login)',
     features: [
