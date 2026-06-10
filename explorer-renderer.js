@@ -515,9 +515,11 @@
     }
     saveBtn.disabled = true;
     saveBtn.textContent = '⏳ Detectando reel...';
+    console.log('[explorer-save] START', { url, title });
 
     try {
       const pageData = await extractPageData();
+      console.log('[explorer-save] pageData', pageData ? { hasUrl: !!pageData.url, hasImage: !!pageData.image, hasDescription: !!pageData.description, isCarousel: pageData.isCarousel, hasVideo: pageData.hasVideo } : 'NULL');
       // v3.11.17: detectar URLs específicas excluyendo /reels/audio/ (página del
       // audio, NO un reel específico — su og:image es la carátula del álbum/audio).
       // Acepta: /reel/CXXX/, /p/CXXX/, /tv/CXXX/, /reels/CXXX/ (NOT /reels/audio/CXXX/)
@@ -558,7 +560,10 @@
         // 2) Fallback a Microlink si falta image O description
         if ((!og || !og.image || !og.description) && window.api && window.api.fetchOgData) {
           try {
-            const ogMicro = await withTimeout(window.api.fetchOgData(targetUrl), 12000, 'fetchOgData');
+            // v3.11.128: timeout subido a 20s para redes Windows lentas / VPNs corporativas
+            console.log('[explorer-save] Microlink fetch start', targetUrl);
+            const ogMicro = await withTimeout(window.api.fetchOgData(targetUrl), 20000, 'fetchOgData');
+            console.log('[explorer-save] Microlink response', ogMicro ? { hasImage: !!ogMicro.image, hasTitle: !!ogMicro.title, hasDesc: !!ogMicro.description } : 'NULL');
             if (ogMicro) {
               og = {
                 image: (og && og.image) || ogMicro.image,
@@ -567,10 +572,11 @@
               };
             }
           } catch (e) {
-            console.warn('[explorer] fetchOgData skipped:', e.message);
+            console.warn('[explorer-save] Microlink failed:', e.message);
           }
         }
       }
+      console.log('[explorer-save] final og', og ? { hasImage: !!og.image, hasTitle: !!og.title, hasDesc: !!og.description } : 'NULL');
       saveBtn.textContent = '⏳ Guardando...';
 
       const lower = targetUrl.toLowerCase();
@@ -715,10 +721,26 @@
           data.subcategoryName = sub.name || '';
         }
       }
-      await db.collection('depositEntries').add(data);
+      console.log('[explorer-save] writing to Firestore', { hasCover: !!data.coverImage, coverLen: data.coverImage ? data.coverImage.length : 0, hasDesc: !!data.description, title: data.title.slice(0, 60), categoryId, subcategoryId });
+      try {
+        await db.collection('depositEntries').add(data);
+        console.log('[explorer-save] ✓ Firestore add OK');
+      } catch (fsErr) {
+        console.error('[explorer-save] Firestore add FAILED', fsErr);
+        const code = fsErr.code || '';
+        if (code === 'permission-denied') {
+          showToast('Error de permisos en Firestore. Avisá al admin.', 'error');
+        } else if (code === 'unavailable' || code.includes('network')) {
+          showToast('Sin conexión a Firestore. Reintentá en un momento.', 'error');
+        } else {
+          showToast('Error guardando: ' + (fsErr.message || code || 'desconocido'), 'error');
+        }
+        return;
+      }
 
       const summary = [];
       if (coverImage) summary.push('portada=' + (coverSource || 'sí'));
+      else summary.push('⚠ SIN portada');
       if (description) summary.push('caption');
       if (usingDetectedReel) summary.push('reel detectado');
       if (isGenericFeedUrl && !usingDetectedReel) summary.push('⚠ feed genérico');
@@ -727,8 +749,8 @@
       const ts = document.getElementById('explorerTypeSelect');
       if (ts) ts.value = 'auto';
     } catch (e) {
-      console.error('[explorer] save failed', e);
-      showToast('Error: ' + (e.message || 'desconocido'), 'error');
+      console.error('[explorer-save] FATAL', e);
+      showToast('Error: ' + (e.message || 'desconocido') + '. Abrí DevTools (F12) para detalles.', 'error');
     } finally {
       saveBtn.disabled = false;
       saveBtn.textContent = '💾 Guardar al Depósito';

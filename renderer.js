@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.128': {
+    title: '🪟 Diagnósticos para Windows en Guardar al Depósito desde Explorer',
+    features: [
+      '🪟 <strong>Diagnóstico paso a paso</strong> en el save del Explorer — Console muestra cada fase: <code>[explorer-save] START</code>, <code>pageData</code>, <code>Microlink fetch start</code>, <code>Microlink response</code>, <code>final og</code>, <code>writing to Firestore</code>, <code>✓ Firestore add OK</code>.',
+      '⏱ <strong>Timeout Microlink: 12s → 20s</strong> para redes Windows lentas, VPN corporativas y antivirus que metan latencia.',
+      '🚨 <strong>Mensajes de error específicos</strong>: si falla Firestore por permisos, conexión, o algo más, vas a ver el motivo exacto en el toast. Antes salía solo "Error: desconocido".',
+      '📷 <strong>Toast muestra "⚠ SIN portada"</strong> si la entry se guardó pero sin cover — útil para los chicos de Windows que pueden saber rápido si el problema es la portada o el save mismo.',
+      '🪵 <strong>Para diagnosticar</strong>: abrí DevTools (F12 en Windows, Cmd+Opt+I en Mac), tab Console, tocá Guardar al Depósito, mandanos el output que empieza con <code>[explorer-save]</code>.'
+    ]
+  },
   '3.11.127': {
     title: '🎯 Drag-and-drop para reordenar videos en Depósito y Referencias',
     features: [
