@@ -17,7 +17,14 @@ const fs = require('fs');
 const { app } = require('electron');
 
 let puppeteer = null;
-try { puppeteer = require('puppeteer-core'); } catch (e) { /* opcional */ }
+let puppeteerLoadError = null;
+try {
+  puppeteer = require('puppeteer-core');
+  console.log('[chrome-embed] puppeteer-core loaded OK, version:', (require('puppeteer-core/package.json') || {}).version);
+} catch (e) {
+  puppeteerLoadError = e.message || String(e);
+  console.error('[chrome-embed] puppeteer-core REQUIRE FAILED:', puppeteerLoadError);
+}
 
 let state = {
   browser: null,
@@ -39,7 +46,9 @@ function profileDir() {
 }
 
 async function start({ url, sender, width, height, quality }) {
-  if (!puppeteer) throw new Error('puppeteer-core no está instalado');
+  if (!puppeteer) {
+    throw new Error('puppeteer-core no cargó. Detalle del require: ' + (puppeteerLoadError || 'desconocido'));
+  }
   if (state.active) await stop();
   state.sender = sender || null;
   state.width = Math.max(640, Math.min(2560, parseInt(width) || 1280));

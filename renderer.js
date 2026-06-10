@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.131': {
+    title: '🔧 Fix Chrome Real: bajamos puppeteer-core a versión CJS compatible',
+    features: [
+      '🐞 <strong>El bug</strong>: v3.11.130 instaló puppeteer-core 25.x que es ESM-only. main.js de Electron es CommonJS — el <code>require("puppeteer-core")</code> tiraba <code>ERR_REQUIRE_ESM</code> y la app decía "puppeteer-core no instalado".',
+      '✅ <strong>Fix</strong>: bajado a puppeteer-core <strong>21.11</strong> (última versión CJS, compatible con Node 18 que viene en Electron 28).',
+      '🪵 <strong>Mejor error si vuelve a fallar</strong>: ahora muestra el detalle exacto del <code>require</code> error en vez del genérico.',
+      '🚀 Ahora SÍ debería arrancar Chrome Real al tocar el botón verde.'
+    ]
+  },
   '3.11.130': {
     title: '🚀 Chrome REAL embebido en el Explorer (vía CDP screencast) — login Google adentro',
     features: [
