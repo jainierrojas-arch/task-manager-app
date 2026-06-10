@@ -1082,10 +1082,12 @@
       const { x, y } = canvasToPagePos(e);
       window.api.chromeEmbed.sendMouse({ type: 'mouseReleased', x, y, button: e.button, clickCount: e.detail || 1, modifiers: modifiersOf(e) });
     });
+    // v3.11.139: throttle más agresivo — 33ms = ~30 mouse moves/seg max
+    // Antes era 60/seg y combinado con 30fps de frames + keystrokes saturaba IPC
     let _lastMove = 0;
     chromeCanvas.addEventListener('mousemove', (e) => {
       const now = performance.now();
-      if (now - _lastMove < 16) return; // throttle ~60fps
+      if (now - _lastMove < 33) return;
       _lastMove = now;
       const { x, y } = canvasToPagePos(e);
       window.api.chromeEmbed.sendMouse({ type: 'mouseMoved', x, y, modifiers: modifiersOf(e) });

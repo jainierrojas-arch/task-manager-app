@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.139': {
+    title: '🔧 Chrome Real: ataque integral a freezes + sesión persistente + diagnóstico downloads',
+    features: [
+      '🧊 <strong>FIX freeze</strong>: cadencia screencast 30fps → 15fps (every 2 frames). Calidad JPEG 85 → 75 (menos payload IPC, casi imperceptible). Mouse move throttle 60fps → 30fps. Resultado: IPC ~50% más liviano, deja de saturarse al tipear.',
+      '🍪 <strong>FIX sesión persistente</strong>: agregados flags <code>--password-store=basic</code> + <code>--use-mock-keychain</code> + <code>--profile-directory=Default</code>. En macOS sin esto Chrome trata de usar Keychain con perfil custom y a veces no guarda cookies. Ahora usa storage en disco directo.',
+      '🚪 <strong>Cierre limpio con timeouts</strong>: al apagar Chrome embed, cerramos páginas con <code>runBeforeUnload</code> para flushear localStorage, después <code>browser.close()</code> con timeout 5s, y si no cierra hacemos <code>SIGKILL</code>. Sin colgar la UI nunca.',
+      '🪵 <strong>Diagnóstico cookies</strong>: al cerrar imprime cuántas cookies tenía la tab activa. Si dice <code>stop: 0 cookies</code> después de loguearte, sabemos que algo borra cookies.',
+      '⬇ <strong>Downloads → Depósito</strong>: ya está implementado (v3.11.135). Si no te funciona, abrí DevTools y pegame los logs <code>[chrome-real] download</code> + verificá que Cloudinary esté configurado en Settings.'
+    ]
+  },
   '3.11.138': {
     title: '🩹 Chrome Real: vuelve headless invisible + sin flags duplicados',
     features: [

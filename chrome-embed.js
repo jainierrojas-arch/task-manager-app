@@ -35,8 +35,9 @@ let state = {
   sender: null,
   width: 1280,
   height: 720,
-  quality: 85,
-  tabs: [],          // [{ id, page, cdp, title, url, screencasting }]
+  quality: 75,           // v3.11.139: 75 (era 85). Menos IPC payload, casi sin diferencia visible
+  everyNthFrame: 2,      // v3.11.139: cada 2 frames = ~15fps. Antes 30fps saturaba IPC
+  tabs: [],
   activeId: null,
   active: false
 };
@@ -174,9 +175,10 @@ async function _startScreencastOn(tab) {
     quality: state.quality,
     maxWidth: state.width,
     maxHeight: state.height,
-    everyNthFrame: 1
+    everyNthFrame: state.everyNthFrame
   });
   tab.screencasting = true;
+  console.log('[chrome-embed] screencast started on', tab.id, `${state.width}x${state.height}@${state.quality}q every${state.everyNthFrame}frame`);
 }
 async function _stopScreencastOn(tab) {
   if (!tab || !tab.cdp || !tab.screencasting) return;
@@ -197,11 +199,15 @@ async function start({ url, sender, width, height, quality }) {
   state.tabs = [];
   state.activeId = null;
 
-  // v3.11.138: headless 'new' (invisible) + stealth plugin. Macos no respeta
-  // window-position=-2400 (re-posiciona ventanas perdidas) → la ventana aparecía.
-  // Stealth plugin parchea navigator.webdriver y TAMBIÉN las detecciones
-  // específicas de headless mode. Sin duplicados de flags que Chrome rechaza.
-  console.log('[chrome-embed] launching system Chrome (headless new + stealth)...');
+  // v3.11.139: launch flags revisados para SESIÓN PERSISTENTE +
+  // mejor compatibilidad con Google.
+  // - password-store=basic: evita prompts de Keychain en macOS (sin esto las
+  //   cookies/passwords no se guardan bien con perfiles custom)
+  // - use-mock-keychain: ídem, esquiva Keychain access
+  // - profile-directory=Default: fuerza usar el subdir "Default" dentro de
+  //   userDataDir (sin esto algunos sites no encuentran cookies)
+  // - persistent-cookies activos por defecto, pero los reforzamos
+  console.log('[chrome-embed] launching system Chrome — profile:', profileDir());
   const launchOpts = {
     channel: 'chrome',
     headless: 'new',
@@ -212,6 +218,9 @@ async function start({ url, sender, width, height, quality }) {
       '--no-default-browser-check',
       '--disable-blink-features=AutomationControlled',
       '--disable-infobars',
+      '--password-store=basic',
+      '--use-mock-keychain',
+      '--profile-directory=Default',
       `--window-size=${state.width},${state.height}`
     ],
     defaultViewport: { width: state.width, height: state.height, deviceScaleFactor: 1 }
@@ -348,6 +357,20 @@ async function dispatchKey({ type, key, code, keyCode, modifiers, text }) {
 
 async function stop() {
   state.active = false;
+  // v3.11.139: contar cookies antes de cerrar — confirma que la sesión persiste
+  try {
+    if (state.browser) {
+      const ctxt = state.browser.defaultBrowserContext();
+      // No tenemos API directa para listar todas las cookies en puppeteer browser-level,
+      // pero podemos contar las del page activo como proxy
+      const activeTab = findTab(state.activeId);
+      if (activeTab && activeTab.page) {
+        const cookies = await activeTab.page.cookies().catch(() => []);
+        console.log(`[chrome-embed] stop: ${cookies.length} cookies en tab activa antes de cerrar`);
+      }
+    }
+  } catch (e) { console.warn('[chrome-embed] cookie count warn:', e.message); }
+
   for (const tab of state.tabs) {
     await _stopScreencastOn(tab);
     try { if (tab.cdp) await tab.cdp.detach(); } catch (_) {}
@@ -355,11 +378,38 @@ async function stop() {
   state.tabs = [];
   state.activeId = null;
   if (state.browser) {
-    try { await state.browser.close(); } catch (_) {}
+    // Cerrar todas las páginas primero (flush localStorage/sessionStorage)
+    // con timeout 3s por página para no colgar si está frozen
+    try {
+      const pages = await state.browser.pages();
+      for (const p of pages) {
+        try {
+          await Promise.race([
+            p.close({ runBeforeUnload: true }),
+            new Promise(r => setTimeout(r, 3000))
+          ]);
+        } catch (_) {}
+      }
+    } catch (_) {}
+    try {
+      await Promise.race([
+        state.browser.close(),
+        new Promise(r => setTimeout(r, 5000))
+      ]);
+    } catch (_) {}
+    // Si después de 5s sigue vivo, matamos el proceso a la fuerza
+    try {
+      const proc = state.browser.process();
+      if (proc && !proc.killed) {
+        console.warn('[chrome-embed] browser.close() timeout — killing process');
+        proc.kill('SIGKILL');
+      }
+    } catch (_) {}
     state.browser = null;
+    await new Promise(r => setTimeout(r, 500));
   }
   state.sender = null;
-  console.log('[chrome-embed] stopped');
+  console.log('[chrome-embed] stopped — profile flushed:', profileDir());
 }
 
 function isActive() { return state.active; }
