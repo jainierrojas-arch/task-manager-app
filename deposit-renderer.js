@@ -2803,24 +2803,24 @@ async function transcribeEntry(entryId, btn) {
 // Todos los guiones DEBEN empezar con hook viral de retención, mantener la idea
 // pero presentarla distinto. Estos profiles ajustan tono y estructura.
 const SCRIPT_TONOS = {
-  educativo:     { label: 'Educativo',     desc: 'Tono claro, didáctico, como un profe explicando' },
+  educativo:     { label: 'Educativo',     desc: 'Tono claro, didáctico, como un profesor explicando' },
   energetico:    { label: 'Energético',    desc: 'Ritmo rápido, frases cortas, mucha energía' },
   motivacional:  { label: 'Motivacional',  desc: 'Inspirador, llamado a la acción, transforma al espectador' },
-  storytelling:  { label: 'Storytelling',  desc: 'Narrativo con conflicto y resolución, contás una historia' },
+  storytelling:  { label: 'Storytelling',  desc: 'Narrativo con conflicto y resolución, cuenta una historia' },
   controversial: { label: 'Controversial', desc: 'Provoca, cuestiona lo obvio, opina fuerte' },
   casual:        { label: 'Casual',        desc: 'Como charla con un amigo cercano, lenguaje coloquial' },
   dramatico:     { label: 'Dramático',     desc: 'Suspenso, tensión, pausas estratégicas' },
   neutro:        { label: 'Neutro',        desc: 'Tono balanceado, ni emocional ni frío' }
 };
 const SCRIPT_ESTILOS = {
-  hook_dato:     { label: 'Hook + dato impactante', desc: 'Empezá con un dato/cifra que sorprenda' },
-  pregunta:      { label: 'Pregunta provocadora',   desc: 'Empezá con una pregunta que active al espectador' },
+  hook_dato:     { label: 'Hook + dato impactante', desc: 'Comienza con un dato o cifra que sorprenda' },
+  pregunta:      { label: 'Pregunta provocadora',   desc: 'Comienza con una pregunta que active al espectador' },
   pasos:         { label: 'Lista de pasos',         desc: 'Estructura "1, 2, 3..." con cada paso accionable' },
-  mito_realidad: { label: 'Mito vs realidad',       desc: 'Desmentí algo que la mayoría cree erróneamente' },
+  mito_realidad: { label: 'Mito vs realidad',       desc: 'Desmiente algo que la mayoría cree erróneamente' },
   antes_despues: { label: 'Antes / Después',        desc: 'Contraste de transformación, narrativa de cambio' },
   caso_real:     { label: 'Caso real',              desc: 'Ejemplo concreto narrado, alguien específico' },
   tutorial:      { label: 'Tutorial directo',       desc: 'Cómo hacer X en pocos pasos, sin rodeos' },
-  comparativa:   { label: 'Comparativa',            desc: 'Comparás 2 opciones / 2 enfoques / 2 resultados' }
+  comparativa:   { label: 'Comparativa',            desc: 'Compara 2 opciones / 2 enfoques / 2 resultados' }
 };
 
 // v3.11.106: longitud del guion generado por Claude.
@@ -2840,7 +2840,7 @@ const SCRIPT_CTAS = {
   guardar: { label: 'Guardar video', instruction: 'Guarda este video para volver a verlo cuando lo necesites' },
   guardar_seguir: { label: 'Guardar + Seguir', instruction: 'Guarda este video y sigue la cuenta para no perderte más' },
   comentar_seguir: { label: 'Comentar + Seguir', instruction: 'Comenta abajo + Sigue la cuenta para más' },
-  compartir: { label: 'Compartir', instruction: 'Compartí este video con alguien que lo necesita ver' }
+  compartir: { label: 'Compartir', instruction: 'Comparte este video con alguien que lo necesita ver' }
 };
 const SCRIPT_CTA_POSICIONES = {
   final: { label: 'Al final', instruction: 'EXACTAMENTE en la última frase del guion, como cierre' },
@@ -2869,17 +2869,34 @@ async function rewriteScriptForEntry(entryId, btn, opts) {
   _setTranscriptionStatus(`⏳ Claude generando variación ${longitud.label.toLowerCase()} (${tono.label} · ${estilo.label}${cta.instruction ? ' · CTA: ' + cta.label : ''})...`);
   try {
     const ctaBlock = cta.instruction
-      ? `5. CTA OBLIGATORIO: integrá un Call To Action que diga "${cta.instruction}". Posición: ${ctaPos.instruction}. El CTA debe sentirse natural — NO suena a comercial barato, suena a invitación honesta del creador.`
-      : `5. NO incluyas CTA. Cerralo con un cliffhanger, reflexión o pregunta que mantenga al espectador hasta el final.`;
-    const prompt = `Recreá el siguiente guion de video.
+      ? `5. CTA OBLIGATORIO: integra un Call To Action que diga "${cta.instruction}". Posición: ${ctaPos.instruction}. El CTA debe sentirse natural — NO suena a comercial barato, suena a invitación honesta del creador.`
+      : `5. NO incluyas CTA. Ciérralo con un cliffhanger, reflexión o pregunta que mantenga al espectador hasta el final.`;
+    const prompt = `Recrea el siguiente guion de video.
 
-REGLAS OBLIGATORIAS:
-1. EMPEZÁ con un HOOK VIRAL de retención de audiencia — los primeros 3 segundos definen si la persona se queda o pasa de largo. Sé brutal: dato impactante, pregunta provocadora, frase polémica, o lo que aplique según el estilo.
-2. LONGITUD: el guion debe ser ${longitud.desc}. Apuntá a aproximadamente ${longitud.words} palabras (${longitud.seconds} segundos hablados). NO te quedes corto NI te excedas — esa es la duración objetivo. Si el original es mucho más largo o más corto, ajustalo a esa medida sin perder la idea central.
-3. Mantené la MISMA idea/tema central que el original, pero adaptada a la longitud pedida.
-4. Cambiá las palabras, el ángulo, el orden — que NO sea reconocible como copia del original.
+⚠️ REGLA #1 ABSOLUTA — ESPAÑOL NEUTRO INTERNACIONAL ⚠️
+El guion DEBE estar escrito en español NEUTRO LATINOAMERICANO, sin ningún regionalismo.
+PROHIBIDO ABSOLUTAMENTE:
+- Voseo argentino: NO uses "vos", "tenés", "mirá", "andá", "querés", "sabés", "podés", "decí", "fijate", "dale", "che", "boludo".
+- Castellano de España: NO uses "vosotros", "os", "tío", "guay", "vale" (como muletilla), "joder", "molar", "currar".
+- Mexicanismos extremos: NO "wey", "chido", "chingón", "neta", "padre" (como adjetivo).
+- Chileno/colombiano/peruano marcados: NO "weón", "parcero", "bacán", "pana", "chévere" en exceso.
+
+USA SIEMPRE:
+- "Tú" como segunda persona singular (formal/informal universal). Conjugación neutra: "tú tienes", "tú puedes", "tú sabes".
+- "Ustedes" para plural (NUNCA "vosotros").
+- Verbos en imperativo neutro: "comenta", "guarda", "comparte", "sigue", "mira", "haz", "dile" (NO "comentá/comentad/comenten").
+- Cuando sea posible, usa construcciones impersonales que evitan tomar lado: "se logra", "hay que", "es importante", "lo que pasa es...".
+- Vocabulario universal: "video" (no "vídeo"), "celular" (no "móvil"/"teléfono"), "computadora" (o "computador"), "auto" (no "coche"/"carro" salvo contexto).
+
+Este es el español que usan los doblajes latinoamericanos profesionales (películas de Disney, Netflix LATAM, etc.). NEUTRO = entendible por cualquier hispanohablante de cualquier país sin que suene a "extranjero".
+
+REGLAS DE CONTENIDO:
+1. EMPIEZA con un HOOK VIRAL de retención de audiencia — los primeros 3 segundos definen si la persona se queda o pasa de largo. Sé contundente: dato impactante, pregunta provocadora, frase polémica, o lo que aplique según el estilo.
+2. LONGITUD: el guion debe ser ${longitud.desc}. Apunta a aproximadamente ${longitud.words} palabras (${longitud.seconds} segundos hablados). NO te quedes corto NI te excedas — esa es la duración objetivo. Si el original es mucho más largo o más corto, ajústalo a esa medida sin perder la idea central.
+3. Mantén la MISMA idea/tema central que el original, pero adaptada a la longitud pedida.
+4. Cambia las palabras, el ángulo, el orden — que NO sea reconocible como copia del original.
 ${ctaBlock}
-6. Escribilo en español neutro, listo para grabar.
+6. Reitera: español NEUTRO LATINOAMERICANO, listo para grabar. SIN regionalismos.
 
 PERFIL DE ESTA VARIACIÓN:
 - Tono: ${tono.label} — ${tono.desc}
@@ -2887,7 +2904,7 @@ PERFIL DE ESTA VARIACIÓN:
 - Longitud: ${longitud.label} (~${longitud.seconds}s / ~${longitud.words} palabras)
 ${cta.instruction ? `- CTA: ${cta.label} — "${cta.instruction}" — ${ctaPos.label}` : '- CTA: ninguno'}
 
-DEVOLVÉ SOLO el guion nuevo, sin explicaciones, sin encabezados, sin comillas. Texto plano listo para leer en cámara.
+DEVUELVE SOLO el guion nuevo, sin explicaciones, sin encabezados, sin comillas. Texto plano listo para leer en cámara, en español neutro internacional.
 
 GUION ORIGINAL:
 ${entry.transcription}`;
@@ -3041,14 +3058,19 @@ async function splitTranscriptionIntoScenes(entryId, btn) {
 
   let prompt;
   if (target === 'heygen') {
-    prompt = `Te paso un guion de video. Dividilo en ESCENAS de ${sceneDuration} segundos cada una, que van a usarse con HeyGen para que un avatar AI las narre.
+    prompt = `Te paso un guion de video. Divídelo en ESCENAS de ${sceneDuration} segundos cada una, para usarse con HeyGen y que un avatar AI las narre.
+
+⚠️ IDIOMA OBLIGATORIO — ESPAÑOL NEUTRO INTERNACIONAL:
+- PROHIBIDO voseo argentino (vos/tenés/mirá/podés/decí), castellano de España (vosotros/os/tío/vale/molar), mexicanismos (wey/chido/neta), o cualquier regionalismo marcado.
+- USA "tú" universal, imperativos neutros (comenta/guarda/mira/sigue), vocabulario universal (video, celular, computadora).
+- Es el español de los doblajes profesionales de Disney/Netflix LATAM — entendible por TODOS los hispanohablantes.
 
 REGLAS:
 1. Cada escena tiene que sonar natural hablada por una persona — frases completas, no fragmentos cortados.
 2. Cada escena debe durar aproximadamente ${sceneDuration} segundos al ser leída — eso son ~${wordsPerScene} palabras por escena.
-3. Mantené el HOOK al inicio de la escena 1. Que cada escena cierre dejando ganas de pasar a la siguiente (cliffhangers, preguntas, tensión).
+3. Mantén el HOOK al inicio de la escena 1. Que cada escena cierre dejando ganas de pasar a la siguiente (cliffhangers, preguntas, tensión).
 4. NO cortes ideas a la mitad. Cada escena debe ser una unidad coherente.
-5. Mantené el sentido y el orden del guion original.
+5. Mantén el sentido y el orden del guion original.
 
 FORMATO de salida — JSON válido, SIN nada antes o después:
 {"scenes":[
@@ -3060,20 +3082,25 @@ FORMATO de salida — JSON válido, SIN nada antes o después:
 GUION ORIGINAL:
 ${entry.transcription}`;
   } else {
-    prompt = `Te paso un guion de video. Convertilo en una serie de PROMPTS visuales para Google Flash Omni, donde cada prompt genera un clip de ${sceneDuration} segundos.
+    prompt = `Te paso un guion de video. Conviértelo en una serie de PROMPTS visuales para Google Flash Omni, donde cada prompt genera un clip de ${sceneDuration} segundos.
 
 CONTEXTO IMPORTANTE: El usuario va a generar clips secuenciales con su CLON AI como protagonista. Los clips deben mantener continuidad visual entre escenas (mismo personaje, mismo estilo, transiciones suaves).
 
+⚠️ IDIOMA OBLIGATORIO en los voiceover — ESPAÑOL NEUTRO INTERNACIONAL:
+- PROHIBIDO voseo argentino, castellano de España, o regionalismos marcados.
+- USA "tú" universal e imperativos neutros (comenta/guarda/mira/sigue).
+- Los prompts visuales pueden ir en inglés si es estándar para video gen (ok), pero los voiceovers SIEMPRE en español neutro.
+
 REGLAS para cada prompt:
-1. Describí la escena VISUALMENTE — qué se ve, cómo se mueve la cámara, ambiente, iluminación, vestuario del personaje (el clon).
-2. Incluí en cada escena: "Mantener el mismo personaje (clon del usuario) con la misma apariencia y vestuario que en escenas anteriores" para asegurar continuidad.
+1. Describe la escena VISUALMENTE — qué se ve, cómo se mueve la cámara, ambiente, iluminación, vestuario del personaje (el clon).
+2. Incluye en cada escena: "Mantener el mismo personaje (clon del usuario) con la misma apariencia y vestuario que en escenas anteriores" para asegurar continuidad.
 3. Acción específica del personaje + diálogo o voiceover que va sobre el clip.
 4. Cada escena dura ${sceneDuration}s — no más, no menos.
 5. Estilo cinematográfico, lenguaje claro de prompts de generación de video.
 
 FORMATO de salida — JSON válido, SIN nada antes o después:
 {"scenes":[
-  {"n":1,"text":"prompt completo para Google Flash Omni escena 1","voiceover":"qué se escucha hablando en esta escena"},
+  {"n":1,"text":"prompt completo para Google Flash Omni escena 1","voiceover":"qué se escucha hablando en esta escena (español neutro)"},
   {"n":2,"text":"prompt para Google Flash Omni escena 2","voiceover":"..."},
   ...
 ]}

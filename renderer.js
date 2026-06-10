@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.145': {
+    title: '🗣 Variaciones generadas SIEMPRE en español neutro internacional (sin voseo, sin España, sin regionalismos)',
+    features: [
+      '🗣 <strong>Prompt de Claude reforzado</strong>: bloque ⚠️ "ESPAÑOL NEUTRO INTERNACIONAL" al inicio del prompt, ANTES de las reglas de contenido. Listado explícito de qué está PROHIBIDO (vos/tenés/mirá, vosotros/os/tío, wey/chido, etc.) y qué USAR ("tú" universal, imperativos neutros, vocabulario universal).',
+      '📺 <strong>Referencia</strong>: "el español de los doblajes profesionales de Disney/Netflix LATAM — entendible por TODOS los hispanohablantes".',
+      '✅ <strong>También arreglado</strong>: prompts de "Dividir en escenas" (HeyGen + Flash Omni) tienen el mismo bloque de español neutro.',
+      '✅ Las descripciones de tonos/estilos y el CTA "Compartir" estaban en voseo argentino — pasadas a neutro.',
+      '🔁 <strong>Para aplicar a variaciones ya generadas</strong>: tendrás que regenerar las variaciones existentes (las viejas se quedan con el español original que generó Claude antes de este fix).'
+    ]
+  },
   '3.11.144': {
     title: '🧹 Limpieza: removidos Chrome Real / Chrome Nativo (causaban confusión sin entregar valor)',
     features: [
