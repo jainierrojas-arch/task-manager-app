@@ -75,6 +75,18 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.159': {
+    title: '🔒 Aislamiento bullet-proof entre workspaces (iframes hard-reload + no más flash de data anterior)',
+    features: [
+      '⚠️ <strong>Aclaración importante</strong>: NUNCA toqué ni moví tus archivos de "Mi Agencia" a otro workspace. Los datos viven en Firestore con un campo <code>workspaceId</code> obligatorio. Lo que viste fue probablemente el FLASH de data del workspace anterior antes de que el nuevo cargue.',
+      '🔄 <strong>Hard reload de iframes</strong>: al cambiar workspace, los iframes (Depósito, Referencias, Chat) primero pasan a <code>about:blank</code>, esperan 50ms, y RECIÉN AHÍ cargan la URL del nuevo workspace. Sin flash de la data anterior.',
+      '🪵 <strong>Logs nuevos</strong> en Console: <code>[ws-switch] Mi Agencia → Humberto</code> y <code>[ws-filter] applied for &lt;wsId&gt; — tasks: X deposit: Y projects: Z scheduled: W</code>. Si ves números raros, lo identificás al toque.',
+      '🚪 <strong>Sesiones Explorer per-workspace</strong> (v3.11.157): cada workspace tiene su partition. Cookies, login, historial — todo aislado.',
+      '📜 <strong>Historial + ⭐ Favoritos</strong> (v3.11.158): per-workspace, con tabs en el modal.',
+      '🐞 <strong>OG fetch leak</strong> (v3.11.158): arreglado, ya NO usa cookies IG de otros workspaces.',
+      '💡 Si ves un workspace con data que no es suya, abrí DevTools (Cmd+Opt+I) → Console, cambiá de workspace, mandame los logs <code>[ws-switch]</code> y <code>[ws-filter]</code>. Con eso veo si el filter está mal o si la data tiene workspaceId equivocado.'
+    ]
+  },
   '3.11.158': {
     title: '📜 Historial + ⭐ Favoritos per-workspace + fix OG fetch leak entre workspaces',
     features: [
@@ -2496,6 +2508,9 @@ function belongsToCurrentWs(doc) {
 // Re-deriva todas las arrays públicas del workspace activo y dispara renders.
 // Se llama al hacer switch de workspace y desde cada listener tras update.
 function applyWorkspaceFilter() {
+  // v3.11.159: filtros estrictos. Si por algún motivo el doc no tiene
+  // workspaceId Y NO estamos en default → NO se muestra (más estricto que
+  // antes que era permisivo cuando defId era null).
   tasks = _allTasks.filter(t => !t.deletedAt).filter(belongsToCurrentWs);
   trashTasks = _allTasks.filter(t => t.deletedAt).filter(belongsToCurrentWs);
   projects = _allProjects.filter(belongsToCurrentWs);
@@ -2504,6 +2519,7 @@ function applyWorkspaceFilter() {
   ideas = _allIdeas.filter(belongsToCurrentWs);
   chatMessages = _allChatMessages.filter(belongsToCurrentWs);
   captionTemplates = _allCaptionTemplates.filter(belongsToCurrentWs);
+  console.log('[ws-filter] applied for', currentWorkspaceId, '— tasks:', tasks.length, 'deposit:', depositEntries.length, 'projects:', projects.length, 'scheduled:', scheduledPosts.length);
   // Disparar renders relevantes
   try { renderAll(); } catch (e) {}
   try { renderTrashList(); } catch (e) {}
@@ -9174,6 +9190,9 @@ function switchWorkspace(workspaceId) {
     closeWorkspaceDropdown();
     return;
   }
+  const fromWs = workspaces.find(w => w.id === currentWorkspaceId);
+  const toWs = workspaces.find(w => w.id === workspaceId);
+  console.log('[ws-switch]', fromWs && fromWs.name, '→', toWs && toWs.name);
   currentWorkspaceId = workspaceId;
   try { localStorage.setItem('currentWorkspaceId', workspaceId); } catch (e) {}
   renderWorkspaceSwitcher();
@@ -9209,6 +9228,9 @@ function buildIframeSrc(baseSrc) {
 // para que apliquen su propio filtro localmente.
 function notifyIframesOfWorkspaceChange() {
   try {
+    // v3.11.159: HARD reset de iframes. Primero los blankeamos para que el
+    // user vea claro que el contenido cambió (sin flash de data del workspace
+    // anterior), después los recargamos con la nueva URL.
     const iframe = document.getElementById('sidePanelIframe');
     const iframe2 = document.getElementById('sidePanelIframeSecondary');
     [iframe, iframe2].forEach(f => {
@@ -9219,7 +9241,9 @@ function notifyIframesOfWorkspaceChange() {
       else if (kind === 'pro-chat' || kind === 'chat') baseSrc = 'chat.html';
       else if (kind === 'references') baseSrc = 'deposit.html?category=referencias';
       else return;
-      f.src = buildIframeSrc(baseSrc);
+      // Blank primero, después el nuevo URL (forza full reload, sin cache)
+      f.src = 'about:blank';
+      setTimeout(() => { f.src = buildIframeSrc(baseSrc); }, 50);
     });
     // v3.11.3: también recargar los iframes embebidos como tabs
     const tabIframes = [
@@ -9229,7 +9253,10 @@ function notifyIframesOfWorkspaceChange() {
     ];
     tabIframes.forEach(({ id, baseSrc }) => {
       const f = document.getElementById(id);
-      if (f && f.dataset.loaded === '1') f.src = buildIframeSrc(baseSrc);
+      if (f && f.dataset.loaded === '1') {
+        f.src = 'about:blank';
+        setTimeout(() => { f.src = buildIframeSrc(baseSrc); }, 50);
+      }
     });
     // v3.11.4: recargar categorías del Explorer al cambiar workspace
     if (typeof window._explorerReloadCategories === 'function') {
