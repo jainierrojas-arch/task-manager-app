@@ -75,6 +75,17 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.158': {
+    title: '📜 Historial + ⭐ Favoritos per-workspace + fix OG fetch leak entre workspaces',
+    features: [
+      '🐞 <strong>Fix CRÍTICO de leak</strong>: el OG fetch (cuando guardás un link IG/TT al Depósito) iteraba TODAS las partitions registradas buscando cookies. Si workspace A tenía IG logueado, usaba esas cookies AUNQUE estuvieras en workspace B. AHORA: usa SOLO la partition del workspace activo. Si no hay cookies en la actual, no hay IG (no se filtra del otro workspace).',
+      '📜 <strong>Botón Historial (📜)</strong> en la toolbar del Explorer. Click → modal con últimas 200 visitas del workspace ACTUAL. Buscador integrado. Click en una entry para abrirla. × para eliminar.',
+      '⭐ <strong>Botón Favorito (⭐)</strong>: estando en cualquier URL, click → guarda al Firestore <code>explorerBookmarks</code> con workspace tag. Para ver tus favoritos, abrí el modal de historial y cambiá al filtro Favoritos... actualmente el ícono ⭐ abre directo el modal con tus favoritos del workspace.',
+      '🔒 <strong>100% aislado por workspace</strong>: historial y favoritos se filtran por <code>workspaceId</code>. Workspace nuevo arranca con CERO entries. Cuando navegás, las visitas se guardan al historial del workspace activo. Cuando agregás a favoritos, queda en ese workspace.',
+      '🗂 <strong>Colecciones Firestore nuevas</strong>: <code>explorerHistory</code> y <code>explorerBookmarks</code> con rules desplegadas. Cada doc tiene <code>workspaceId</code> obligatorio.',
+      '⚡ <strong>Auto-track</strong>: cada vez que el webview navega (did-navigate, did-finish-load), la URL + título se guarda al historial. Dedupe automático (no graba la misma URL 2 veces seguidas).'
+    ]
+  },
   '3.11.157': {
     title: '🔐 Sesiones del Explorer aisladas por workspace (cuentas IG/TT distintas por cliente)',
     features: [

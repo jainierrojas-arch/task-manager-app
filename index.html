@@ -2545,6 +2545,8 @@
             <button id="explorerReload" title="Recargar">🔄</button>
             <input type="url" id="explorerUrlBar" placeholder="https://..." spellcheck="false">
             <button id="explorerGo" class="explorer-primary">Ir</button>
+            <button id="explorerStar" title="Guardar URL actual en favoritos del workspace" style="background:rgba(255,193,7,0.15);border:1px solid rgba(255,193,7,0.4);color:#ffcd3c;font-weight:600;padding:6px 10px;border-radius:6px;cursor:pointer">⭐</button>
+            <button id="explorerHistory" title="Ver historial del workspace" style="background:rgba(76,175,80,0.15);border:1px solid rgba(76,175,80,0.4);color:#9ee49e;font-weight:600;padding:6px 10px;border-radius:6px;cursor:pointer">📜</button>
             <button id="explorerOpenSystem" title="Abrir esta página en tu Chrome del sistema (útil para login Google y sitios que bloquean apps embebidas)" style="background:rgba(108,99,255,0.18);border:1px solid rgba(108,99,255,0.45);color:var(--accent);font-weight:600;padding:6px 12px;border-radius:6px;cursor:pointer">🌐 Abrir en Chrome</button>
           </div>
 
@@ -2572,6 +2574,21 @@
           <div class="explorer-browser-wrap" id="explorerBrowserWrap">
             <div class="explorer-loading-bar" id="explorerLoadingBar"></div>
             <div class="explorer-toast" id="explorerToast"></div>
+          </div>
+
+          <!-- v3.11.158: Modal Historial / Favoritos del workspace con tabs -->
+          <div id="explorerListOverlay" style="display:none;position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);z-index:50;align-items:flex-start;justify-content:center;padding-top:60px">
+            <div style="background:#1a1a1f;border:1px solid #2a2a32;border-radius:12px;width:90%;max-width:720px;max-height:80vh;display:flex;flex-direction:column;overflow:hidden">
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid #2a2a32;gap:10px">
+                <div style="display:flex;gap:6px">
+                  <button id="explorerTabHistory" style="background:rgba(76,175,80,0.2);border:1px solid rgba(76,175,80,0.5);color:#9ee49e;font-weight:600;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:12px">📜 Historial</button>
+                  <button id="explorerTabBookmarks" style="background:transparent;border:1px solid #2a2a32;color:#888;font-weight:600;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:12px">⭐ Favoritos</button>
+                </div>
+                <input id="explorerListSearch" placeholder="Buscar..." spellcheck="false" style="flex:1;max-width:240px;background:#0f0f14;border:1px solid #2a2a32;border-radius:6px;padding:6px 10px;color:#fff;font-size:12px">
+                <button id="explorerListClose" style="background:transparent;border:none;color:#999;font-size:20px;cursor:pointer;padding:0 6px">&times;</button>
+              </div>
+              <div id="explorerListBody" style="flex:1;overflow-y:auto;padding:8px;color:#ddd;font-size:13px"></div>
+            </div>
           </div>
 
           <!-- v3.11.144: removida el área del Chrome Real Embed.

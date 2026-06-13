@@ -2433,18 +2433,24 @@ function registerIpcHandlers() {
   _setupExplorerDownloads('persist:explorer');
 
   // v3.11.157: IPC para registrar partitions de Explorer por workspace.
-  // El renderer llama esto cuando crea una webview con una partition nueva.
-  // Setup también añade la partition al registry usado por el OG fetch de IG.
   const _knownExplorerPartitions = new Set(['persist:explorer']);
+  global._currentExplorerPartition = 'persist:explorer';
   ipcMain.handle('register-explorer-partition', async (_, partition) => {
     if (!partition || typeof partition !== 'string') return { ok: false };
+    // v3.11.158: marcar como current (es la que el user está usando ahora)
+    global._currentExplorerPartition = partition;
     if (_knownExplorerPartitions.has(partition)) return { ok: true, alreadyRegistered: true };
     _knownExplorerPartitions.add(partition);
     _setupExplorerDownloads(partition);
     console.log('[explorer-partition] registered:', partition, '— total:', _knownExplorerPartitions.size);
     return { ok: true };
   });
-  // Expose getter para que las demás funciones (OG fetch IG cookies) puedan iterar
+  ipcMain.handle('set-current-explorer-partition', async (_, partition) => {
+    if (!partition || typeof partition !== 'string') return { ok: false };
+    global._currentExplorerPartition = partition;
+    console.log('[explorer-partition] current set to:', partition);
+    return { ok: true };
+  });
   global._getKnownExplorerPartitions = () => Array.from(_knownExplorerPartitions);
 
   // v3.11.117: IPC para que el Explorer (o cualquier renderer) persista
@@ -2678,20 +2684,23 @@ function registerIpcHandlers() {
       const igMatch = url.match(/instagram\.com\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
       if (igMatch) {
         const embedUrl = `https://www.instagram.com/p/${igMatch[1]}/embed/captioned/`;
-        // v3.11.157: buscar cookies de IG en TODAS las partitions del Explorer
-        // registradas (una por workspace) + las legacy. Devuelve la primera
-        // que tenga sessionid.
+        // v3.11.158: usar SOLO la partition del workspace activo. NO iterar
+        // todas las conocidas — eso filtraba cookies del workspace A en
+        // workspace B. Si no hay cookies en la partition activa, no hay IG.
         let activePartition = null;
         try {
-          const known = (typeof global._getKnownExplorerPartitions === 'function')
-            ? global._getKnownExplorerPartitions()
-            : ['persist:explorer'];
-          const partsToCheck = [...new Set([...known, 'persist:tm-instagram'])];
-          for (const part of partsToCheck) {
-            const s = session.fromPartition(part);
-            const cookies = await s.cookies.get({ domain: '.instagram.com' });
-            const hasSession = cookies.some(c => c.name === 'sessionid' && c.value);
-            if (hasSession) { activePartition = part; break; }
+          const current = global._currentExplorerPartition || 'persist:explorer';
+          const s = session.fromPartition(current);
+          const cookies = await s.cookies.get({ domain: '.instagram.com' });
+          const hasSession = cookies.some(c => c.name === 'sessionid' && c.value);
+          if (hasSession) {
+            activePartition = current;
+          } else {
+            // Fallback: tm-instagram (partition separada de IG login solo)
+            const s2 = session.fromPartition('persist:tm-instagram');
+            const cookies2 = await s2.cookies.get({ domain: '.instagram.com' });
+            const hasSession2 = cookies2.some(c => c.name === 'sessionid' && c.value);
+            if (hasSession2) activePartition = 'persist:tm-instagram';
           }
         } catch (e) { console.warn('[og-fetch] IG cookies check failed:', e.message); }
 

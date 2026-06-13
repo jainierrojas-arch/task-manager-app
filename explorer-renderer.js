@@ -157,15 +157,39 @@
       tab.title = (ev.title || '').slice(0, 40) || 'Pestaña';
       renderTabs();
     });
-    w.addEventListener('did-navigate', () => {
+    w.addEventListener('did-navigate', (ev) => {
       if (tab.id === activeTabId) syncUrlBar();
+      // v3.11.158: guardar al historial del workspace activo
+      _saveToHistory(ev.url || w.getURL(), tab.title);
     });
     w.addEventListener('did-navigate-in-page', () => {
       if (tab.id === activeTabId) syncUrlBar();
     });
     w.addEventListener('did-finish-load', () => {
       if (tab.id === activeTabId) syncUrlBar();
+      // Actualizar título del historial cuando la página termina de cargar
+      try { _saveToHistory(w.getURL(), w.getTitle()); } catch (_) {}
     });
+  }
+
+  // v3.11.158: historial + favoritos per-workspace (Firestore-backed).
+  // Cada visita se guarda con workspaceId. Solo se muestran las del workspace activo.
+  let _lastSavedHistoryUrl = '';
+  async function _saveToHistory(url, title) {
+    if (!url || !/^https?:/i.test(url)) return;
+    if (url === _lastSavedHistoryUrl) return; // dedupe consecutivos
+    if (typeof db === 'undefined' || !db) return;
+    const wsId = (typeof currentWorkspaceId !== 'undefined') ? currentWorkspaceId : null;
+    _lastSavedHistoryUrl = url;
+    try {
+      await db.collection('explorerHistory').add({
+        url: url.slice(0, 500),
+        title: (title || '').slice(0, 200),
+        workspaceId: wsId,
+        createdBy: (typeof currentUser !== 'undefined' && currentUser) ? currentUser.uid : null,
+        visitedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    } catch (e) { /* silencio: history NO debe romper navegación */ }
   }
 
   function syncUrlBar() {
@@ -222,6 +246,167 @@
     btn.addEventListener('click', () => navigate(btn.dataset.explorerQuick));
   });
   addTabBtn.addEventListener('click', () => createTab('https://www.google.com/'));
+
+  // v3.11.158: botones Historial + Favoritos
+  const starBtn = document.getElementById('explorerStar');
+  const histBtn = document.getElementById('explorerHistory');
+  const listOverlay = document.getElementById('explorerListOverlay');
+  const listTitle = document.getElementById('explorerListTitle');
+  const listSearch = document.getElementById('explorerListSearch');
+  const listBody = document.getElementById('explorerListBody');
+  const listClose = document.getElementById('explorerListClose');
+
+  function _closeList() { if (listOverlay) listOverlay.style.display = 'none'; }
+  if (listClose) listClose.addEventListener('click', _closeList);
+  if (listOverlay) listOverlay.addEventListener('click', (e) => { if (e.target === listOverlay) _closeList(); });
+
+  function _renderList(items, mode) {
+    if (!listBody) return;
+    if (items.length === 0) {
+      listBody.innerHTML = `<div style="text-align:center;padding:40px;color:#666;font-size:12px">Sin ${mode === 'history' ? 'historial' : 'favoritos'} en este workspace.</div>`;
+      return;
+    }
+    listBody.innerHTML = items.map(it => {
+      const safeUrl = (it.url || '').replace(/"/g, '&quot;');
+      const safeTitle = (it.title || it.url || '').replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+      const ago = it.visitedAt && it.visitedAt.toMillis ? _timeAgo(it.visitedAt.toMillis()) : '';
+      return `
+        <div style="display:flex;align-items:center;gap:10px;padding:10px;border-radius:6px;cursor:pointer;hover:background:#252530" class="explorer-list-item" data-url="${safeUrl}">
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:600;color:#fff;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${safeTitle}</div>
+            <div style="font-size:11px;color:#888;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${safeUrl}</div>
+          </div>
+          ${ago ? `<div style="font-size:10px;color:#666;white-space:nowrap">${ago}</div>` : ''}
+          <button class="explorer-list-delete" data-id="${it.id}" data-mode="${mode}" title="Eliminar" style="background:transparent;border:1px solid #444;color:#ff6b6b;border-radius:4px;padding:2px 6px;font-size:12px;cursor:pointer">×</button>
+        </div>`;
+    }).join('');
+    listBody.querySelectorAll('.explorer-list-item').forEach(el => {
+      el.addEventListener('click', (e) => {
+        if (e.target.classList.contains('explorer-list-delete')) return;
+        navigate(el.dataset.url);
+        _closeList();
+      });
+    });
+    listBody.querySelectorAll('.explorer-list-delete').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.id;
+        const collection = btn.dataset.mode === 'history' ? 'explorerHistory' : 'explorerBookmarks';
+        try { await db.collection(collection).doc(id).delete(); } catch (_) {}
+      });
+    });
+  }
+
+  function _timeAgo(ts) {
+    const diff = Date.now() - ts;
+    const m = Math.floor(diff / 60000);
+    if (m < 1) return 'ahora';
+    if (m < 60) return m + 'm';
+    const h = Math.floor(m / 60);
+    if (h < 24) return h + 'h';
+    const d = Math.floor(h / 24);
+    return d + 'd';
+  }
+
+  let _historyUnsub = null;
+  let _bookmarksUnsub = null;
+  let _allHistory = [];
+  let _allBookmarks = [];
+
+  function _openHistoryModal() {
+    if (!listOverlay) return;
+    listTitle.textContent = '📜 Historial del workspace';
+    listSearch.value = '';
+    listOverlay.style.display = 'flex';
+    if (_historyUnsub) _historyUnsub();
+    const wsId = (typeof currentWorkspaceId !== 'undefined') ? currentWorkspaceId : null;
+    _historyUnsub = db.collection('explorerHistory')
+      .orderBy('visitedAt', 'desc')
+      .limit(200)
+      .onSnapshot(snap => {
+        _allHistory = snap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .filter(h => h.workspaceId === wsId);
+        _renderList(_filterByQuery(_allHistory, listSearch.value), 'history');
+      });
+  }
+
+  function _openBookmarksModal() {
+    if (!listOverlay) return;
+    listTitle.textContent = '⭐ Favoritos del workspace';
+    listSearch.value = '';
+    listOverlay.style.display = 'flex';
+    if (_bookmarksUnsub) _bookmarksUnsub();
+    const wsId = (typeof currentWorkspaceId !== 'undefined') ? currentWorkspaceId : null;
+    _bookmarksUnsub = db.collection('explorerBookmarks')
+      .orderBy('savedAt', 'desc')
+      .limit(200)
+      .onSnapshot(snap => {
+        _allBookmarks = snap.docs
+          .map(d => ({ id: d.id, ...d.data(), visitedAt: d.data().savedAt }))
+          .filter(b => b.workspaceId === wsId);
+        _renderList(_filterByQuery(_allBookmarks, listSearch.value), 'bookmarks');
+      });
+  }
+
+  function _filterByQuery(items, q) {
+    if (!q) return items;
+    const lc = q.toLowerCase();
+    return items.filter(it => (it.url || '').toLowerCase().includes(lc) || (it.title || '').toLowerCase().includes(lc));
+  }
+
+  if (listSearch) {
+    listSearch.addEventListener('input', () => {
+      const mode = listTitle.textContent.includes('Favoritos') ? 'bookmarks' : 'history';
+      const data = mode === 'history' ? _allHistory : _allBookmarks;
+      _renderList(_filterByQuery(data, listSearch.value), mode);
+    });
+  }
+
+  const tabHistBtn = document.getElementById('explorerTabHistory');
+  const tabBookBtn = document.getElementById('explorerTabBookmarks');
+  function _setActiveTab(active) {
+    if (tabHistBtn) {
+      tabHistBtn.style.background = active === 'history' ? 'rgba(76,175,80,0.2)' : 'transparent';
+      tabHistBtn.style.borderColor = active === 'history' ? 'rgba(76,175,80,0.5)' : '#2a2a32';
+      tabHistBtn.style.color = active === 'history' ? '#9ee49e' : '#888';
+    }
+    if (tabBookBtn) {
+      tabBookBtn.style.background = active === 'bookmarks' ? 'rgba(255,193,7,0.2)' : 'transparent';
+      tabBookBtn.style.borderColor = active === 'bookmarks' ? 'rgba(255,193,7,0.5)' : '#2a2a32';
+      tabBookBtn.style.color = active === 'bookmarks' ? '#ffcd3c' : '#888';
+    }
+  }
+  if (tabHistBtn) tabHistBtn.addEventListener('click', () => { _setActiveTab('history'); _openHistoryModal(); });
+  if (tabBookBtn) tabBookBtn.addEventListener('click', () => { _setActiveTab('bookmarks'); _openBookmarksModal(); });
+
+  if (histBtn) histBtn.addEventListener('click', () => { _setActiveTab('history'); _openHistoryModal(); });
+  if (starBtn) {
+    // Right-click → abrir Favoritos. Click normal → guardar URL actual como favorito.
+    starBtn.addEventListener('contextmenu', (e) => { e.preventDefault(); _setActiveTab('bookmarks'); _openBookmarksModal(); });
+    starBtn.addEventListener('click', async () => {
+      const b = getActiveBrowser();
+      let u = '', t = '';
+      try { u = b ? b.getURL() : ''; t = b ? b.getTitle() : ''; } catch (_) {}
+      if (!u || !/^https?:/i.test(u)) {
+        showToast('URL inválida', 'error');
+        return;
+      }
+      const wsId = (typeof currentWorkspaceId !== 'undefined') ? currentWorkspaceId : null;
+      try {
+        await db.collection('explorerBookmarks').add({
+          url: u.slice(0, 500),
+          title: (t || u).slice(0, 200),
+          workspaceId: wsId,
+          createdBy: (typeof currentUser !== 'undefined' && currentUser) ? currentUser.uid : null,
+          savedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        showToast('⭐ Guardado en favoritos del workspace');
+      } catch (e) {
+        showToast('Error guardando favorito: ' + e.message, 'error');
+      }
+    });
+  }
 
   // v3.11.129: abrir la URL actual en el Chrome / navegador del sistema.
   // Útil para login de Google (que bloquea webviews embebidos) o pagar

@@ -85,6 +85,8 @@ contextBridge.exposeInMainWorld('api', {
 
   // v3.11.157: registrar partition del Explorer (por workspace) para hooks de descarga
   registerExplorerPartition: (partition) => ipcRenderer.invoke('register-explorer-partition', partition),
+  // v3.11.158: setear cuál es la partition CURRENT (la del workspace activo)
+  setCurrentExplorerPartition: (partition) => ipcRenderer.invoke('set-current-explorer-partition', partition),
 
   // v3.11.143: descargas del webview Explorer
   onWebviewDownloadStart: (cb) => ipcRenderer.on('webview-download-start', (_, info) => cb(info)),
