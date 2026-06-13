@@ -75,6 +75,15 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.156': {
+    title: '🔒 Fix CRÍTICO: workspace nuevo arrancaba con data de la agencia (faltaba refresh tras crear)',
+    features: [
+      '🐞 <strong>El bug</strong>: al crear un workspace nuevo desde el dropdown, el código seteaba <code>currentWorkspaceId = nuevoId</code> pero NUNCA llamaba a <code>applyWorkspaceFilter()</code> ni a <code>notifyIframesOfWorkspaceChange()</code>. Resultado: los arrays internos (<code>depositEntries</code>, <code>scheduledPosts</code>, <code>tasks</code>) seguían con la data de la agencia y los iframes (Depósito / Referencias) seguían cargados con el viejo workspaceId.',
+      '✅ <strong>Fix</strong>: ahora tras crear el workspace nuevo, se espera 150ms (para que la subscription registre el nuevo workspace) y se llama a <code>switchWorkspace(newId)</code> — que dispara correctamente <code>applyWorkspaceFilter</code> + <code>notifyIframesOfWorkspaceChange</code> + recarga OpenAI key.',
+      '🛟 <strong>Fallback</strong>: si <code>switchWorkspace</code> falla (raro), se hace switch manual con todos los pasos críticos.',
+      '🎯 <strong>Resultado esperado</strong>: workspace nuevo arranca VACÍO. Sin contadores en Depósito/Referencias, sin posts programados de la agencia, sin tareas, sin ideas — todo cero. Cuando crees datos ahí, quedan con su workspaceId aislado.'
+    ]
+  },
   '3.11.155': {
     title: '✂️ Skills: instrucciones por escena más CONCISAS (sin perder reglas)',
     features: [
@@ -9273,9 +9282,25 @@ document.addEventListener('DOMContentLoaded', () => {
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
       });
       newModal.classList.remove('active');
-      // Cambiar al workspace nuevo automáticamente
-      currentWorkspaceId = ref.id;
-      try { localStorage.setItem('currentWorkspaceId', ref.id); } catch (e) {}
+      // v3.11.156: cambiar al workspace nuevo USANDO switchWorkspace.
+      // Antes solo seteaba currentWorkspaceId → los arrays internos seguían con
+      // la data del workspace anterior → contadores/iframes mostraban data de
+      // la agencia. switchWorkspace dispara applyWorkspaceFilter (re-deriva
+      // tasks/deposit/etc) + notifyIframesOfWorkspaceChange (recarga iframes
+      // con URL del nuevo WS) + reloadOpenaiKey + renderSwitcher.
+      try {
+        // Esperar 100ms a que el snapshot listener registre el workspace nuevo
+        // en la array `workspaces` (sino switchWorkspace no encuentra el wsId).
+        await new Promise(r => setTimeout(r, 150));
+        switchWorkspace(ref.id);
+      } catch (e) {
+        console.warn('[ws] switchWorkspace falló tras crear:', e.message);
+        // Fallback minimal
+        currentWorkspaceId = ref.id;
+        try { localStorage.setItem('currentWorkspaceId', ref.id); } catch (_) {}
+        try { applyWorkspaceFilter(); } catch (_) {}
+        try { notifyIframesOfWorkspaceChange(); } catch (_) {}
+      }
     } catch (e) {
       newErr.textContent = 'Error: ' + e.message;
     }
