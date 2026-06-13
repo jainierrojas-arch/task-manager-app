@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.161': {
+    title: '🔄 Migración entre workspaces + switch INSTANTÁNEO (clear arrays inmediato)',
+    features: [
+      '🔄 <strong>Nueva herramienta de migración</strong> en Settings → "Migración de Workspaces" (panel naranja arriba): elegís workspace ORIGEN + workspace DESTINO → click "📊 Ver qué hay para migrar" para ver el conteo por colección → click "⚠ EJECUTAR MIGRACIÓN" para mover TODO (posts programados, depósito, refs, tareas, etc.).',
+      '✅ <strong>Para arreglar tu caso (Humberto tiene data de Mi Agencia)</strong>: andá a Settings → Migración → Origen=Humberto, Destino=Mi Agencia → Ver qué hay → si confirmás que es contenido de la agencia, click Ejecutar. Todo se vuelve a etiquetar como Mi Agencia y aparece en su lugar.',
+      '⚡ <strong>Switch INSTANTÁNEO</strong>: al cambiar de workspace, las arrays (tasks, depositEntries, scheduledPosts, etc.) se vacían INMEDIATAMENTE. Después se llenan con la data del nuevo workspace cuando Firestore responde. Sin ver data del anterior por unos segundos.',
+      '🪵 Log en Console: <code>[migrate] scheduledPosts: 5 docs movidos</code> por cada colección.',
+      '⚠ Después de migrar, REABRÍ la app (Cmd+Q + abrir) para que todos los listeners se re-suscriban con el orden correcto.'
+    ]
+  },
   '3.11.160': {
     title: '🔥 FIX ROOT CAUSE: el iframe del Depósito arrancaba PERMISIVO (mostraba data legacy de Mi Agencia en workspaces nuevos)',
     features: [
@@ -8907,6 +8917,132 @@ document.querySelectorAll('.sidebar-item[data-go-button]').forEach(item => {
   });
 });
 
+// ===== v3.11.161: Migración de workspaces (Settings) =====
+// Mueve TODO el contenido de un workspace a otro re-escribiendo el campo workspaceId.
+function _populateMigrateWsSelectors() {
+  const fromSel = document.getElementById('migrateFromWs');
+  const toSel = document.getElementById('migrateToWs');
+  if (!fromSel || !toSel) return;
+  const opts = (workspaces || []).map(w => `<option value="${w.id}">${(w.name || 'Workspace')}</option>`).join('');
+  fromSel.innerHTML = opts;
+  toSel.innerHTML = opts;
+  // Default: from = current, to = el primero distinto
+  if (currentWorkspaceId) fromSel.value = currentWorkspaceId;
+  const otherWs = workspaces.find(w => w.id !== currentWorkspaceId);
+  if (otherWs) toSel.value = otherWs.id;
+}
+
+const MIGRATABLE_COLLECTIONS = [
+  'scheduledPosts',
+  'depositEntries',
+  'depositCategories',
+  'tasks',
+  'projects',
+  'ideas',
+  'chatMessages',
+  'captionTemplates',
+  'sceneInstructionTemplates',
+  'scriptSkills',
+  'explorerHistory',
+  'explorerBookmarks'
+];
+
+async function _countMigratableDocs(fromWsId) {
+  const counts = {};
+  for (const col of MIGRATABLE_COLLECTIONS) {
+    try {
+      const snap = await db.collection(col).where('workspaceId', '==', fromWsId).get();
+      counts[col] = snap.size;
+    } catch (e) { counts[col] = 'error: ' + e.message; }
+  }
+  return counts;
+}
+
+async function _executeMigration(fromWsId, toWsId, statusEl) {
+  if (statusEl) statusEl.textContent = '⏳ Iniciando migración...';
+  let totalMoved = 0;
+  for (const col of MIGRATABLE_COLLECTIONS) {
+    try {
+      if (statusEl) statusEl.textContent = `⏳ ${col}...`;
+      const snap = await db.collection(col).where('workspaceId', '==', fromWsId).get();
+      if (snap.empty) continue;
+      // Firestore batch limit es 500 — chunkeo
+      const docs = snap.docs;
+      for (let i = 0; i < docs.length; i += 400) {
+        const batch = db.batch();
+        const chunk = docs.slice(i, i + 400);
+        chunk.forEach(d => batch.update(d.ref, { workspaceId: toWsId }));
+        await batch.commit();
+        totalMoved += chunk.length;
+      }
+      console.log(`[migrate] ${col}: ${snap.size} docs movidos`);
+    } catch (e) {
+      console.error(`[migrate] ${col} error:`, e);
+    }
+  }
+  if (statusEl) statusEl.textContent = `✓ Migración completada — ${totalMoved} docs movidos`;
+  return totalMoved;
+}
+
+function _setupMigrateUI() {
+  const countBtn = document.getElementById('migrateCount');
+  const countResult = document.getElementById('migrateCountResult');
+  const execBtn = document.getElementById('migrateExecute');
+  const statusEl = document.getElementById('migrateStatus');
+  const fromSel = document.getElementById('migrateFromWs');
+  const toSel = document.getElementById('migrateToWs');
+  if (!countBtn || !execBtn) return;
+
+  if (countBtn._bound) return;
+  countBtn._bound = true;
+
+  countBtn.addEventListener('click', async () => {
+    const fromWsId = fromSel.value;
+    if (!fromWsId) return;
+    countBtn.disabled = true;
+    countBtn.textContent = '⏳ Contando...';
+    const counts = await _countMigratableDocs(fromWsId);
+    const fromName = (workspaces.find(w => w.id === fromWsId) || {}).name || 'Workspace';
+    const lines = Object.entries(counts)
+      .filter(([_, n]) => typeof n === 'number' && n > 0)
+      .map(([col, n]) => `<div>• <strong>${col}</strong>: ${n}</div>`);
+    const total = Object.values(counts).filter(n => typeof n === 'number').reduce((a, b) => a + b, 0);
+    countResult.innerHTML = `<strong>"${fromName}" tiene:</strong><br>${lines.join('') || '<em>Nada para migrar.</em>'}<br><strong>Total: ${total} docs</strong>`;
+    countResult.style.display = 'block';
+    countBtn.disabled = false;
+    countBtn.textContent = '📊 Ver qué hay para migrar';
+  });
+
+  execBtn.addEventListener('click', async () => {
+    const fromWsId = fromSel.value;
+    const toWsId = toSel.value;
+    if (!fromWsId || !toWsId || fromWsId === toWsId) {
+      alert('Elegí workspaces distintos como origen y destino.');
+      return;
+    }
+    const fromName = (workspaces.find(w => w.id === fromWsId) || {}).name || 'Origen';
+    const toName = (workspaces.find(w => w.id === toWsId) || {}).name || 'Destino';
+    if (!confirm(`¿Mover TODO el contenido de "${fromName}" → "${toName}"?\n\nEsta acción NO se puede deshacer fácilmente (habría que hacer la migración inversa).\n\nIncluye: posts programados, depósito, referencias, tareas, proyectos, ideas, etc.`)) return;
+    execBtn.disabled = true;
+    execBtn.textContent = '⏳ Migrando...';
+    try {
+      const moved = await _executeMigration(fromWsId, toWsId, statusEl);
+      alert(`✓ Migración completa: ${moved} docs movidos de "${fromName}" → "${toName}".\n\nReabrí la app para que se reflejen todos los cambios.`);
+    } catch (e) {
+      alert('Error en migración: ' + (e.message || e));
+    } finally {
+      execBtn.disabled = false;
+      execBtn.textContent = '⚠ EJECUTAR MIGRACIÓN — MOVER TODO';
+    }
+  });
+}
+
+// Setup en cada cambio de tab a settings + cuando workspaces se cargan
+document.addEventListener('DOMContentLoaded', () => {
+  setTimeout(_setupMigrateUI, 500);
+  setTimeout(_populateMigrateWsSelectors, 800);
+});
+
 // ===== Multi-workspace (v3.8.0) — fundación =====
 // 1) Asegurar workspace por defecto al primer arranque del owner
 // 2) Listener real-time de la colección /workspaces
@@ -8956,6 +9092,8 @@ function subscribeWorkspaces() {
       try { localStorage.setItem('currentWorkspaceId', currentWorkspaceId); } catch (e) {}
     }
     renderWorkspaceSwitcher();
+    // v3.11.161: actualizar selectores de migración
+    try { _populateMigrateWsSelectors(); _setupMigrateUI(); } catch (_) {}
     // v3.8.3: migrar config global → workspace default (idempotente)
     migrateGlobalConfigToDefaultWorkspace().catch(() => {});
     // v3.9.4: auto-marcar workspace más viejo como isDefault si ninguno lo tiene
@@ -9203,6 +9341,18 @@ function switchWorkspace(workspaceId) {
   const fromWs = workspaces.find(w => w.id === currentWorkspaceId);
   const toWs = workspaces.find(w => w.id === workspaceId);
   console.log('[ws-switch]', fromWs && fromWs.name, '→', toWs && toWs.name);
+  // v3.11.161: CLEAR INMEDIATO de todas las arrays. Sin esperar a que Firestore
+  // re-fetche. El UI se queda vacío instantáneo y después se llena con la data
+  // nueva. Evita el "veo data de Mi Agencia en Humberto por unos segundos".
+  tasks = [];
+  trashTasks = [];
+  projects = [];
+  depositEntries = [];
+  scheduledPosts = [];
+  ideas = [];
+  chatMessages = [];
+  captionTemplates = [];
+  try { renderAll(); renderTrashList(); renderProjectSelect(); renderProjectList(); renderDepositBadge(); renderReferencesBadge(); renderSchedule(); renderIdeas(); renderChatBadge(); renderCaptionLibrary(); } catch (e) {}
   currentWorkspaceId = workspaceId;
   try { localStorage.setItem('currentWorkspaceId', workspaceId); } catch (e) {}
   renderWorkspaceSwitcher();

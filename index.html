@@ -2641,6 +2641,28 @@
       <div class="tab-content" id="tabSettings">
         <div class="settings-panel">
 
+          <!-- v3.11.161: Migración de workspaces (mover contenido entre workspaces) -->
+          <div class="settings-group" style="background:rgba(255,128,64,0.05);border:1px solid rgba(255,128,64,0.25);border-radius:8px;padding:14px">
+            <div class="settings-label" style="color:#ff9866;font-weight:700">🔄 Migración de Workspaces</div>
+            <div style="font-size:11px;color:var(--text-dim);margin-bottom:10px;line-height:1.5">
+              Mueve TODO el contenido (scheduled posts, depósito, refs, tareas, ideas) de un workspace a otro. <strong>Útil si por error guardaste contenido en el workspace equivocado.</strong>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
+              <div>
+                <label style="font-size:11px;color:var(--text-secondary);display:block;margin-bottom:4px">De (origen):</label>
+                <select id="migrateFromWs" style="width:100%;padding:8px;background:var(--bg-card);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:12px"></select>
+              </div>
+              <div>
+                <label style="font-size:11px;color:var(--text-secondary);display:block;margin-bottom:4px">A (destino):</label>
+                <select id="migrateToWs" style="width:100%;padding:8px;background:var(--bg-card);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:12px"></select>
+              </div>
+              <button id="migrateCount" class="btn btn-ghost btn-small" style="padding:8px;font-size:11px;background:rgba(78,205,196,0.15);border:1px solid rgba(78,205,196,0.35);color:#4ecdc4">📊 Ver qué hay para migrar</button>
+              <div id="migrateCountResult" style="font-size:11px;color:var(--text-secondary);padding:8px;background:var(--bg-card);border-radius:4px;display:none"></div>
+              <button id="migrateExecute" class="btn btn-danger btn-small" style="padding:10px;font-size:12px;font-weight:700">⚠ EJECUTAR MIGRACIÓN — MOVER TODO</button>
+              <div id="migrateStatus" style="font-size:11px;color:var(--text-secondary);padding:6px;text-align:center"></div>
+            </div>
+          </div>
+
           <!-- Actualizaciones (v3.11.34) -->
           <div class="settings-group">
             <div class="settings-label">Actualizaciones</div>
