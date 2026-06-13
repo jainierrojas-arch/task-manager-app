@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.160': {
+    title: '🔥 FIX ROOT CAUSE: el iframe del Depósito arrancaba PERMISIVO (mostraba data legacy de Mi Agencia en workspaces nuevos)',
+    features: [
+      '🔥 <strong>BUG RAÍZ ENCONTRADO</strong>: en <code>deposit-renderer.js</code>, el estado <code>_ws_status</code> arrancaba como <code>"unknown"</code>. El filtro <code>_belongsToWs</code> en modo unknown era PERMISIVO → mostraba docs SIN workspaceId (toda la data legacy de Mi Agencia pre-multi-workspace). Por eso veías archivos de la agencia en Humberto.',
+      '✅ <strong>FIX</strong>: <code>_ws_status</code> ahora arranca como <code>"non-default"</code> (STRICT por default). Solo se promueve a <code>"default"</code> si la URL EXPLÍCITAMENTE dice <code>isDefault=1</code> O si <code>_verifyWsIsDefault</code> confirma via Firestore que este workspace ES el default.',
+      '🛡 <strong>Aislamiento ABSOLUTO</strong>: el workspace nuevo Humberto SOLO verá docs con <code>workspaceId === humberto</code>. Nunca data legacy. Nunca data de Mi Agencia. Cero leaks.',
+      '🪵 <strong>Logs</strong>: <code>[ws] iframe init: WS_ID=X DEFAULT_WS_ID=Y status=non-default</code> en cada carga del iframe. Si ves <code>status=default</code> en un workspace que NO debería, sabemos que algo se contaminó.',
+      '⚠ <strong>Importante</strong>: Mi Agencia (default) sigue funcionando igual. Ve sus docs CON workspaceId Y la legacy SIN workspaceId. Los demás workspaces SOLO ven sus propios docs con su workspaceId.'
+    ]
+  },
   '3.11.159': {
     title: '🔒 Aislamiento bullet-proof entre workspaces (iframes hard-reload + no más flash de data anterior)',
     features: [

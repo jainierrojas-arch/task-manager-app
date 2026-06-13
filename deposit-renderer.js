@@ -9,37 +9,34 @@ const _wsParams = (() => {
 })();
 const WS_ID = _wsParams.get('workspace') || null;
 const DEFAULT_WS_ID = _wsParams.get('defaultWs') || null;
-// v3.9.5: estado de 3 valores. 'unknown' por defecto → permisivo (muestra legacy + WS_ID).
-// 'default' → permisivo. 'non-default' → estricto (solo WS_ID).
-// Filosofía: WORST case es mostrar data extra (UX confusa pero no data loss). NO mostrar
-// data correcta es mucho peor para el usuario.
-let _ws_status = 'unknown';
+// v3.11.160: STRICT por default. Si no podemos confirmar 100% que somos default,
+// asumimos non-default → solo mostramos docs CON workspaceId === WS_ID.
+// La data legacy SIN workspaceId NO se muestra a menos que el URL diga isDefault=1.
+// Antes el default era 'unknown' y eso causaba leak de legacy data en workspaces nuevos.
+let _ws_status = 'non-default';
 if (_wsParams.get('isDefault') === '1' || (DEFAULT_WS_ID && WS_ID === DEFAULT_WS_ID)) {
   _ws_status = 'default';
-} else if (DEFAULT_WS_ID && WS_ID !== DEFAULT_WS_ID) {
-  _ws_status = 'non-default';
 }
 console.log('[ws] iframe init: WS_ID=' + WS_ID + ' DEFAULT_WS_ID=' + DEFAULT_WS_ID + ' status=' + _ws_status);
 const WS_SCOPED_COLLECTIONS = new Set(['tasks', 'projects', 'depositEntries', 'depositCategories', 'scheduledPosts', 'chatMessages', 'captionTemplates', 'sceneInstructionTemplates', 'scriptSkills', 'ideas']);
 function _belongsToWs(d) {
-  // v3.11.18: aislamiento real entre workspaces.
-  // - Sin WS_ID: mostrar todo (modo standalone, no debería pasar normalmente).
-  // - Workspace DEFAULT (o unknown al inicio): muestra entries con su workspaceId
-  //   más entries SIN workspaceId (legacy data, antes de la era multi-workspace).
-  // - Workspace NON-DEFAULT: muestra SOLO entries con su workspaceId exacto.
+  // v3.11.160: aislamiento ABSOLUTO.
+  // - Sin WS_ID: standalone mode, mostrar todo (no debería pasar en producción).
+  // - DEFAULT workspace: muestra entries con su workspaceId Y legacy sin workspaceId.
+  // - Cualquier otro caso (non-default O cuando no podemos confirmar): SOLO entries
+  //   con su workspaceId exacto. La data legacy queda en el default y nada más.
   if (!WS_ID) return true;
-  if (_ws_status === 'default' || _ws_status === 'unknown') {
+  if (_ws_status === 'default') {
     return !d.workspaceId || d.workspaceId === WS_ID;
   }
   return d.workspaceId === WS_ID;
 }
 
-// v3.9.5: verificación async — sólo confirma si somos default o no.
-// El estado por defecto es permisivo (muestra todo), así que esto solo
-// ajusta a 'non-default' si hace falta restringir.
+// v3.11.160: SIEMPRE verifica. El estado por defecto es STRICT (non-default).
+// Esta función solo PROMUEVE a default si resulta que SÍ somos el default —
+// y entonces re-renderiza para mostrar también la legacy data sin workspaceId.
 window._verifyWsIsDefault = async function(dbRef) {
   if (!WS_ID) return;
-  if (_ws_status !== 'unknown') return; // ya conocemos el estado
   try {
     const snap = await dbRef.collection('workspaces').get();
     if (snap.empty) return;
@@ -56,15 +53,19 @@ window._verifyWsIsDefault = async function(dbRef) {
       });
       defId = sorted[0] ? sorted[0].id : null;
     }
-    if (defId === WS_ID) {
+    if (defId === WS_ID && _ws_status !== 'default') {
       _ws_status = 'default';
-      console.log('[ws] verify: este WS es default');
-      // Ya estábamos permisivos, no hace falta re-renderizar
-    } else if (defId) {
-      _ws_status = 'non-default';
-      console.log('[ws] verify: este WS NO es default — re-renderizando con filtro estricto');
+      console.log('[ws] verify: este WS ES default → promoviendo a permisivo + re-renderizando para mostrar legacy data');
       try { if (typeof renderCategories === 'function') renderCategories(); } catch (e) {}
       try { if (typeof renderEntries === 'function') renderEntries(); } catch (e) {}
+    } else if (defId !== WS_ID && _ws_status === 'default') {
+      // Safety: si algo nos puso en default incorrectamente, volver a strict
+      _ws_status = 'non-default';
+      console.log('[ws] verify: este WS NO es default — bajando a strict');
+      try { if (typeof renderCategories === 'function') renderCategories(); } catch (e) {}
+      try { if (typeof renderEntries === 'function') renderEntries(); } catch (e) {}
+    } else {
+      console.log('[ws] verify: estado correcto (' + _ws_status + ')');
     }
   } catch (e) { console.warn('[ws] verify failed:', e.message); }
 };
