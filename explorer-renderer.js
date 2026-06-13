@@ -40,15 +40,35 @@
     return t ? t.webview : null;
   }
 
+  // v3.11.157: cada workspace tiene su propia sesión de Explorer (cookies separadas).
+  // Esto permite tener cuentas IG/TT distintas logueadas en cada workspace.
+  // Para mantener compat con sesiones legacy, el workspace default usa
+  // 'persist:explorer' (sin sufijo). Los workspaces nuevos usan 'persist:explorer-<wsId>'.
+  function _explorerPartition() {
+    const wsId = (typeof currentWorkspaceId !== 'undefined' && currentWorkspaceId) || null;
+    const defId = (typeof resolveDefaultWorkspaceId === 'function') ? resolveDefaultWorkspaceId() : null;
+    if (!wsId) return 'persist:explorer'; // sin workspace = legacy single
+    if (defId && wsId === defId) return 'persist:explorer'; // default = legacy (mantiene login existente)
+    return `persist:explorer-${wsId}`;
+  }
+
   function createTab(initialUrl) {
     const id = nextTabId++;
+    const partition = _explorerPartition();
     const webview = document.createElement('webview');
     webview.setAttribute('src', initialUrl || 'https://www.google.com/');
-    webview.setAttribute('partition', 'persist:explorer');
+    webview.setAttribute('partition', partition);
     webview.setAttribute('allowpopups', '');
     webview.setAttribute('useragent', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
     webview.dataset.tabId = String(id);
+    webview.dataset.partition = partition;
     browserWrap.appendChild(webview);
+
+    // Notificar al main que hay una nueva partition activa → registra
+    // el handler de descargas para esa partition específica
+    if (window.api && window.api.registerExplorerPartition) {
+      window.api.registerExplorerPartition(partition);
+    }
 
     const tab = { id, title: 'Cargando...', webview, ready: false };
     tabs.push(tab);
@@ -796,6 +816,21 @@
 
   // ===== Initial tab =====
   createTab('https://www.google.com/');
+
+  // v3.11.157: al cambiar de workspace, todos los tabs deben recrearse con la
+  // nueva partition (cookies aisladas por workspace). Renderer.js dispara
+  // 'workspace-changed' tras switchWorkspace().
+  window.addEventListener('workspace-changed', () => {
+    const newPart = _explorerPartition();
+    console.log('[explorer] workspace changed → recreating tabs with partition:', newPart);
+    // Cerrar todos los tabs existentes y abrir uno nuevo con la nueva partition
+    const existingTabs = tabs.slice();
+    existingTabs.forEach(t => { try { t.webview.remove(); } catch (_) {} });
+    tabs.length = 0;
+    activeTabId = null;
+    nextTabId = 1;
+    createTab('https://www.google.com/');
+  });
 
   // v3.11.123: cuando el Deposito pide abrir un link en el Explorer,
   // renderer.js dispatcha 'explorer-open-url'. Creamos una nueva tab con esa URL.

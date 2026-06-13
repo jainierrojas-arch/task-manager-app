@@ -2370,9 +2370,10 @@ function registerIpcHandlers() {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     return dir;
   }
-  function _setupExplorerDownloads() {
+  function _setupExplorerDownloads(partitionName) {
     try {
-      const sess = session.fromPartition('persist:explorer');
+      const part = partitionName || 'persist:explorer';
+      const sess = session.fromPartition(part);
       // Evitar duplicar el handler si reload
       if (sess._tmDownloadHandlerSet) return;
       sess._tmDownloadHandlerSet = true;
@@ -2423,13 +2424,28 @@ function registerIpcHandlers() {
           }
         });
       });
-      console.log('[webview-download] handler registered for persist:explorer');
+      console.log('[webview-download] handler registered for', part);
     } catch (e) {
       console.warn('[webview-download] setup failed:', e.message);
     }
   }
-  // Setup al ready y también después de cada login (cuando el partition se vuelve a usar)
-  _setupExplorerDownloads();
+  // Setup al ready para la partition legacy (workspace default)
+  _setupExplorerDownloads('persist:explorer');
+
+  // v3.11.157: IPC para registrar partitions de Explorer por workspace.
+  // El renderer llama esto cuando crea una webview con una partition nueva.
+  // Setup también añade la partition al registry usado por el OG fetch de IG.
+  const _knownExplorerPartitions = new Set(['persist:explorer']);
+  ipcMain.handle('register-explorer-partition', async (_, partition) => {
+    if (!partition || typeof partition !== 'string') return { ok: false };
+    if (_knownExplorerPartitions.has(partition)) return { ok: true, alreadyRegistered: true };
+    _knownExplorerPartitions.add(partition);
+    _setupExplorerDownloads(partition);
+    console.log('[explorer-partition] registered:', partition, '— total:', _knownExplorerPartitions.size);
+    return { ok: true };
+  });
+  // Expose getter para que las demás funciones (OG fetch IG cookies) puedan iterar
+  global._getKnownExplorerPartitions = () => Array.from(_knownExplorerPartitions);
 
   // v3.11.117: IPC para que el Explorer (o cualquier renderer) persista
   // covers con URL firmada al Cloudinary del user, devolviendo URL permanente.
@@ -2662,10 +2678,16 @@ function registerIpcHandlers() {
       const igMatch = url.match(/instagram\.com\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
       if (igMatch) {
         const embedUrl = `https://www.instagram.com/p/${igMatch[1]}/embed/captioned/`;
-        // Buscar cookies de IG en ambas sessions (explorer y tm-instagram)
+        // v3.11.157: buscar cookies de IG en TODAS las partitions del Explorer
+        // registradas (una por workspace) + las legacy. Devuelve la primera
+        // que tenga sessionid.
         let activePartition = null;
         try {
-          for (const part of ['persist:explorer', 'persist:tm-instagram']) {
+          const known = (typeof global._getKnownExplorerPartitions === 'function')
+            ? global._getKnownExplorerPartitions()
+            : ['persist:explorer'];
+          const partsToCheck = [...new Set([...known, 'persist:tm-instagram'])];
+          for (const part of partsToCheck) {
             const s = session.fromPartition(part);
             const cookies = await s.cookies.get({ domain: '.instagram.com' });
             const hasSession = cookies.some(c => c.name === 'sessionid' && c.value);

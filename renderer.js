@@ -75,6 +75,17 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.157': {
+    title: '🔐 Sesiones del Explorer aisladas por workspace (cuentas IG/TT distintas por cliente)',
+    features: [
+      '🔐 <strong>Cada workspace tiene SU PROPIA sesión de Explorer</strong>: el webview ahora usa partition <code>persist:explorer-&lt;workspaceId&gt;</code> en lugar del global <code>persist:explorer</code>. Cookies, login, historial — todo aislado por workspace.',
+      '📱 <strong>Caso de uso</strong>: en "Cliente A" logueás IG de la cuenta del cliente A. Cambiás a "Cliente B" → el Explorer recrea los tabs con una sesión LIMPIA → logueás IG del cliente B. Cambiás a "Cliente A" → tus cookies del cliente A SIGUEN ahí.',
+      '🛟 <strong>Compat con sesiones existentes</strong>: el workspace DEFAULT ("Mi Agencia") sigue usando <code>persist:explorer</code> (sin sufijo). Las cookies que ya tenías en IG no se pierden.',
+      '⚡ <strong>Cambio automático</strong>: al cambiar de workspace desde el dropdown, los tabs del Explorer se cierran y se recrean con la nueva partition. Vas a ver Google nuevo abrir y al ir a IG, te pide login.',
+      '⬇ <strong>Downloads del Explorer</strong>: el handler <code>will-download</code> se registra dinámicamente por cada partition que el Explorer use. Los downloads del workspace nuevo van al Depósito del workspace nuevo.',
+      '🔍 <strong>OG fetch / IG cookies</strong>: el sistema busca cookies de Instagram en TODAS las partitions registradas (todas tus sesiones de workspace) — usa la primera que tenga sessionid válido.'
+    ]
+  },
   '3.11.156': {
     title: '🔒 Fix CRÍTICO: workspace nuevo arrancaba con data de la agencia (faltaba refresh tras crear)',
     features: [
@@ -9160,6 +9171,9 @@ function switchWorkspace(workspaceId) {
   applyWorkspaceFilter();
   // Notificar a iframes activos del cambio (chat / depósito) para que filtren
   notifyIframesOfWorkspaceChange();
+  // v3.11.157: notificar al Explorer que cambió el workspace para que recree
+  // sus tabs con la partition correspondiente al workspace (cookies aisladas).
+  try { window.dispatchEvent(new CustomEvent('workspace-changed', { detail: { workspaceId } })); } catch (_) {}
   // v3.11.37: recargar config scoped al workspace (OpenAI key)
   if (typeof reloadOpenaiKeyOnWorkspaceChange === 'function') {
     reloadOpenaiKeyOnWorkspaceChange().catch(() => {});
