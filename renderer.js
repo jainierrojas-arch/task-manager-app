@@ -75,6 +75,17 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.162': {
+    title: '🎤 Nuevo estilo de variación: Entrevista (diálogo a 2 voces)',
+    features: [
+      '🎤 <strong>Nuevo estilo "Entrevista (2 voces)"</strong> en el dropdown de Estilo del generador de variaciones. Genera un guion en formato diálogo Q&A.',
+      '👥 <strong>Cómo lo arma Claude</strong>: ENTREVISTADOR hace preguntas cortas, ENTREVISTADO responde con el contenido del guion original. Mínimo 3-4 rondas de Q&A en escenas medias/largas. El entrevistador puede reaccionar tipo "Wow", "Espera, ¿en serio?" pero NO explica — solo el ENTREVISTADO explica.',
+      '📐 <strong>Formato del texto</strong>: cada línea arranca con <code>ENTREVISTADOR:</code> o <code>ENTREVISTADO:</code> en MAYÚSCULAS. Listo para que dos avatars distintos en HeyGen lo lean, o para que en un video real cada persona se sepa exactamente qué le toca.',
+      '🎯 <strong>Combina con todo</strong>: tono (educativo / energético / etc.), longitud, CTA, skills — todo aplica igual. La diferencia es solo el formato Q&A.',
+      '✅ Hook obligatorio = pregunta inicial del ENTREVISTADOR que enganche en los primeros 3 seg.',
+      '✅ CTA (si elegís uno) lo dice el ENTREVISTADO al cierre, no el ENTREVISTADOR.'
+    ]
+  },
   '3.11.161': {
     title: '🔄 Migración entre workspaces + switch INSTANTÁNEO (clear arrays inmediato)',
     features: [

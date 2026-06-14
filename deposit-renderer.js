@@ -2855,7 +2855,9 @@ const SCRIPT_ESTILOS = {
   antes_despues: { label: 'Antes / Después',        desc: 'Contraste de transformación, narrativa de cambio' },
   caso_real:     { label: 'Caso real',              desc: 'Ejemplo concreto narrado, alguien específico' },
   tutorial:      { label: 'Tutorial directo',       desc: 'Cómo hacer X en pocos pasos, sin rodeos' },
-  comparativa:   { label: 'Comparativa',            desc: 'Compara 2 opciones / 2 enfoques / 2 resultados' }
+  comparativa:   { label: 'Comparativa',            desc: 'Compara 2 opciones / 2 enfoques / 2 resultados' },
+  // v3.11.162: estilo entrevista — dos voces (entrevistador + entrevistado)
+  entrevista:    { label: 'Entrevista (2 voces)',   desc: 'Diálogo Q&A entre dos personas: ENTREVISTADOR pregunta y ENTREVISTADO responde con el contenido del guion' }
 };
 
 // v3.11.106: longitud del guion generado por Claude.
@@ -2909,7 +2911,34 @@ async function rewriteScriptForEntry(entryId, btn, opts) {
     const ctaBlock = cta.instruction
       ? `5. CTA OBLIGATORIO: integra un Call To Action que diga "${cta.instruction}". Posición: ${ctaPos.instruction}. El CTA debe sentirse natural — NO suena a comercial barato, suena a invitación honesta del creador.`
       : `5. NO incluyas CTA. Ciérralo con un cliffhanger, reflexión o pregunta que mantenga al espectador hasta el final.`;
-    const prompt = `Recrea el siguiente guion de video.
+
+    // v3.11.162: si el estilo es ENTREVISTA, sumamos instrucciones específicas de formato Q&A.
+    const isEntrevista = estiloKey === 'entrevista';
+    const entrevistaBlock = isEntrevista ? `
+
+🎤 FORMATO ENTREVISTA — DOS VOCES (OBLIGATORIO):
+El guion debe ser un DIÁLOGO entre dos personas:
+- **ENTREVISTADOR**: hace preguntas cortas, directas, curiosas. NO da clases, NO explica — solo pregunta y reacciona brevemente. Sus preguntas deben llevar al ENTREVISTADO a explicar el contenido del guion original.
+- **ENTREVISTADO**: responde con el contenido del guion original (la idea central, los datos, los pasos). Habla con seguridad y autoridad sobre el tema.
+
+ESTRUCTURA OBLIGATORIA:
+- Empezá con una pregunta HOOK del entrevistador que enganche al espectador.
+- Alterná pregunta → respuesta → pregunta → respuesta. Mínimo 3-4 rondas de Q&A para escenas medias/largas.
+- El entrevistador puede meter reacciones cortas tipo "Wow", "Interesante", "Espera, ¿en serio?" para naturalidad — pero NO se va a explicar él, solo el ENTREVISTADO explica.
+- Las respuestas del ENTREVISTADO deben cubrir TODA la idea central del guion original — no perder nada de lo importante.
+- El CTA (si aplica) lo dice el ENTREVISTADO al final, NO el ENTREVISTADOR.
+
+FORMATO DE TEXTO — usar EXACTAMENTE estos labels al inicio de cada línea:
+ENTREVISTADOR: [pregunta corta y directa]
+ENTREVISTADO: [respuesta basada en el guion original]
+ENTREVISTADOR: [siguiente pregunta]
+ENTREVISTADO: [respuesta]
+...
+
+NO uses guiones largos ni nombres propios — solo los labels "ENTREVISTADOR:" y "ENTREVISTADO:" en mayúsculas con dos puntos.
+` : '';
+
+    const prompt = `Recrea el siguiente guion de video.${entrevistaBlock}
 
 ⚠️ REGLA #1 ABSOLUTA — ESPAÑOL NEUTRO INTERNACIONAL ⚠️
 El guion DEBE estar escrito en español NEUTRO LATINOAMERICANO, sin ningún regionalismo.
