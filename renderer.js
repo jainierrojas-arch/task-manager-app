@@ -75,6 +75,16 @@ if (document.readyState === 'loading') {
 // las novedades de TODAS las versiones publicadas desde la ultima que vieron
 // (acumulado, ordenado de mas nueva a mas vieja).
 const APP_CHANGELOG = {
+  '3.11.163': {
+    title: '🎭 Estilo "Diálogo 2 voces" mejorado (lista/Q&A/debate) + tono "Original del guion"',
+    features: [
+      '🎭 <strong>Estilo "Diálogo 2 voces" ampliado</strong>: ahora Claude detecta el tipo de contenido y elige el patrón correcto: <strong>LISTA/RANKING</strong> (PERSONAJE 1 enuncia el item + PERSONAJE 2 lo explica) / <strong>Q&A</strong> (P1 pregunta, P2 responde) / <strong>DEBATE</strong> (P1 plantea una idea, P2 la contrapone).',
+      '📋 <strong>Para guiones tipo "ranking" o "top 10"</strong>: Claude alterna así → P1: "Aceite de coco. Puesto 8." → P2: "Hidrata, pero te puede dejar el cabello pesado." → P1: "Aceite de aguacate. Puesto 5." → P2: "Es bueno para nutrir." Perfecto para HeyGen con 2 avatars o video con 2 personas.',
+      '🏷 <strong>Labels universales</strong>: cambié de ENTREVISTADOR/ENTREVISTADO → <strong>PERSONAJE 1 / PERSONAJE 2</strong>. Sirve para cualquier formato (no solo entrevistas).',
+      '🎵 <strong>Nuevo tono "Original del guion"</strong>: respeta el tono y la cadencia exacta del guion original sin reinterpretar. Útil cuando el guion original ya está afilado y solo querés reformatearlo (ej. dividir en escenas, agregar CTA, o cambiarlo a diálogo 2 voces sin cambiar el feeling).',
+      '✅ Combina todo: estilo Diálogo 2 voces + tono Original = el guion mantiene el ritmo y vocabulario original, solo se reformatea en P1/P2.'
+    ]
+  },
   '3.11.162': {
     title: '🎤 Nuevo estilo de variación: Entrevista (diálogo a 2 voces)',
     features: [

@@ -2838,6 +2838,8 @@ async function transcribeEntry(entryId, btn) {
 // Todos los guiones DEBEN empezar con hook viral de retención, mantener la idea
 // pero presentarla distinto. Estos profiles ajustan tono y estructura.
 const SCRIPT_TONOS = {
+  // v3.11.163: tono "original" — respeta el tono exacto del guion original sin cambiarlo
+  original:      { label: 'Original del guion', desc: 'Mantiene el tono y la cadencia del guion original tal cual, sin reinterpretar' },
   educativo:     { label: 'Educativo',     desc: 'Tono claro, didáctico, como un profesor explicando' },
   energetico:    { label: 'Energético',    desc: 'Ritmo rápido, frases cortas, mucha energía' },
   motivacional:  { label: 'Motivacional',  desc: 'Inspirador, llamado a la acción, transforma al espectador' },
@@ -2856,8 +2858,8 @@ const SCRIPT_ESTILOS = {
   caso_real:     { label: 'Caso real',              desc: 'Ejemplo concreto narrado, alguien específico' },
   tutorial:      { label: 'Tutorial directo',       desc: 'Cómo hacer X en pocos pasos, sin rodeos' },
   comparativa:   { label: 'Comparativa',            desc: 'Compara 2 opciones / 2 enfoques / 2 resultados' },
-  // v3.11.162: estilo entrevista — dos voces (entrevistador + entrevistado)
-  entrevista:    { label: 'Entrevista (2 voces)',   desc: 'Diálogo Q&A entre dos personas: ENTREVISTADOR pregunta y ENTREVISTADO responde con el contenido del guion' }
+  // v3.11.163: estilo diálogo 2 voces — Claude detecta auto si es lista, Q&A o debate
+  entrevista:    { label: 'Diálogo 2 voces (PERSONAJE 1 / PERSONAJE 2)', desc: 'Diálogo entre 2 voces. Claude detecta el tipo: lista/ranking (P1 enuncia el item, P2 explica), Q&A (P1 pregunta, P2 responde), o debate' }
 };
 
 // v3.11.106: longitud del guion generado por Claude.
@@ -2912,31 +2914,58 @@ async function rewriteScriptForEntry(entryId, btn, opts) {
       ? `5. CTA OBLIGATORIO: integra un Call To Action que diga "${cta.instruction}". Posición: ${ctaPos.instruction}. El CTA debe sentirse natural — NO suena a comercial barato, suena a invitación honesta del creador.`
       : `5. NO incluyas CTA. Ciérralo con un cliffhanger, reflexión o pregunta que mantenga al espectador hasta el final.`;
 
-    // v3.11.162: si el estilo es ENTREVISTA, sumamos instrucciones específicas de formato Q&A.
+    // v3.11.163: si el estilo es Diálogo 2 voces, Claude detecta el patrón
+    // apropiado según el contenido del guion: lista/ranking, Q&A, o debate.
     const isEntrevista = estiloKey === 'entrevista';
     const entrevistaBlock = isEntrevista ? `
 
-🎤 FORMATO ENTREVISTA — DOS VOCES (OBLIGATORIO):
-El guion debe ser un DIÁLOGO entre dos personas:
-- **ENTREVISTADOR**: hace preguntas cortas, directas, curiosas. NO da clases, NO explica — solo pregunta y reacciona brevemente. Sus preguntas deben llevar al ENTREVISTADO a explicar el contenido del guion original.
-- **ENTREVISTADO**: responde con el contenido del guion original (la idea central, los datos, los pasos). Habla con seguridad y autoridad sobre el tema.
+🎤 FORMATO DIÁLOGO 2 VOCES (OBLIGATORIO) — PERSONAJE 1 / PERSONAJE 2:
+El guion debe ser un DIÁLOGO entre 2 personas alternando líneas. PRIMERO analiza el contenido del guion original y elegí EL PATRÓN ADECUADO:
 
-ESTRUCTURA OBLIGATORIA:
-- Empezá con una pregunta HOOK del entrevistador que enganche al espectador.
-- Alterná pregunta → respuesta → pregunta → respuesta. Mínimo 3-4 rondas de Q&A para escenas medias/largas.
-- El entrevistador puede meter reacciones cortas tipo "Wow", "Interesante", "Espera, ¿en serio?" para naturalidad — pero NO se va a explicar él, solo el ENTREVISTADO explica.
-- Las respuestas del ENTREVISTADO deben cubrir TODA la idea central del guion original — no perder nada de lo importante.
-- El CTA (si aplica) lo dice el ENTREVISTADO al final, NO el ENTREVISTADOR.
+▸ PATRÓN A — LISTA / RANKING / ENUMERACIÓN (preferido si el guion tiene items numerados, productos comparados, listas tipo "top 10", "5 errores", "puesto 1...puesto N"):
+  - PERSONAJE 1 ENUNCIA cada item con SU DATO IDENTIFICADOR (nombre + posición/número/categoría). Frases cortas, casi telegráficas.
+  - PERSONAJE 2 EXPLICA / COMENTA / OPINA sobre ese item. Da el contexto, la propiedad, la recomendación, la razón.
+  - Alternancia ESTRICTA item por item: cada item del guion = exactamente 1 línea P1 (enunciado) + 1 línea P2 (explicación).
+
+  EJEMPLO (con un guion sobre 10 ingredientes para el cabello):
+  PERSONAJE 1: Aceite de coco. Puesto 8.
+  PERSONAJE 2: Hidrata, pero si te pasas, te puede dejar el cabello pesado.
+  PERSONAJE 1: Aceite de aguacate. Puesto 5.
+  PERSONAJE 2: Es bueno para nutrir a profundidad.
+  PERSONAJE 1: Aloe vera. Puesto 9.
+  PERSONAJE 2: Hidrata, pero no aporta fuerza.
+  ...
+
+▸ PATRÓN B — Q&A / ENTREVISTA (si el guion no es lista, sino un tema general que se puede convertir en preguntas-respuestas):
+  - PERSONAJE 1 hace PREGUNTAS cortas, curiosas, directas (no explica).
+  - PERSONAJE 2 RESPONDE con el contenido del guion original (la idea, los datos, los pasos).
+  - 3-4 rondas mínimo para escenas medias/largas.
+  - P1 puede meter reacciones cortas tipo "Wow", "Espera, ¿en serio?" pero NO explica.
+
+▸ PATRÓN C — DEBATE / CONTRASTES (si el guion contrapone 2 ideas, antes/después, mito vs realidad):
+  - PERSONAJE 1 plantea un lado / mito / lo común.
+  - PERSONAJE 2 contradice / corrige / da la otra perspectiva.
+
+REGLAS UNIVERSALES (TODOS LOS PATRONES):
+1. PRIMER LÍNEA = HOOK obligatorio. Si es Patrón A, P1 anuncia el primer item con drama. Si es B, P1 hace una pregunta enganchadora. Si es C, P1 lanza una afirmación provocadora.
+2. NO PIERDAS NADA del contenido original — TODOS los datos, items, conceptos deben aparecer.
+3. El CTA (si aplica) lo dice PERSONAJE 2 al final, en su última línea.
+4. Las líneas son cortas y naturales para leer en cámara, no monólogos eternos.
 
 FORMATO DE TEXTO — usar EXACTAMENTE estos labels al inicio de cada línea:
-ENTREVISTADOR: [pregunta corta y directa]
-ENTREVISTADO: [respuesta basada en el guion original]
-ENTREVISTADOR: [siguiente pregunta]
-ENTREVISTADO: [respuesta]
+PERSONAJE 1: [línea de P1]
+PERSONAJE 2: [línea de P2]
+PERSONAJE 1: [siguiente línea]
+PERSONAJE 2: [siguiente línea]
 ...
 
-NO uses guiones largos ni nombres propios — solo los labels "ENTREVISTADOR:" y "ENTREVISTADO:" en mayúsculas con dos puntos.
+NO uses nombres propios, ni "Entrevistador/Entrevistado", ni guiones — solo "PERSONAJE 1:" y "PERSONAJE 2:" en mayúsculas con dos puntos.
 ` : '';
+
+    // v3.11.163: si tono = ORIGINAL, le decimos a Claude que respete tono del guion sin cambiarlo
+    const tonoBlock = tonoKey === 'original'
+      ? `- Tono: MANTENER EL TONO ORIGINAL DEL GUION sin reinterpretar. Conservá la cadencia, las pausas, las muletillas (si las tiene), el registro coloquial/formal exacto. No "mejores" el tono, no lo hagas más formal/casual — copialo tal cual está en cuanto a feeling.`
+      : `- Tono: ${tono.label} — ${tono.desc}`;
 
     const prompt = `Recrea el siguiente guion de video.${entrevistaBlock}
 
@@ -2966,7 +2995,7 @@ ${ctaBlock}
 6. Reitera: español NEUTRO LATINOAMERICANO, listo para grabar. SIN regionalismos.
 
 PERFIL DE ESTA VARIACIÓN:
-- Tono: ${tono.label} — ${tono.desc}
+${tonoBlock}
 - Estilo: ${estilo.label} — ${estilo.desc}
 - Longitud: ${longitud.label} (~${longitud.seconds}s / ~${longitud.words} palabras)
 ${cta.instruction ? `- CTA: ${cta.label} — "${cta.instruction}" — ${ctaPos.label}` : '- CTA: ninguno'}
